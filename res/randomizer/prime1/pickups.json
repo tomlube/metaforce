@@ -1,0 +1,535 @@
+{
+ "standard": [
+  {
+   "name": "Charge Beam",
+   "category": "beam",
+   "major": true,
+   "model": "Charge Beam",
+   "item_type": 10,
+   "progression": [
+    "Charge"
+   ],
+   "ammo": [],
+   "default_shuffled": 2,
+   "default_starting": 0,
+   "default_ammo": [],
+   "hidden": false
+  },
+  {
+   "name": "Power Beam",
+   "category": "beam",
+   "major": true,
+   "model": "Gamecube",
+   "item_type": 0,
+   "progression": [
+    "Power"
+   ],
+   "ammo": [],
+   "default_shuffled": 0,
+   "default_starting": 1,
+   "default_ammo": [],
+   "hidden": false
+  },
+  {
+   "name": "Wave Beam",
+   "category": "beam",
+   "major": true,
+   "model": "Wave Beam",
+   "item_type": 2,
+   "progression": [
+    "Wave"
+   ],
+   "ammo": [],
+   "default_shuffled": 1,
+   "default_starting": 0,
+   "default_ammo": [],
+   "hidden": false
+  },
+  {
+   "name": "Ice Beam",
+   "category": "beam",
+   "major": true,
+   "model": "Ice Beam",
+   "item_type": 1,
+   "progression": [
+    "Ice"
+   ],
+   "ammo": [],
+   "default_shuffled": 1,
+   "default_starting": 0,
+   "default_ammo": [],
+   "hidden": false
+  },
+  {
+   "name": "Plasma Beam",
+   "category": "beam",
+   "major": true,
+   "model": "Plasma Beam",
+   "item_type": 3,
+   "progression": [
+    "Plasma"
+   ],
+   "ammo": [],
+   "default_shuffled": 1,
+   "default_starting": 0,
+   "default_ammo": [],
+   "hidden": false
+  },
+  {
+   "name": "Missile Launcher",
+   "category": "missile",
+   "major": true,
+   "model": "Missile",
+   "item_type": 4,
+   "progression": [
+    "MissileLauncher"
+   ],
+   "ammo": [
+    "Missile"
+   ],
+   "default_shuffled": 1,
+   "default_starting": 0,
+   "default_ammo": [
+    5
+   ],
+   "hidden": false
+  },
+  {
+   "name": "Grapple Beam",
+   "category": "movement",
+   "major": true,
+   "model": "Grapple Beam",
+   "item_type": 12,
+   "progression": [
+    "Grapple"
+   ],
+   "ammo": [],
+   "default_shuffled": 1,
+   "default_starting": 0,
+   "default_ammo": [],
+   "hidden": false
+  },
+  {
+   "name": "Combat Visor",
+   "category": "visor",
+   "major": true,
+   "model": "Combat Visor",
+   "item_type": 17,
+   "progression": [
+    "Combat"
+   ],
+   "ammo": [],
+   "default_shuffled": 0,
+   "default_starting": 1,
+   "default_ammo": [],
+   "hidden": false
+  },
+  {
+   "name": "Scan Visor",
+   "category": "visor",
+   "major": true,
+   "model": "Scan Visor",
+   "item_type": 5,
+   "progression": [
+    "Scan"
+   ],
+   "ammo": [],
+   "default_shuffled": 0,
+   "default_starting": 1,
+   "default_ammo": [],
+   "hidden": false
+  },
+  {
+   "name": "Thermal Visor",
+   "category": "visor",
+   "major": true,
+   "model": "Thermal Visor",
+   "item_type": 9,
+   "progression": [
+    "Thermal"
+   ],
+   "ammo": [],
+   "default_shuffled": 1,
+   "default_starting": 0,
+   "default_ammo": [],
+   "hidden": false
+  },
+  {
+   "name": "X-Ray Visor",
+   "category": "visor",
+   "major": true,
+   "model": "X-Ray Visor",
+   "item_type": 13,
+   "progression": [
+    "X-Ray"
+   ],
+   "ammo": [],
+   "default_shuffled": 1,
+   "default_starting": 0,
+   "default_ammo": [],
+   "hidden": false
+  },
+  {
+   "name": "Space Jump Boots",
+   "category": "movement",
+   "major": true,
+   "model": "Space Jump Boots",
+   "item_type": 15,
+   "progression": [
+    "SpaceJump"
+   ],
+   "ammo": [],
+   "default_shuffled": 1,
+   "default_starting": 0,
+   "default_ammo": [],
+   "hidden": false
+  },
+  {
+   "name": "Energy Tank",
+   "category": "energy_tank",
+   "major": false,
+   "model": "Energy Tank",
+   "item_type": 24,
+   "progression": [
+    "EnergyTank"
+   ],
+   "ammo": [],
+   "default_shuffled": 14,
+   "default_starting": 0,
+   "default_ammo": [],
+   "hidden": false
+  },
+  {
+   "name": "Morph Ball",
+   "category": "morph_ball",
+   "major": true,
+   "model": "Morph Ball",
+   "item_type": 16,
+   "progression": [
+    "MorphBall"
+   ],
+   "ammo": [],
+   "default_shuffled": 1,
+   "default_starting": 0,
+   "default_ammo": [],
+   "hidden": false
+  },
+  {
+   "name": "Morph Ball Bomb",
+   "category": "morph_ball",
+   "major": true,
+   "model": "Morph Ball Bomb",
+   "item_type": 6,
+   "progression": [
+    "Bombs"
+   ],
+   "ammo": [],
+   "default_shuffled": 1,
+   "default_starting": 0,
+   "default_ammo": [],
+   "hidden": false
+  },
+  {
+   "name": "Boost Ball",
+   "category": "morph_ball",
+   "major": true,
+   "model": "Boost Ball",
+   "item_type": 18,
+   "progression": [
+    "Boost"
+   ],
+   "ammo": [],
+   "default_shuffled": 1,
+   "default_starting": 0,
+   "default_ammo": [],
+   "hidden": false
+  },
+  {
+   "name": "Spider Ball",
+   "category": "morph_ball",
+   "major": true,
+   "model": "Spider Ball",
+   "item_type": 19,
+   "progression": [
+    "Spider"
+   ],
+   "ammo": [],
+   "default_shuffled": 1,
+   "default_starting": 0,
+   "default_ammo": [],
+   "hidden": false
+  },
+  {
+   "name": "Power Bomb",
+   "category": "morph_ball",
+   "major": true,
+   "model": "Power Bomb",
+   "item_type": 7,
+   "progression": [
+    "MainPB"
+   ],
+   "ammo": [
+    "PowerBomb"
+   ],
+   "default_shuffled": 1,
+   "default_starting": 0,
+   "default_ammo": [
+    4
+   ],
+   "hidden": false
+  },
+  {
+   "name": "Power Suit",
+   "category": "suit",
+   "major": true,
+   "model": "Power Suit",
+   "item_type": 20,
+   "progression": [
+    "PowerSuit"
+   ],
+   "ammo": [],
+   "default_shuffled": 0,
+   "default_starting": 1,
+   "default_ammo": [],
+   "hidden": true
+  },
+  {
+   "name": "Varia Suit",
+   "category": "suit",
+   "major": true,
+   "model": "Varia Suit",
+   "item_type": 22,
+   "progression": [
+    "VariaSuit"
+   ],
+   "ammo": [],
+   "default_shuffled": 1,
+   "default_starting": 0,
+   "default_ammo": [],
+   "hidden": false
+  },
+  {
+   "name": "Gravity Suit",
+   "category": "suit",
+   "major": true,
+   "model": "Gravity Suit",
+   "item_type": 21,
+   "progression": [
+    "GravitySuit"
+   ],
+   "ammo": [],
+   "default_shuffled": 1,
+   "default_starting": 0,
+   "default_ammo": [],
+   "hidden": false
+  },
+  {
+   "name": "Phazon Suit",
+   "category": "suit",
+   "major": true,
+   "model": "Phazon Suit",
+   "item_type": 23,
+   "progression": [
+    "PhazonSuit"
+   ],
+   "ammo": [],
+   "default_shuffled": 1,
+   "default_starting": 0,
+   "default_ammo": [],
+   "hidden": false
+  },
+  {
+   "name": "Super Missile",
+   "category": "charge_combo",
+   "major": true,
+   "model": "Super Missile",
+   "item_type": 11,
+   "progression": [
+    "Supers"
+   ],
+   "ammo": [],
+   "default_shuffled": 1,
+   "default_starting": 0,
+   "default_ammo": [],
+   "hidden": false
+  },
+  {
+   "name": "Wavebuster",
+   "category": "charge_combo",
+   "major": true,
+   "model": "Wavebuster",
+   "item_type": 28,
+   "progression": [
+    "Wavebuster"
+   ],
+   "ammo": [],
+   "default_shuffled": 1,
+   "default_starting": 0,
+   "default_ammo": [],
+   "hidden": false
+  },
+  {
+   "name": "Ice Spreader",
+   "category": "charge_combo",
+   "major": true,
+   "model": "Ice Spreader",
+   "item_type": 14,
+   "progression": [
+    "IceSpreader"
+   ],
+   "ammo": [],
+   "default_shuffled": 1,
+   "default_starting": 0,
+   "default_ammo": [],
+   "hidden": false
+  },
+  {
+   "name": "Flamethrower",
+   "category": "charge_combo",
+   "major": true,
+   "model": "Flamethrower",
+   "item_type": 8,
+   "progression": [
+    "Flamethrower"
+   ],
+   "ammo": [],
+   "default_shuffled": 1,
+   "default_starting": 0,
+   "default_ammo": [],
+   "hidden": false
+  }
+ ],
+ "ammo": [
+  {
+   "name": "Missile Expansion",
+   "category": "missile",
+   "model": "Missile",
+   "resource": "Missile",
+   "item_type": 4,
+   "refill": false,
+   "default_count": 49,
+   "default_ammo": 5
+  },
+  {
+   "name": "Power Bomb Expansion",
+   "category": "morph_ball",
+   "model": "Power Bomb Expansion",
+   "resource": "PowerBomb",
+   "item_type": 7,
+   "refill": false,
+   "default_count": 4,
+   "default_ammo": 1
+  },
+  {
+   "name": "Energy Refill",
+   "category": "misc",
+   "model": "Health Refill",
+   "resource": "HealthRefill",
+   "item_type": 26,
+   "refill": true,
+   "default_count": 0,
+   "default_ammo": 20
+  },
+  {
+   "name": "Missile Refill",
+   "category": "misc",
+   "model": "Missile Refill",
+   "resource": "MissileRefill",
+   "item_type": 4,
+   "refill": true,
+   "default_count": 0,
+   "default_ammo": 5
+  },
+  {
+   "name": "Power Bomb Refill",
+   "category": "misc",
+   "model": "Power Bomb Refill",
+   "resource": "PBRefill",
+   "item_type": 7,
+   "refill": true,
+   "default_count": 0,
+   "default_ammo": 1
+  }
+ ],
+ "artifacts": [
+  {
+   "name": "Artifact of Truth",
+   "resource": "Truth",
+   "item_type": 29,
+   "model": "Artifact of Truth"
+  },
+  {
+   "name": "Artifact of Strength",
+   "resource": "Strength",
+   "item_type": 30,
+   "model": "Artifact of Strength"
+  },
+  {
+   "name": "Artifact of Elder",
+   "resource": "Elder",
+   "item_type": 31,
+   "model": "Artifact of Elder"
+  },
+  {
+   "name": "Artifact of Wild",
+   "resource": "Wild",
+   "item_type": 32,
+   "model": "Artifact of Wild"
+  },
+  {
+   "name": "Artifact of Lifegiver",
+   "resource": "Lifegiver",
+   "item_type": 33,
+   "model": "Artifact of Lifegiver"
+  },
+  {
+   "name": "Artifact of Warrior",
+   "resource": "Warrior",
+   "item_type": 34,
+   "model": "Artifact of Warrior"
+  },
+  {
+   "name": "Artifact of Chozo",
+   "resource": "Chozo",
+   "item_type": 35,
+   "model": "Artifact of Chozo"
+  },
+  {
+   "name": "Artifact of Nature",
+   "resource": "Nature",
+   "item_type": 36,
+   "model": "Artifact of Nature"
+  },
+  {
+   "name": "Artifact of Sun",
+   "resource": "Sun",
+   "item_type": 37,
+   "model": "Artifact of Sun"
+  },
+  {
+   "name": "Artifact of World",
+   "resource": "World",
+   "item_type": 38,
+   "model": "Artifact of World"
+  },
+  {
+   "name": "Artifact of Spirit",
+   "resource": "Spirit",
+   "item_type": 39,
+   "model": "Artifact of Spirit"
+  },
+  {
+   "name": "Artifact of Newborn",
+   "resource": "Newborn",
+   "item_type": 40,
+   "model": "Artifact of Newborn"
+  }
+ ],
+ "defaults": {
+  "artifact_target": 6,
+  "artifact_required": 6,
+  "energy_per_tank": 100,
+  "damage_strictness": 1.5,
+  "heat_damage": 10.0
+ }
+}

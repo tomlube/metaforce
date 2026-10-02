@@ -14,6 +14,7 @@
 #include "MetroidPrime/CMain.hpp"
 
 #if defined(TARGET_PC)
+#include "Metaforce/GameOptionDefaults.hpp"
 #include "Metaforce/Runtime.hpp"
 #endif
 
@@ -124,6 +125,9 @@ void CMainFlow::SetGameState(EClientFlowStates state, CArchitectureQueue& queue)
     break;
   }
   case kCFS_Game: {
+#if defined(TARGET_PC)
+    metaforce::options::ApplyTo(gpGameState->GameOptions());
+#endif
     gpGameState->GameOptions().EnsureOptions();
     CIOWin* const gameFlow = rs_new CMFGameLoader();
     gpMain->SetRestartMode(CMain::kRM_Default);

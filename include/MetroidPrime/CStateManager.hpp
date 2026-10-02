@@ -73,7 +73,7 @@ namespace SL {
 class CSortedListManager;
 } // namespace SL
 
-#define kMaxEntities 1024
+#define kMaxEntities kMaxObjects
 typedef rstl::reserved_vector< TUniqueId, kMaxEntities > TEntityList;
 
 enum EStateManagerTransition {
@@ -391,7 +391,7 @@ private:
   enum EInitPhase { kIP_LoadWorld, kIP_LoadFirstArea, kIP_Done };
 
   ushort mNextFreeIndex;
-  rstl::reserved_vector< ushort, 1024 > mObjectIndexArray;
+  rstl::reserved_vector< ushort, kMaxObjects > mObjectIndexArray;
   rstl::reserved_vector< rstl::auto_ptr< CObjectList >, 8 > mObjectLists;
   CPlayer* mPlayer;
   rstl::single_ptr< CWorld > mWorld;
@@ -497,6 +497,9 @@ private:
   rstl::pair< const SScriptObjectStream*, TEditorId > GetBuildForScript(TEditorId eid) const;
   void MurderScriptInstanceNames();
   void ClearGraveyard();
+#if defined(TARGET_PC)
+  void ReportObjectListFull() const;
+#endif
   static void RendererDrawCallback(const void*, const void*, int);
   static const bool MemoryAllocatorAllocationFailedCallback(const void*, unsigned int);
 };

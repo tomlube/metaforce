@@ -145,6 +145,11 @@
 #include "Kyoto/Math/CVector2f.hpp"
 #include "Kyoto/Streams/CInputStream.hpp"
 
+#if defined(TARGET_PC)
+#include "Kyoto/Streams/CMemoryInStream.hpp"
+#include "Metaforce/Randomizer/Hooks.hpp"
+#endif
+
 static CAABox GetCollisionBox(CStateManager& stateMgr, TAreaId id, const CVector3f& extent,
                               const CVector3f& offset) {
   const CAABox box(-extent.GetX() / 2.f + offset.GetX(), -extent.GetY() / 2.f + offset.GetY(),
@@ -879,6 +884,65 @@ CEntity* ScriptLoader::LoadPickup(CStateManager& mgr, CInputStream& in, int prop
   bool active = in.Get< bool >();
   float startDelay = in.Get< float >();
   CAssetId pickupEffect = in.Get< CAssetId >();
+
+#if defined(TARGET_PC)
+  metaforce::randomizer::PickupOverride randoPickup;
+  if (metaforce::randomizer::GetPickupOverride(mgr.GetWorld()->GetWorldAssetId(),
+                                               info.GetEditorId().Value(), randoPickup)) {
+    itemType = CPlayerState::EItemType(randoPickup.itemType);
+    capacity = randoPickup.capacity;
+    amount = randoPickup.amount;
+    if (randoPickup.modelData != nullptr) {
+      // Take the model, rotation, scale and actor parameters from the item's own pickup
+      // object. Like randomprime, keep this pickup's collision box and move the new model so
+      // its center lands where the original model's center was.
+      CMemoryInStream tmpl(randoPickup.modelData + 4, randoPickup.modelSize - 4);
+      SScaledActorHead tmplHead(tmpl, mgr);
+      CVector3f tmplExtent(tmpl);
+      CVector3f tmplOffset(tmpl);
+      tmpl.Get< int >(); // item type
+      tmpl.Get< int >(); // capacity
+      tmpl.Get< int >(); // amount
+      tmpl.Get< float >(); // possibility
+      tmpl.Get< float >(); // lifetime
+      tmpl.Get< float >(); // fade in time
+      CAssetId tmplModel = tmpl.Get< CAssetId >();
+      CAnimationParameters tmplAnim = LoadAnimationParameters(tmpl);
+      CActorParameters tmplActor = LoadActorParameters(tmpl);
+      tmpl.Get< bool >(); // active
+      tmpl.Get< float >(); // start delay
+      CAssetId tmplEffect = tmpl.Get< CAssetId >();
+      static_cast< void >(tmplExtent);
+      static_cast< void >(tmplOffset);
+      if (gpResourceFactory->GetResourceTypeById(tmplModel) != 0 ||
+          gpResourceFactory->GetResourceTypeById(tmplAnim.GetACSFile()) != 0) {
+        const CVector3f origPos = head.mActorHead.mTransform.GetTranslation();
+        CTransform4f newXf = tmplHead.mActorHead.mTransform;
+        CVector3f delta = CVector3f::Zero();
+        float origCenter[3];
+        float newCenter[3];
+        if (metaforce::randomizer::GetPickupModelCenter(staticModel, origCenter) &&
+            metaforce::randomizer::GetPickupModelCenter(tmplModel, newCenter)) {
+          const CVector3f origOffset = head.mActorHead.mTransform.Rotate(
+              CVector3f(origCenter[0] * head.mScale.GetX(), origCenter[1] * head.mScale.GetY(),
+                        origCenter[2] * head.mScale.GetZ()));
+          const CVector3f newOffset = newXf.Rotate(CVector3f(
+              newCenter[0] * tmplHead.mScale.GetX(), newCenter[1] * tmplHead.mScale.GetY(),
+              newCenter[2] * tmplHead.mScale.GetZ()));
+          delta = newOffset - origOffset;
+        }
+        newXf.SetTranslation(origPos - delta);
+        head.mActorHead.mTransform = newXf;
+        head.mScale = tmplHead.mScale;
+        offset = offset + delta;
+        staticModel = tmplModel;
+        aParms = tmplAnim;
+        actParms = tmplActor;
+        pickupEffect = tmplEffect;
+      }
+    }
+  }
+#endif
 
   FourCC staticModelType = gpResourceFactory->GetResourceTypeById(staticModel);
   FourCC animType = gpResourceFactory->GetResourceTypeById(aParms.GetACSFile());

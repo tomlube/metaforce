@@ -1201,6 +1201,26 @@ rstl::pair< rstl::auto_ptr< char >, int > CGameArea::IGetScriptingMemoryAlways()
   return GetScriptingMemoryAlways(*this);
 }
 
+#if defined(TARGET_PC)
+void CGameArea::AddAttachedArea(TAreaId area) {
+  for (int i = 0; i < mAttachedAreaIndices.size(); ++i) {
+    if (mAttachedAreaIndices[i] == area.Value()) {
+      return;
+    }
+  }
+  mAttachedAreaIndices.push_back(static_cast< ushort >(area.Value()));
+  // Keep the world memory tally in step with GetPreConstructedSize.
+  CMemoryDrawEnum::AddWorldMemory(sizeof(ushort));
+}
+
+void IGameArea::Dock::Redirect(TAreaId area, int dock) {
+  for (int i = 0; i < mDockReferences.size(); ++i) {
+    mDockReferences[i].mArea = area;
+    mDockReferences[i].mDock = static_cast< s16 >(dock);
+  }
+}
+#endif
+
 IGameArea::Dock::Dock(CInputStream& in, const CTransform4f& xf)
 : mReferenceCount(0), mIsReferenced(false) {
   int count = in.Get< int >();

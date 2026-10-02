@@ -2609,3 +2609,32 @@ bool CElementGen::GetParticleEmission() const { return mParticleEmission; }
 const CTransform4f& CElementGen::GetGlobalOrientation() const { return mGlobalOrientation; }
 
 const CVector3f& CElementGen::GetGlobalTranslation() const { return mGlobalTranslation; }
+
+#if defined(TARGET_PC)
+void CElementGen::TransformThroughDock(const CTransform4f& xf, bool moveGlobal) {
+  // Particle positions are in system space, which the renderer places with the global
+  // translation and scales.
+  const CTransform4f scale = mGlobalScaleTransform * mLocalScaleTransform;
+  CTransform4f local = CTransform4f::Identity();
+  if (moveGlobal) {
+    local = scale.GetInverse() * xf.GetRotation() * scale;
+    mGlobalTranslation = xf * mGlobalTranslation;
+  } else {
+    const CTransform4f system = CTransform4f::Translate(mGlobalTranslation) * scale;
+    local = system.GetInverse() * xf * system;
+  }
+  for (AUTO(it, mParticles.begin()); it != mParticles.end(); ++it) {
+    it->mPos = local * it->mPos;
+    it->mPrevPos = local * it->mPrevPos;
+    it->mVel = local.Rotate(it->mVel);
+  }
+  const CMatrix3f rotation = local.BuildMatrix3f();
+  for (AUTO(it, mParentMatrices.begin()); it != mParentMatrices.end(); ++it) {
+    *it = rotation * *it;
+  }
+  mTranslation = local * mTranslation;
+  for (AUTO(it, mActivePartChildren.begin()); it != mActivePartChildren.end(); ++it) {
+    (*it)->TransformThroughDock(xf, moveGlobal);
+  }
+}
+#endif

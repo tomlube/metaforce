@@ -220,6 +220,16 @@ public:
   }
   bool IsCharging() const { return mCharging; }
   void SetTransform(CTransform4f xf) { mXf = xf; }
+#if defined(TARGET_PC)
+  // Moves the gun's world-space state by `xf`, for doors that lead somewhere other than their
+  // geometry. Leaves holster, charge and firing state alone.
+  void TransformThroughDock(const CTransform4f& xf) {
+    mXf = xf * mXf;
+    mElbowWorldXf = xf * mElbowWorldXf;
+    mAssistAimXf = xf * mAssistAimXf;
+    mGunWorldXf = xf * mGunWorldXf;
+  }
+#endif
   CTransform4f GetGunMotionTransform() const { return mGunWorldXf; }
   CGrappleArm& GrappleArm() { return *mGrappleArm.get(); }
   CGrappleArm& GetGrappleArm() const { return *mGrappleArm.get(); }

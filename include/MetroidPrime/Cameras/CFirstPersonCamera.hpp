@@ -20,6 +20,14 @@ public:
   // CGameCamera
   void ProcessInput(const CFinalInput& input, CStateManager& mgr) override;
   void Reset(const CTransform4f& xf, CStateManager& mgr) override;
+#if defined(TARGET_PC)
+  // Moves the camera by `xf`, keeping where it's looking, for doors that lead somewhere other
+  // than their geometry.
+  void TransformThroughDock(const CTransform4f& xf) {
+    SetTransform(xf * GetTransform());
+    mGunFollowXf = xf * mGunFollowXf;
+  }
+#endif
 
   void SetScriptPitchId(TUniqueId uid) { mPitchId = uid; }
   void UpdateElevation(CStateManager& mgr);

@@ -359,6 +359,30 @@ void CGameProjectile::UpdateProjectileMovement(float dt, CStateManager& mgr) {
   UpdateHoming(dt, mgr);
 }
 
+#if defined(TARGET_PC)
+void CGameProjectile::TransformThroughDock(const CTransform4f& xf, const CVector3f& crossing,
+                                           TAreaId area, CStateManager& mgr) {
+  mProjectile.TransformThroughDock(xf);
+  SetTransform(mProjectile.GetTransform());
+  SetTranslation(mProjectile.GetTranslation());
+  // Checking for hits from where it met the doorway keeps the check out of whatever lies behind
+  // the far doorway.
+  mPreviousPos = xf * crossing;
+  // A homing target left behind would now be chased at its position in another room.
+  if (const CActor* target = TCastToConstPtr< CActor >(mgr.GetObjectById(mHomingTargetId))) {
+    if (target->GetCurrentAreaId() != area) {
+      mHomingTargetId = kInvalidUniqueId;
+    }
+  }
+  mgr.SetActorAreaId(*this, area);
+  if (CActor* light = TCastToPtr< CActor >(mgr.ObjectById(mProjectileLight))) {
+    light->SetTransform(GetTransform());
+    light->SetTranslation(GetTranslation());
+    mgr.SetActorAreaId(*light, area);
+  }
+}
+#endif
+
 void CGameProjectile::UpdateHoming(float dt, CStateManager& mgr) {
   if (mActive && mHomingTargetId != kInvalidUniqueId && mHomingDt > 0.f) {
     mTargetHomingTime += dt;

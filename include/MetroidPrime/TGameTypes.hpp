@@ -44,14 +44,25 @@ struct TEditorId {
 };
 CHECK_SIZEOF(TEditorId, 0x4)
 
+#if defined(TARGET_PC)
+// Randomized doors can put two large rooms next to each other, and both stay loaded while the
+// player walks between them. The port doubles the object limit, trading a bit of the version
+// counter that catches stale ids.
+#define kUniqueIdIndexBits 11
+#else
+#define kUniqueIdIndexBits 10
+#endif
+#define kMaxObjects (1 << kUniqueIdIndexBits)
+#define kUniqueIdVersionMask ((1 << (16 - kUniqueIdIndexBits)) - 1)
+
 struct TUniqueId {
   ushort value;
   TUniqueId() {}
   TUniqueId(const ushort version, const ushort id)
-  : value(id | (version << 10)) {}
+  : value(id | (version << kUniqueIdIndexBits)) {}
 
-  ushort Value() const { return value & 0x3FF; }
-  ushort Version() const { return (value >> 10) & 0x3F; }
+  ushort Value() const { return value & (kMaxObjects - 1); }
+  ushort Version() const { return (value >> kUniqueIdIndexBits) & kUniqueIdVersionMask; }
 
   bool operator==(const TUniqueId& other) const { return value == other.value; }
   bool operator!=(const TUniqueId& other) const { return value != other.value; }

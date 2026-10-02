@@ -31,6 +31,10 @@
 #include "MetroidPrime/TGameTypes.hpp"
 #include "rstl/vector.hpp"
 
+#if defined(TARGET_PC)
+#include "Metaforce/Randomizer/Hooks.hpp"
+#endif
+
 CGameArea::CConstChainIterator CWorld::skGlobalEnd;
 CGameArea::CChainIterator CWorld::skGlobalNonConstEnd;
 
@@ -147,6 +151,25 @@ bool CWorld::CheckWorldComplete(CStateManager* mgr, TAreaId aid, CAssetId mreaId
     for (int i = 0; i < areaCount; ++i) {
       MoveToChain(mAreas[i].get(), kC_Deallocated);
     }
+#if defined(TARGET_PC)
+    for (int i = 0; i < areaCount; ++i) {
+      CGameArea* area = mAreas[i].get();
+      for (int dock = 0; dock < area->GetDockCount(); ++dock) {
+        unsigned int targetArea;
+        int targetDock;
+        if (metaforce::randomizer::GetDockOverride(mMlvlId, area->GetAreaAssetId(), dock,
+                                                   targetArea, targetDock)) {
+          const TAreaId target = GetAreaId(targetArea);
+          if (target != kInvalidAreaId) {
+            area->DockNC(dock).Redirect(target, targetDock);
+            // The map streams in map areas through attached areas, and the minimap expects
+            // every attached area's map to be loaded.
+            area->AddAttachedArea(target);
+          }
+        }
+      }
+    }
+#endif
 
     mMapwId = in.Get< CAssetId >();
     mMapWorld =

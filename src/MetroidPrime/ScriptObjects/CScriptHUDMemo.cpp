@@ -4,6 +4,12 @@
 
 #include "Kyoto/Text/CStringTable.hpp"
 
+#if defined(TARGET_PC)
+#include "MetroidPrime/CStateManager.hpp"
+#include "MetroidPrime/CWorld.hpp"
+#include "Metaforce/Randomizer/Hooks.hpp"
+#endif
+
 CScriptHUDMemo::CScriptHUDMemo(TUniqueId uid, const rstl::string& name, const CEntityInfo& info,
                                const CHUDMemoParms& parms, const EDisplayType disp, CAssetId msg,
                                const bool active)
@@ -20,6 +26,18 @@ CScriptHUDMemo::~CScriptHUDMemo() {}
 void CScriptHUDMemo::AcceptScriptMsg(EScriptObjectMessage msg, TUniqueId uid, CStateManager& mgr) {
   switch (msg) {
   case kSM_SetToZero:
+#if defined(TARGET_PC)
+    if (GetActive() && mgr.GetWorld() != nullptr) {
+      if (const wchar_t* text = metaforce::randomizer::GetHudMemoOverride(
+              mgr.GetWorld()->GetWorldAssetId(), GetEditorId().Value())) {
+        CSamusHud::DisplayHudMemo(rstl::wstring_l(text),
+                                  CHUDMemoParms(mDispType == kDT_MessageBox ? 5.f
+                                                                            : mParms.GetDisplayTime(),
+                                                true, false, false));
+        break;
+      }
+    }
+#endif
     if (GetActive()) {
       if (mDispType == kDT_MessageBox) {
         mgr.ShowPausedHUDMemo(mStringTableId, mParms.GetDisplayTime());

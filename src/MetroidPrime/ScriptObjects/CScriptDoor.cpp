@@ -20,6 +20,10 @@
 #include "MetroidPrime/TCastTo.hpp"
 #include "MetroidPrime/TGameTypes.hpp"
 
+#if defined(TARGET_PC)
+#include "Metaforce/Randomizer/Hooks.hpp"
+#endif
+
 CScriptDoor::CScriptDoor(TUniqueId uid, const rstl::string& name, const CEntityInfo& info,
                          const CTransform4f& xf, const CModelData& modelData,
                          const CActorParameters& actorParameters, const CVector3f& orbitPosition,
@@ -82,6 +86,13 @@ CScriptDoor::EDoorOpenCondition CScriptDoor::GetDoorOpenCondition(CStateManager&
   if (!dock) {
     return kDOC_Ready;
   }
+#if defined(TARGET_PC)
+  // A door into another world has nothing loaded behind it to open onto.
+  if (metaforce::randomizer::OnCrossWorldDoorOpen(mgr, dock->GetAreaId().Value(),
+                                                  dock->GetDockId())) {
+    return kDOC_Loading;
+  }
+#endif
 
   if (mAnimTime < 0.05f || mDoClose) {
     return kDOC_Loading;

@@ -41,6 +41,11 @@ public:
   const TUniqueId GetConnectedDockID() const { return mDockId; }
   bool IsOpen() const { return mIsOpen; }
   bool IsBallDoor() const { return mBallDoor; }
+#if defined(TARGET_PC)
+  // Something asked the door to open, and it opens as soon as the room behind it is ready.
+  // Closing or locking the door in the meantime calls that off.
+  bool IsWaitingToOpen() const { return mConditionsMet; }
+#endif
   void SetDoClose(const bool close) { mDoClose = close; }
 
   bool IsConnectedToArea(const CStateManager& mgr, TAreaId area) const;

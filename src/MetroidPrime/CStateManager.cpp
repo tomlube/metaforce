@@ -86,6 +86,14 @@
 #include "Kyoto/CFrameDelayedKiller.hpp"
 
 #if defined(TARGET_PC)
+#include "Metaforce/Cheats.hpp"
+#include "Metaforce/DockPortals.hpp"
+#include <dolphin/os.h>
+#include "Metaforce/Randomizer/Hooks.hpp"
+#include "MetroidPrime/ScriptObjects/CScriptTimer.hpp"
+#endif
+
+#if defined(TARGET_PC)
 CStateManager* gpStateManager = nullptr;
 #endif
 
@@ -427,18 +435,46 @@ CStateManager::~CStateManager() {
   CMemory::SetOutOfMemoryCallback(nullptr, nullptr);
 }
 
+#if defined(TARGET_PC)
+void CStateManager::ReportObjectListFull() const {
+  int graveyardCount = 0;
+  for (rstl::list< rstl::reserved_vector< TUniqueId, 32 > >::const_iterator it =
+           mGraveyard.begin();
+       it != mGraveyard.end(); ++it) {
+    graveyardCount += it->size();
+  }
+  OSReport("Object list full: %d objects waiting in the graveyard\n", graveyardCount);
+  const CObjectList& list = GetObjectListById(kOL_All);
+  for (int area = -1; area < (mWorld.get() != nullptr ? mWorld->GetNumAreas() : 0); ++area) {
+    int count = 0;
+    for (int i = list.GetFirstObjectIndex(); i != -1; i = list.GetNextObjectIndex(i)) {
+      if (list[i]->GetCurrentAreaId().Value() == area) {
+        ++count;
+      }
+    }
+    if (count != 0) {
+      OSReport("  area %d: %d objects%s\n", area, count,
+               area == mNextAreaId.Value() ? " (current)" : "");
+    }
+  }
+}
+#endif
+
 TUniqueId CStateManager::AllocateUniqueId() {
   const ushort lastIndex = mNextFreeIndex;
   ushort ourIndex;
   do {
     ourIndex = mNextFreeIndex;
-    mNextFreeIndex = (ourIndex + 1) % 1024;
+    mNextFreeIndex = (ourIndex + 1) % kMaxObjects;
     if (mNextFreeIndex == lastIndex) {
+#if defined(TARGET_PC)
+      ReportObjectListFull();
+#endif
       rs_debugger_printf("Object list full!");
     }
   } while (ObjectListById(kOL_All).GetObjectByIndex(ourIndex) != nullptr);
 
-  mObjectIndexArray[ourIndex] = (mObjectIndexArray[ourIndex] + 1) & 0x3f;
+  mObjectIndexArray[ourIndex] = (mObjectIndexArray[ourIndex] + 1) & kUniqueIdVersionMask;
   if (TUniqueId(mObjectIndexArray[ourIndex], ourIndex) == kInvalidUniqueId) {
     mObjectIndexArray[ourIndex] = 0;
   }
@@ -651,7 +687,14 @@ void CStateManager::PrepareAreaUnload(TAreaId aid) {
   FreeScriptObjects(aid);
 }
 
-void CStateManager::AreaUnloaded(TAreaId) {}
+void CStateManager::AreaUnloaded(TAreaId) {
+#if defined(TARGET_PC)
+  // The unloaded area's objects only sit in the graveyard until the end of the frame, but disc
+  // reads here are fast enough that TravelToArea can stream in the next area in the same frame.
+  // Free their slots first so both areas never hold object ids at once.
+  ClearGraveyard();
+#endif
+}
 
 const CEntity* CStateManager::GetObjectById(TUniqueId uid) const {
   return GetObjectListById(kOL_All).GetObjectById(uid);
@@ -893,6 +936,10 @@ void CStateManager::InitializeState(unsigned int mlvlId, TAreaId aid, unsigned i
       break;
     }
   }
+
+#if defined(TARGET_PC)
+  metaforce::randomizer::OnWorldInitialized(*this);
+#endif
 
   mPlayer->AsyncLoadSuit(*this);
   mCameraManager->ResetCameras(*this);
@@ -1172,6 +1219,14 @@ void CStateManager::Update(float dt) {
     Think(dt);
   }
 
+#if defined(TARGET_PC)
+  if (mGameState == kGS_Running && !isDead) {
+    metaforce::portals::UpdatePlayerCrossing(*this);
+    metaforce::randomizer::UpdateCrossWorldDoors(*this, dt);
+    metaforce::cheats::Update(*this);
+  }
+#endif
+
   if (mGameState != kGS_SoftPaused) {
     mCameraManager->Update(dt, *this);
   }
@@ -1310,7 +1365,12 @@ void CStateManager::ApplyDamage(const TUniqueId damagerId, const TUniqueId damag
 
       if (info.GetWeaponMode().GetType() == kWT_None ||
           dVuln->WeaponHurts(info.GetWeaponMode(), CDamageVulnerability::kRD_No)) {
-        const float localDamage = info.GetDamage(*dVuln);
+        float localDamage = info.GetDamage(*dVuln);
+#if defined(TARGET_PC)
+        if (localDamage > 0.f) {
+          localDamage = metaforce::cheats::AdjustDamage(*this, damager, *damagee, localDamage);
+        }
+#endif
         if (localDamage > 0.f) {
           ApplyLocalDamage(position, direction, *damagee, localDamage, info.GetWeaponMode());
         }
@@ -1389,6 +1449,11 @@ bool CStateManager::ApplyLocalDamage(const CVector3f& pos, const CVector3f& dir,
     useDamage = -(damageReduction * useDamage - useDamage);
   }
 
+#if defined(TARGET_PC)
+  if (player != nullptr && metaforce::cheats::IgnorePlayerDamage()) {
+    useDamage = 0.f;
+  }
+#endif
   const float newHp = oldHp - useDamage;
   hInfo->SetHP(newHp);
   const bool significant = !(fabs(newHp - oldHp) < 0.00001f);
@@ -1554,7 +1619,12 @@ void CStateManager::ApplyRadiusDamage(const CActor& damager, const CVector3f& po
                                                : damagee.GetDamageVulnerability();
 
   if (vuln->WeaponHurts(info.GetWeaponMode(), CDamageVulnerability::kRD_Yes)) {
-    const float localDamage = info.GetRadiusDamage(*vuln);
+    float localDamage = info.GetRadiusDamage(*vuln);
+#if defined(TARGET_PC)
+    if (localDamage > 0.f) {
+      localDamage = metaforce::cheats::AdjustDamage(*this, &damager, damagee, localDamage);
+    }
+#endif
     if (localDamage > 0.f) {
       ApplyLocalDamage(pos, delta, damagee, localDamage, info.GetWeaponMode());
     }
@@ -1769,6 +1839,30 @@ rstl::pair< TEditorId, TUniqueId > CStateManager::LoadScriptObject(TAreaId aid,
     conns.push_back(SConnection(state, msg, target));
   }
 
+#if defined(TARGET_PC)
+  metaforce::randomizer::ScriptObjectPatch scriptPatch;
+  const bool patched =
+      mWorld.get() != nullptr && metaforce::randomizer::GetScriptObjectPatch(
+                                     mWorld->GetWorldAssetId(), eid.Value(), scriptPatch);
+  if (patched) {
+    rstl::vector< SConnection > kept;
+    if (!scriptPatch.clearConnections) {
+      for (int i = 0; i < static_cast< int >(conns.size()); ++i) {
+        if (conns[i].mObjId.Value() != scriptPatch.removeTarget) {
+          kept.push_back(conns[i]);
+        }
+      }
+    }
+    for (int i = 0; i < scriptPatch.addCount; ++i) {
+      const metaforce::randomizer::ScriptConnection& add = scriptPatch.add[i];
+      kept.push_back(SConnection(static_cast< EScriptObjectState >(add.state),
+                                 static_cast< EScriptObjectMessage >(add.message),
+                                 TEditorId(add.target)));
+    }
+    conns = kept;
+  }
+#endif
+
   const uint propCount = in.ReadLong();
   bytesLeft -= 4;
   const uint readPos = in.GetReadPosition();
@@ -1788,6 +1882,11 @@ rstl::pair< TEditorId, TUniqueId > CStateManager::LoadScriptObject(TAreaId aid,
 
   if (ent != nullptr) {
     AddObject(*ent);
+#if defined(TARGET_PC)
+    if (patched && scriptPatch.active >= 0) {
+      ent->SetActive(scriptPatch.active != 0);
+    }
+#endif
   } else {
     failed = true;
   }
@@ -1846,6 +1945,33 @@ void CStateManager::LoadScriptObjects(TAreaId aid, CInputStream& in,
       }
     }
   }
+
+#if defined(TARGET_PC)
+  const metaforce::randomizer::ScriptTimerSpawn* timers = nullptr;
+  // World-level objects are loaded without an area.
+  const int timerCount =
+      mWorld.get() == nullptr || aid == kInvalidAreaId
+          ? 0
+          : metaforce::randomizer::GetScriptTimerSpawns(
+                mWorld->GetWorldAssetId(), mWorld->GetArea(aid)->GetAreaAssetId(), &timers);
+  for (int i = 0; i < timerCount; ++i) {
+    const metaforce::randomizer::ScriptTimerSpawn& spawn = timers[i];
+    const TEditorId eid(spawn.editorId | (static_cast< uint >(aid.Value()) << 16));
+    if (GetIdForScript(eid) != kInvalidUniqueId) {
+      continue;
+    }
+    rstl::vector< SConnection > conns;
+    for (int j = 0; j < spawn.connectionCount; ++j) {
+      const metaforce::randomizer::ScriptConnection& conn = spawn.connections[j];
+      conns.push_back(SConnection(static_cast< EScriptObjectState >(conn.state),
+                                  static_cast< EScriptObjectMessage >(conn.message),
+                                  TEditorId(conn.target | (static_cast< uint >(aid.Value()) << 16))));
+    }
+    AddObject(*rs_new CScriptTimer(AllocateUniqueId(), rstl::string_l("Randomizer Timer"),
+                                   CEntityInfo(aid, conns, eid), spawn.startTime, 0.f, false,
+                                   spawn.autoStart, true));
+  }
+#endif
 }
 
 void CStateManager::InitScriptObjects(const rstl::vector< TEditorId >& ids) {
@@ -1926,7 +2052,16 @@ void CStateManager::FreeScriptObjects(TAreaId aid) {
 
 void CStateManager::SendScriptMsg(TUniqueId uid, TEditorId target, EScriptObjectMessage msg,
                                   EScriptObjectState) {
+#if defined(TARGET_PC)
+  const CEntity* sender = GetObjectById(uid);
+  if (sender != nullptr && mWorld.get() != nullptr &&
+      !metaforce::randomizer::AllowScriptMsg(mWorld->GetWorldAssetId(),
+                                             sender->GetEditorId().Value(), target.Value())) {
+    return;
+  }
+#else
   GetObjectById(uid);
+#endif
   CObjectList* allList = mObjectLists[kOL_All].get();
 
   TIdListResult search = GetIdListForScript(target);
@@ -2066,9 +2201,22 @@ void CStateManager::PreRender() {
   const CTransform4f curCamXf = mCameraManager->GetCurrentCameraTransform(*this);
   CFrustumPlanes frustum(curCamXf, 0.017453292f * curCam.GetFov(), curCam.GetAspectRatio(),
                          curCam.GetNearClipDistance(), false, 100.f);
+#if defined(TARGET_PC)
+  metaforce::portals::PrepareFrame(*this);
+#endif
 
   for (CGameArea::CChainIterator areaIt = mWorld->ChainHead(CWorld::kC_Alive);
        areaIt != CWorld::AliveAreasEnd(); ++areaIt) {
+#if defined(TARGET_PC)
+    // Areas behind moved doors are seen from a moved camera, so cull their actors against that.
+    const CTransform4f* areaCamXf = metaforce::portals::GetAreaCameraTransform(areaIt->GetId());
+    if (areaCamXf == nullptr) {
+      continue;
+    }
+    const CFrustumPlanes areaFrustum(*areaCamXf * curCamXf, 0.017453292f * curCam.GetFov(),
+                                     curCam.GetAspectRatio(), curCam.GetNearClipDistance(), false,
+                                     100.f);
+#endif
     CGameArea::EOcclusionState occState;
     if (areaIt->IsPostConstructed()) {
       occState = areaIt->GetPostConstructed()->mOcclusionState;
@@ -2084,7 +2232,11 @@ void CStateManager::PreRender() {
         CActor* actor = TCastToPtr< CActor >((*areaObjList)[i]);
         if (actor != nullptr && actor->IsDrawEnabled()) {
           actor->CalculateRenderBounds();
+#if defined(TARGET_PC)
+          actor->PreRender(*this, areaFrustum);
+#else
           actor->PreRender(*this, frustum);
+#endif
         }
       }
     }
@@ -2100,7 +2252,12 @@ void CStateManager::PreRender() {
 
 CFrustumPlanes CStateManager::SetupViewForDraw(const CViewport& viewport) const {
   const CGameCamera& cam = mCameraManager->GetCurrentCamera(*this);
+#if defined(TARGET_PC)
+  const CTransform4f camXf = metaforce::portals::GetPassCameraTransform() *
+                             mCameraManager->GetCurrentCameraTransform(*this);
+#else
   const CTransform4f camXf = mCameraManager->GetCurrentCameraTransform(*this);
+#endif
   gpRender->SetWorldViewpoint(camXf);
 
   const CVector3f playerPos = mPlayer->GetTranslation();
@@ -2230,11 +2387,23 @@ void CStateManager::SetupFogForArea3XRange(TAreaId area) const {
 CGameArea::CConstChainIterator CWorld::GetAliveAreasEnd() { return skGlobalEnd; }
 
 void CStateManager::DrawWorld() const {
+#if defined(TARGET_PC)
+  // Rooms behind moved doors are drawn first, each by a nested DrawWorld from a moved camera.
+  const bool portalPass = metaforce::portals::InPortalPass();
+  const bool drewPortals = metaforce::portals::DrawPortalPasses(*this);
+#endif
   const CTimeProvider timeProvider(mCurTimeMod900);
   const CViewport backupViewport = CGraphics::GetViewport();
   const CFrustumPlanes frustum = SetupViewForDraw(backupViewport);
   const CTransform4f backupViewMatrix = CGraphics::GetViewMatrix();
+#if defined(TARGET_PC)
+  if (drewPortals) {
+    metaforce::portals::ResetDepthForMainPass(*this);
+  }
+  const TAreaId visAreaId = metaforce::portals::GetPassVisArea(GetVisAreaId());
+#else
   const TAreaId visAreaId = GetVisAreaId();
+#endif
   const rstl::reserved_vector< TUniqueId, 20 >& renderLast =
       mStateManagerContainer->mRenderLast;
   const rstl::reserved_vector< TUniqueId, 20 >& renderFirst = mStateManagerContainer->xf370_;
@@ -2244,6 +2413,11 @@ void CStateManager::DrawWorld() const {
   mWorld->TouchSky();
   for (CGameArea::CConstChainIterator it = mWorld->GetChainHead(CWorld::kC_Alive);
        it != CWorld::GetAliveAreasEnd() && areas.size() != 10; ++it) {
+#if defined(TARGET_PC)
+    if (!metaforce::portals::IsAreaInPass(it->GetId())) {
+      continue;
+    }
+#endif
     if (it->GetOcclusionState() == CGameArea::kOS_Visible) {
       areas.push_back(&*it);
     }
@@ -2252,8 +2426,18 @@ void CStateManager::DrawWorld() const {
   rstl::sort(areas.begin(), areas.end(), area_sorter(backupViewMatrix.GetForward(), visAreaId));
   for (const CGameArea** it = areas.begin(); it != areas.end(); ++it) {
     CPVSVisSet set(kVSS_OutOfBounds);
+#if defined(TARGET_PC)
+    // Visibility sets are looked up from the doorway the camera looks through, which for a
+    // portal isn't in the drawn area's space; draw everything instead. The same goes for the main
+    // view while a portal is open: the camera is then at or in a moved doorway, where some
+    // rooms' visibility data hides nearly everything.
+    if (!portalPass && !drewPortals)
+#endif
     GetVisSetForArea((*it)->GetId(), visAreaId, set);
     visibility.push_back(set);
+#if defined(TARGET_PC)
+    metaforce::portals::LogPassArea((*it)->GetId(), static_cast< int >(set.GetState()));
+#endif
   }
 
   const CPlayerState::EPlayerVisor visor = mPlayerState->GetActiveVisor(*this);
@@ -2286,12 +2470,20 @@ void CStateManager::DrawWorld() const {
   if (!SetupFogForDraw()) {
     gpRender->SetWorldFog(kRFM_None, 0.f, 1.f, CColor::Black());
   }
+#if defined(TARGET_PC)
+  if (!metaforce::portals::SkipMainPassSky())
+#endif
   mWorld->DrawSky(CTransform4f::Translate(backupViewMatrix.GetTranslation()));
   if (!areas.empty()) {
     SetupFogForArea(*areas.back());
   }
 
   for (const TUniqueId* it = renderFirst.begin(); it != renderFirst.end(); ++it) {
+#if defined(TARGET_PC)
+    if (portalPass) {
+      break;
+    }
+#endif
     if (const CActor* actor = static_cast< const CActor* >(GetObjectById(*it))) {
       if (!thermal || (actor->GetThermalFlags() & 1) != 0) {
         actor->Render(*this);
@@ -2300,7 +2492,7 @@ void CStateManager::DrawWorld() const {
   }
 
   bool morphingPlayerVisible = false;
-  rstl::reserved_vector< const CActor*, 1024 > thermalActors;
+  rstl::reserved_vector< const CActor*, kMaxObjects > thermalActors;
   for (int i = 0; i < areas.size(); ++i) {
     const CGameArea& area = *areas[i];
     const CPVSVisSet& set = visibility[i];
@@ -2345,6 +2537,9 @@ void CStateManager::DrawWorld() const {
       mActorModelParticles->AddStragglersToRenderer(*this);
     }
     ++mObjectDrawToken;
+#if defined(TARGET_PC)
+    if (!portalPass) {
+#endif
     mPlayer->MorphBall()->DrawBallShadow(const_cast< CStateManager& >(*this));
 #if VERSION >= VERSION_GM8P_00
     for (const CProjectedShadow* shadow = mProjectedShadow; shadow != nullptr;
@@ -2356,10 +2551,16 @@ void CStateManager::DrawWorld() const {
       mProjectedShadow->Render(*this);
     }
 #endif
+#if defined(TARGET_PC)
+    }
+#endif
     gpRender->EnablePVS(&set, area.GetId().Value());
     gpRender->DrawSortedGeometry(area.GetId().Value(), mask, targetMask);
   }
 
+#if defined(TARGET_PC)
+  if (!portalPass)
+#endif
   mEnvFxManager->Render(*this);
   if (morphingPlayerVisible) {
     mPlayer->Render(*this);
@@ -2420,9 +2621,27 @@ void CStateManager::DrawWorld() const {
 
   mFluidPlaneManager->EndFrame();
   gpRender->SetWorldFog(kRFM_None, 0.f, 1.f, CColor::Black());
+#if defined(TARGET_PC)
+  if (portalPass) {
+    ResetViewAfterDraw(backupViewport, backupViewMatrix);
+    return;
+  }
+#endif
   if (gkWorldOnlyReflection) {
     const_cast< CStateManager* >(this)->CacheReflection();
   }
+#if defined(TARGET_PC)
+  // The gun and render-last actors stay in the player's room, so draw them from the real camera
+  // even when the world was drawn from the far side of a moved door.
+  if (metaforce::portals::IsRootShifted()) {
+    const CGameCamera& realCam = mCameraManager->GetCurrentCamera(*this);
+    const CTransform4f realCamXf = mCameraManager->GetCurrentCameraTransform(*this);
+    gpRender->SetWorldViewpoint(realCamXf);
+    gpRender->SetClippingPlanes(CFrustumPlanes(realCamXf, 0.017453292f * realCam.GetFov(),
+                                               realCam.GetAspectRatio(),
+                                               realCam.GetNearClipDistance(), false, 100.f));
+  }
+#endif
   if (mPlayer != nullptr) {
     mPlayer->RenderGun(*this, mCameraManager->GetGlobalCameraTranslation(*this));
   }
@@ -2773,6 +2992,13 @@ TAreaId CStateManager::GetVisAreaId() const {
     const CScriptDock* dock = TCastToConstPtr< CScriptDock >(GetObjectById(*uid));
     if (dock != nullptr && dock->GetAreaId() == curArea &&
         dock->HasPointCrossedDock(*this, camTranslation)) {
+#if defined(TARGET_PC)
+      // The room behind a moved door isn't where the camera is; portals handle it.
+      CTransform4f unused = CTransform4f::Identity();
+      if (metaforce::portals::GetDockTransform(*mWorld, curArea, dock->GetDockId(), unused)) {
+        continue;
+      }
+#endif
       return dock->GetCurrentConnectedAreaId(*this);
     }
   }

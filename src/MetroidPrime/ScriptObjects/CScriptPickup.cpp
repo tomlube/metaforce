@@ -18,6 +18,10 @@
 #include "MetroidPrime/HUD/CSamusHud.hpp"
 
 #include "Kyoto/CResFactory.hpp"
+
+#if defined(TARGET_PC)
+#include "Metaforce/Randomizer/Hooks.hpp"
+#endif
 #include "Kyoto/Math/CAbsAngle.hpp"
 #include "Kyoto/Math/CMath.hpp"
 #include "Kyoto/Text/CStringTable.hpp"
@@ -163,6 +167,9 @@ void CScriptPickup::Touch(CActor& act, CStateManager& mgr) {
 
     mgr.PlayerState()->InitializePowerUp(itemType, mCapacity);
     mgr.PlayerState()->IncrPickUp(itemType, mAmount);
+#if defined(TARGET_PC)
+    metaforce::randomizer::OnPickupCollected(mgr, itemType);
+#endif
     mgr.DeleteObjectRequest(GetUniqueId());
     SendScriptMsgs(kSS_Arrived, mgr, kSM_None);
 

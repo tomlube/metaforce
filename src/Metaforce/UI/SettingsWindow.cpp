@@ -1,7 +1,11 @@
 #include "Metaforce/UI/SettingsWindow.hpp"
 
 #include "Metaforce/Display.hpp"
+#include "Metaforce/GameOptionDefaults.hpp"
+#include "Metaforce/UI/ControllerConfigWindow.hpp"
 #include "Metaforce/UI/RuntimeConfig.hpp"
+
+#include <aurora/aurora.h>
 
 #include <borealis/ui/bool_button.hpp>
 #include <borealis/ui/context_menu.hpp>
@@ -136,6 +140,85 @@ void config_choice_select(Pane& leftPane, Pane& rightPane, RuntimeVar< int >& va
         }
         pane.add_rml(helpText);
       });
+}
+
+void option_bool_select(Pane& leftPane, Pane& rightPane, bool options::GameOptionDefaults::*field,
+                        Rml::String key, Rml::String helpText, bool isMaster = false) {
+  auto& button = leftPane.add_child< BoolButton >(BoolButton::Props{
+      .key = std::move(key),
+      .getValue = [field] { return options::Get().*field; },
+      .setValue =
+          [field](bool value) {
+            if (value == options::Get().*field) {
+              return;
+            }
+            options::Get().*field = value;
+            options::Commit();
+          },
+      .isDisabled = [isMaster] { return !isMaster && !options::Get().enabled; },
+      .isModified =
+          [field] { return options::Get().*field != options::GameOptionDefaults{}.*field; },
+  });
+  leftPane.register_control(button, rightPane, [helpText = std::move(helpText)](Pane& pane) {
+    pane.clear();
+    pane.add_rml(helpText);
+  });
+}
+
+void option_percent_select(Pane& leftPane, Pane& rightPane,
+                           int options::GameOptionDefaults::*field, Rml::String key,
+                           Rml::String helpText) {
+  auto& button = leftPane.add_child< NumberButton >(NumberButton::Props{
+      .key = std::move(key),
+      .getValue = [field] { return options::Get().*field; },
+      .setValue =
+          [field](int value) {
+            options::Get().*field = std::clamp(value, 0, 100);
+            options::Commit();
+          },
+      .isDisabled = [] { return !options::Get().enabled; },
+      .isModified =
+          [field] { return options::Get().*field != options::GameOptionDefaults{}.*field; },
+      .min = 0,
+      .max = 100,
+      .step = 5,
+      .suffix = "%",
+  });
+  leftPane.register_control(button, rightPane, [helpText = std::move(helpText)](Pane& pane) {
+    pane.clear();
+    pane.add_rml(helpText);
+  });
+}
+
+void add_game_tab(Pane& leftPane, Pane& rightPane) {
+  using Defaults = options::GameOptionDefaults;
+
+  leftPane.add_section("Option Defaults");
+  option_bool_select(
+      leftPane, rightPane, &Defaults::enabled, "Apply Defaults",
+      "Each save file stores its own Options menu settings. When this is on, the values below "
+      "replace them whenever gameplay starts, so every file plays the same way.<br/><br/>You can "
+      "still change options from the pause menu; they reset to these the next time you load.",
+      true);
+
+  leftPane.add_section("Visor");
+  option_percent_select(leftPane, rightPane, &Defaults::visorOpacity, "Visor Opacity",
+                        "Opacity of the HUD elements drawn on the visor.");
+  option_percent_select(leftPane, rightPane, &Defaults::helmetOpacity, "Helmet Opacity",
+                        "Opacity of Samus's helmet frame.");
+  option_bool_select(leftPane, rightPane, &Defaults::hudLag, "HUD Lag",
+                     "Let the HUD sway behind camera movement.");
+  option_bool_select(leftPane, rightPane, &Defaults::hintSystem, "Hint System",
+                     "Show hint messages and map markers that point toward your next goal.");
+
+  leftPane.add_section("Controller");
+  option_bool_select(leftPane, rightPane, &Defaults::invertY, "Reverse Y-Axis",
+                     "Invert vertical free-look and aiming.");
+  option_bool_select(leftPane, rightPane, &Defaults::rumble, "Rumble",
+                     "Enable controller rumble.");
+  option_bool_select(leftPane, rightPane, &Defaults::swapBeamControls, "Swap Beam Controls",
+                     "Swap the beam and visor controls: the C-Stick selects visors and the "
+                     "D-Pad selects beams.");
 }
 
 void add_demo_tab(Window& window, Pane& leftPane, Pane& rightPane) {
@@ -370,6 +453,43 @@ SettingsWindow::SettingsWindow() {
                            .helpText = "Lock the game's aspect ratio to the original.",
                            .onChange = [](bool value) { SetDisplayAspectLocked(value); },
                        });
+  });
+
+  add_tab("Input", [this](Rml::Element* content) {
+    auto& leftPane = add_child< Pane >(content, Pane::Type::Controlled);
+    auto& rightPane = add_child< Pane >(content, Pane::Type::Uncontrolled);
+
+    leftPane.add_section("Inputs");
+    leftPane.register_control(
+        leftPane.add_group_button({.text = "Configure Inputs"}).on_pressed([this] {
+          push(std::make_unique< ControllerConfigWindow >());
+        }),
+        rightPane, [](Pane& pane) {
+          pane.clear();
+          pane.add_text("Open input binding configuration.");
+        });
+    config_bool_select(leftPane, rightPane, GetRuntimeConfig().input.allowBackgroundInput,
+                       {
+                           .key = "Allow Background Inputs",
+                           .helpText = "Allow inputs even when the game window is not focused.",
+                           .onChange = [](bool value) { aurora_set_background_input(value); },
+                       });
+    config_bool_select(
+        leftPane, rightPane, GetRuntimeConfig().input.smartLockOn,
+        {
+            .key = "Smart Lock-On",
+            .helpText =
+                "Makes a digital L button act like a fully pulled GameCube trigger: it strafes "
+                "and holds your view when nothing is targetable, and locks on when a target "
+                "reticle is showing.<br/><br/>Analog triggers are unaffected. To strafe past a "
+                "target without locking on, bind a separate button to analog L only.",
+        });
+  });
+
+  add_tab("Game", [this](Rml::Element* content) {
+    auto& leftPane = add_child< Pane >(content, Pane::Type::Controlled);
+    auto& rightPane = add_child< Pane >(content, Pane::Type::Uncontrolled);
+    add_game_tab(leftPane, rightPane);
   });
 
   add_tab("Interface", [this](Rml::Element* content) {

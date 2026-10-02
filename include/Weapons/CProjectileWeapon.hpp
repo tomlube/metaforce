@@ -60,6 +60,10 @@ public:
   static void SetGlobalSeed(const uint seed);
 
   rstl::optional_object< CAABox > GetBounds() const;
+#if defined(TARGET_PC)
+  // Carries the projectile and everything it has emitted by the rigid transform `xf`.
+  void TransformThroughDock(const CTransform4f& xf);
+#endif
 
   bool IsProjectileActive() const { return mActive; }
   TLockedToken< CWeaponDescription > GetWeaponDescription() const { return mWeaponDesc; }

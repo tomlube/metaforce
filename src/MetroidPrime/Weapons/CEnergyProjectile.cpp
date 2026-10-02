@@ -21,6 +21,10 @@
 #include "Weapons/CCollisionResponseData.hpp"
 #include "Weapons/CWeaponDescription.hpp"
 
+#if defined(TARGET_PC)
+#include "Metaforce/DockPortals.hpp"
+#endif
+
 #define MATERIAL_FLAG(x) (1 << x)
 
 const CMaterialList CEnergyProjectile::kCheckMaterial(
@@ -258,10 +262,20 @@ void CEnergyProjectile::Render(const CStateManager& mgr) const {
 
 void CEnergyProjectile::Think(float dt, CStateManager& mgr) {
   CWeapon::Think(dt, mgr);
+#if defined(TARGET_PC)
+  // Near moved doors a shot's area is where it really is, kept up as it goes through doors,
+  // rather than wherever the player went.
+  if (GetCurrentAreaId() != mgr.GetWorld()->GetCurrentAreaId() && HasAttrib(kPA_ArmCannon) &&
+      !metaforce::portals::TracksProjectileAreas()) {
+#else
   if (GetCurrentAreaId() != mgr.GetWorld()->GetCurrentAreaId() && HasAttrib(kPA_ArmCannon)) {
+#endif
     mgr.SetActorAreaId(*this, mgr.GetWorld()->GetCurrentAreaId());
   }
   UpdateProjectileMovement(dt, mgr);
+#if defined(TARGET_PC)
+  metaforce::portals::UpdateProjectileCrossing(mgr, *this);
+#endif
   TUniqueId id = kInvalidUniqueId;
   const CRayCastResult result = DoCollisionCheck(id, mgr);
   if (result.IsValid()) {

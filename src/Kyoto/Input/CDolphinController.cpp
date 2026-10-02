@@ -7,6 +7,10 @@
 
 #include <string.h>
 
+#if TARGET_PC
+#include "Metaforce/Input.hpp"
+#endif
+
 CDolphinController::CDolphinController()
 : mValidControllers(PAD_CHAN0_BIT | PAD_CHAN1_BIT | PAD_CHAN2_BIT | PAD_CHAN3_BIT)
 , mInvalidControllers(0)
@@ -56,6 +60,9 @@ void CDolphinController::ReadDevices() {
   PADRead(status);
   if (status[0].err == PAD_ERR_NONE) {
     PADClamp(status);
+#if TARGET_PC
+    metaforce::input::ApplySmartLockOn(status);
+#endif
     memcpy(mStatus, status, sizeof(PADStatus) * 4);
   } else {
     for (int i = 0; i < 4; ++i) {

@@ -808,3 +808,30 @@ const CTransform4f& CParticleElectric::GetGlobalOrientation() const {
 const CVector3f& CParticleElectric::GetGlobalTranslation() const { return mGlobalTranslation; }
 const CTransform4f& CParticleElectric::GetOrientation() const { return mOrientation; }
 const CVector3f& CParticleElectric::GetTranslation() const { return mTranslation; }
+
+#if defined(TARGET_PC)
+void CParticleElectric::TransformThroughDock(const CTransform4f& xf, bool moveGlobal) {
+  // The bolts are rebuilt every update; only the systems they spawn keep particles.
+  if (moveGlobal) {
+    mGlobalTranslation = xf * mGlobalTranslation;
+  } else {
+    mTranslation = xf * mTranslation;
+  }
+  mTransformDirty = true;
+  for (int i = 0; i < mSwooshGenerators.size(); ++i) {
+    if (mSwooshGenerators[i].get() != nullptr) {
+      mSwooshGenerators[i]->TransformThroughDock(xf, moveGlobal);
+    }
+  }
+  for (int i = 0; i < mGpsmGenerators.size(); ++i) {
+    if (mGpsmGenerators[i].get() != nullptr) {
+      mGpsmGenerators[i]->TransformThroughDock(xf, moveGlobal);
+    }
+  }
+  for (int i = 0; i < mEpsmGenerators.size(); ++i) {
+    if (mEpsmGenerators[i].get() != nullptr) {
+      mEpsmGenerators[i]->TransformThroughDock(xf, moveGlobal);
+    }
+  }
+}
+#endif

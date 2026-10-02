@@ -1192,3 +1192,29 @@ const CVector3f& CParticleSwoosh::GetGlobalScale() const { return mGlobalScale; 
 const CTransform4f& CParticleSwoosh::GetGlobalOrientation() const { return mGlobalOrientation; }
 const CVector3f& CParticleSwoosh::GetGlobalTranslation() const { return mGlobalTranslation; }
 const CVector3f& CParticleSwoosh::GetTranslation() const { return mTranslation; }
+
+#if defined(TARGET_PC)
+void CParticleSwoosh::TransformThroughDock(const CTransform4f& xf, bool moveGlobal) {
+  // Swoosh points are in system space, which the renderer places with the global translation,
+  // orientation and scale.
+  CTransform4f local = CTransform4f::Identity();
+  if (moveGlobal) {
+    local = mInvScaleXf * mGlobalOrientation.GetQuickInverse() * xf.GetRotation() *
+            mGlobalOrientation * mScaleXf;
+    mGlobalTranslation = xf * mGlobalTranslation;
+  } else {
+    const CTransform4f system =
+        CTransform4f::Translate(mGlobalTranslation) * mGlobalOrientation * mScaleXf;
+    local = system.GetInverse() * xf * system;
+    mTranslation = xf * mTranslation;
+  }
+  const CTransform4f rotation = local.GetRotation();
+  for (AUTO(it, mSwooshes.begin()); it != mSwooshes.end(); ++it) {
+    it->mTranslation = local * it->mTranslation;
+    it->mOrientation = rotation * it->mOrientation;
+    it->mVelocity = local.Rotate(it->mVelocity);
+  }
+  mOrientation = xf.GetRotation() * mOrientation;
+  mInvOrientation = mOrientation.GetQuickInverse();
+}
+#endif

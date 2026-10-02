@@ -1,6 +1,7 @@
 #include "Metaforce/Runtime.hpp"
 #include "Metaforce/Audio.hpp"
 #include "Metaforce/Display.hpp"
+#include "Metaforce/GameOptionDefaults.hpp"
 
 #include "Kyoto/Basics/COsContext.hpp"
 #include "Kyoto/CResFactory.hpp"
@@ -8,6 +9,7 @@
 #include "Metaforce/CImGuiIOWin.hpp"
 #include "Metaforce/Limiter.hpp"
 #include "Metaforce/ResourceNameDatabase.hpp"
+#include "Metaforce/Randomizer/Randomizer.hpp"
 #include "Metaforce/UI/RuntimeConfig.hpp"
 #include "Metaforce/UI/UI.hpp"
 #include "MetroidPrime/CArchitectureMessage.hpp"
@@ -34,11 +36,13 @@
 #include <borealis/cli.hpp>
 #include <borealis/crash.hpp>
 #include <borealis/data.hpp>
+#include <borealis/file_select.hpp>
 #include <borealis/io.hpp>
 #include <borealis/log.hpp>
 #include <borealis/presentation.hpp>
 
 #include <SDL3/SDL_keycode.h>
+#include <SDL3/SDL_timer.h>
 #include <dolphin/pad.h>
 
 #if defined(_WIN32)
@@ -292,6 +296,35 @@ void ShowConsole() {
 }
 #endif
 
+// Shows a native file dialog and pumps events until the user picks a file.
+// Returns std::nullopt if the dialog was canceled or the window was closed.
+std::optional< std::string > PromptForDiscPath(SDL_Window* window) {
+  std::optional< borealis::file_select::Result > result;
+  borealis::file_select::open_file(
+      {
+          .parentWindow = window,
+          .filters = {{"GameCube disc images", "iso;gcm;rvz;wbfs;ciso;gcz;nfs"},
+                      {"All files", "*"}},
+      },
+      [&result](borealis::file_select::Result r) { result = std::move(r); });
+  while (!result) {
+    for (const AuroraEvent* event = aurora_update(); event && event->type != AURORA_NONE;
+         ++event) {
+      if (event->type == AURORA_EXIT) {
+        return std::nullopt;
+      }
+    }
+    SDL_Delay(16);
+  }
+  if (result->status != borealis::file_select::Status::Selected || result->locations.empty()) {
+    if (result->status != borealis::file_select::Status::Canceled) {
+      Log.error("Disc selection failed: {}", result->message);
+    }
+    return std::nullopt;
+  }
+  return result->locations.front();
+}
+
 void LoadDefaultKeyBindings() {
   u32 bindingCount = 0;
   if (PADGetKeyButtonBindings(PAD_CHAN0, &bindingCount) != nullptr) {
@@ -414,6 +447,8 @@ int Initialize(int argc, char** argv) {
   standardOptions.apply_to(logOptions);
   borealis::log::init(logOptions);
   borealis::crash::install();
+  randomizer::Initialize(paths.userPath);
+  options::Initialize(paths.userPath);
 
   if (dataStatus.code == borealis::data::ErrorCode::MigrationIncomplete) {
     Log.warn("Data migration from '{}' is incomplete; will retry next launch",
@@ -424,13 +459,6 @@ int Initialize(int argc, char** argv) {
   const auto cachePath = borealis::io::fs_path_to_string(paths.cachePath);
   Log.info("User directory: {}", userPath);
   Log.info("Cache directory: {}", cachePath);
-
-  const auto discPath = args["dvd"].as< std::string >();
-  if (!aurora_dvd_open(discPath.c_str())) {
-    Log.error("Failed to open disc image '{}'", discPath);
-    borealis::log::shutdown();
-    return 1;
-  }
 
   const auto windowSize = args["window-size"].as< std::vector< unsigned int > >();
   const AuroraConfig config{
@@ -448,6 +476,21 @@ int Initialize(int argc, char** argv) {
       .logLevel = borealis::log::to_aurora_level(logOptions.level),
   };
   const auto auroraInfo = aurora_initialize(argc, argv, &config);
+
+  // Open the disc after the window exists so we can fall back to a file dialog.
+  auto discPath = args["dvd"].as< std::string >();
+  while (!aurora_dvd_open(discPath.c_str())) {
+    Log.warn("Failed to open disc image '{}'", discPath);
+    auto selected = PromptForDiscPath(auroraInfo.window);
+    if (!selected) {
+      Log.error("No disc image selected");
+      aurora_shutdown();
+      borealis::log::shutdown();
+      return 1;
+    }
+    discPath = std::move(*selected);
+  }
+  Log.info("Opened disc image '{}'", discPath);
   ConfigureDisplay(auroraInfo.window, args.count("lock-aspect") != 0);
   ui::GetRuntimeConfig().video.lockAspectRatio.setValue(args.count("lock-aspect") != 0);
   borealis::presentation::set_preferred_frame_rate(60.f);
@@ -466,6 +509,7 @@ int Initialize(int argc, char** argv) {
 }
 
 void Shutdown() {
+  randomizer::Shutdown();
   startup.reset();
   if (sndIsInstalled()) {
     sndQuit();

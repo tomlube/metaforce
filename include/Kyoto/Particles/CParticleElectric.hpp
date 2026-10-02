@@ -47,6 +47,9 @@ public:
   CLight GetLight() const override;
   void DestroyParticles() override;
   uint Get4CharId() const override;
+#if defined(TARGET_PC)
+  void TransformThroughDock(const CTransform4f& xf, bool moveGlobal) override;
+#endif
 
   class CLineManager {
     friend class CParticleElectric;

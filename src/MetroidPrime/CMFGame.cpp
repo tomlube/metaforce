@@ -24,6 +24,11 @@
 #include "MetroidPrime/TCastTo.hpp"
 #include "rstl/math.hpp"
 
+#if defined(TARGET_PC)
+#include "Metaforce/Randomizer/Hooks.hpp"
+#include "Metaforce/Warp.hpp"
+#endif
+
 CMFGame::CMFGame(rstl::ncrc_ptr< CStateManager > stateManager,
                  rstl::ncrc_ptr< CInGameGuiManager > guiManager,
                  CArchitectureQueue& architectureQueue)
@@ -282,6 +287,10 @@ CMFGameLoader::CMFGameLoader()
 , mTransitionFinished(false) {
   gResFactoryUnknown = 1;
   CModel::DisableTextureTimeout();
+#if defined(TARGET_PC)
+  metaforce::randomizer::OnGameLoad();
+  metaforce::warp::ApplyPendingWarp();
+#endif
   if (gpMain->GetRestartMode() == CMain::kRM_Default ||
       gpMain->GetRestartMode() == CMain::kRM_StateSetter) {
     CAssetId worldId = gpGameState->CurrentWorldAssetId();

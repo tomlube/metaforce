@@ -44,6 +44,12 @@ public:
   virtual void DestroyParticles() = 0;
   virtual void AddModifier(CWarp*);
   virtual uint Get4CharId() const = 0;
+#if defined(TARGET_PC)
+  // Moves everything the system has already emitted by the rigid transform `xf`, for a projectile
+  // carried through a moved door. `moveGlobal` is set when the owner places the system with
+  // SetGlobalTranslation, so the global translation moves too and particles stay relative to it.
+  virtual void TransformThroughDock(const CTransform4f& xf, bool moveGlobal) {}
+#endif
 
   static FourCC ResType() { return 'PART'; }
 

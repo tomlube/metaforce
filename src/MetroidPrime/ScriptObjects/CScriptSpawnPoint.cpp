@@ -5,6 +5,10 @@
 #include "MetroidPrime/CWorld.hpp"
 #include "MetroidPrime/Player/CPlayer.hpp"
 
+#if defined(TARGET_PC)
+#include "Metaforce/Randomizer/Hooks.hpp"
+#endif
+
 CScriptSpawnPoint::CScriptSpawnPoint(
     TUniqueId uid, const rstl::string& name, const CEntityInfo& info, const CTransform4f& xf,
     const rstl::reserved_vector< int, int(CPlayerState::kIT_Max) >& itemCounts,
@@ -32,6 +36,9 @@ void CScriptSpawnPoint::AcceptScriptMsg(EScriptObjectMessage msg, TUniqueId objI
 
   switch (msg) {
   case kSM_Reset:
+#if defined(TARGET_PC)
+    if (metaforce::randomizer::AllowSpawnPointInventoryReset())
+#endif
     for (int i = 0; i < CPlayerState::kIT_Max; ++i) {
       const CPlayerState::EItemType e = static_cast< CPlayerState::EItemType >(i);
       stateMgr.PlayerState()->SetPowerUp(e, GetPowerup(e));

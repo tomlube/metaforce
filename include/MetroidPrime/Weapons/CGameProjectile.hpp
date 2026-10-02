@@ -98,6 +98,12 @@ public:
   CProjectileTouchResult CanCollideWith(CActor& act, CStateManager& mgr);
   CProjectileTouchResult CanCollideWithComplexCollision(CActor& act, CStateManager& mgr);
   CProjectileTouchResult CanCollideWithGameObject(CActor& act, CStateManager& mgr);
+#if defined(TARGET_PC)
+  // Carries the projectile through a moved door into `area`. `crossing` is where it met the
+  // doorway this frame, which becomes the start of this frame's collision check.
+  void TransformThroughDock(const CTransform4f& xf, const CVector3f& crossing, TAreaId area,
+                            CStateManager& mgr);
+#endif
 
   static const float kProjectileBoxAllowance;
 

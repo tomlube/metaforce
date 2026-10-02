@@ -102,6 +102,9 @@ public:
   virtual CLight GetLight() const override;
   virtual void DestroyParticles() override;
   virtual uint Get4CharId() const override;
+#if defined(TARGET_PC)
+  void TransformThroughDock(const CTransform4f& xf, bool moveGlobal) override;
+#endif
   int GetMaxParticles() const { return mMAXP; }
   void SetZTest(bool enabled) { mZTest = enabled; }
   rstl::vector< CParticle >& Particles() { return mParticles; }

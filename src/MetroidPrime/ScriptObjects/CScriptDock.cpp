@@ -6,6 +6,10 @@
 #include "MetroidPrime/Player/CPlayer.hpp"
 #include "MetroidPrime/ScriptObjects/CScriptDoor.hpp"
 
+#if defined(TARGET_PC)
+#include "Metaforce/DockPortals.hpp"
+#endif
+
 CScriptDock::CScriptDock(TUniqueId uid, const rstl::string& name, const CEntityInfo& info,
                          const CVector3f& position, const CVector3f& extent, int dock, TAreaId area,
                          bool active, int dockReferenceCount, bool loadConnected)
@@ -185,6 +189,9 @@ void CScriptDock::Think(float dt, CStateManager& mgr) {
           mgr.GetWorld()->GetArea(mgr.GetNextAreaId())->GetDock(mDock);
       const TAreaId nextArea = dock.GetConnectedAreaId(dock.GetReferenceCount());
       if (nextArea != kInvalidAreaId && mgr.GetWorld()->GetArea(nextArea)->IsPostConstructed()) {
+#if defined(TARGET_PC)
+        metaforce::portals::OnPlayerCrossedDock(mgr, mgr.GetNextAreaId(), mDock);
+#endif
         mgr.SetCurrentAreaId(nextArea);
         const int otherDock = dock.GetOtherDockNumber(dock.GetReferenceCount());
         CObjectList& objects = *mgr.GetWorld()->GetArea(nextArea)->ObjectList();

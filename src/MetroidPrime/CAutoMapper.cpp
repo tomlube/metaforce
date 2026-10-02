@@ -1936,6 +1936,11 @@ float CAutoMapper::GetDesiredMiniMapCameraDistance(const CStateManager& mgr) con
        ++i) {
     int aid = i == -1 ? mCurAreaId.value : area->IGetAttachedAreaId(i).value;
     const CMapArea* attMapa = mw->GetMapArea(aid);
+#if defined(TARGET_PC)
+    if (attMapa == nullptr) {
+      continue;
+    }
+#endif
     if (attMapa->GetIsVisibleToAutoMapper(mwInfo->IsWorldVisible(TAreaId(aid)),
                                           mwInfo->IsAreaVisible(TAreaId(aid)))) {
       aabb.Include(attMapa->GetBoundingBox().GetTransformedAABox(

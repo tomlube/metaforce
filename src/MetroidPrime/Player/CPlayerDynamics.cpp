@@ -969,6 +969,50 @@ void CPlayer::Teleport(const CTransform4f& transform, CStateManager& mgr,
   BreakOrbit(kOB_Respawn, mgr);
 }
 
+#if defined(TARGET_PC)
+void CPlayer::TransformThroughDock(const CTransform4f& xf, CStateManager& mgr) {
+  const CTransform4f rotation = xf.GetRotation();
+  const CVector3f velocity = rotation.Rotate(GetVelocityWR());
+  const CVector3f momentum = rotation.Rotate(GetMomentumWR());
+  // The step camera smooths the eye height in world space; move it with the player, or the
+  // height change between rooms reads as a step and the camera eases up or down.
+  mStepCameraZBias += (xf * GetTranslation()).GetZ() - GetTranslation().GetZ();
+  SetTransform(xf * GetTransform());
+  SetVelocityWR(velocity);
+  MomentumWR() = momentum;
+  mLookDir = rotation.Rotate(mLookDir);
+  mMoveDir = rotation.Rotate(mMoveDir);
+  mLeaveMorphDir = rotation.Rotate(mLeaveMorphDir);
+  mGunDir = rotation.Rotate(mGunDir);
+  mControlDir = rotation.Rotate(mControlDir);
+  mControlDirFlat = rotation.Rotate(mControlDirFlat);
+  mControlDirOverrideDir = rotation.Rotate(mControlDirOverrideDir);
+  mLastVelocity = rotation.Rotate(mLastVelocity);
+  mLastPosForDirCalc = xf * mLastPosForDirCalc;
+  mTargetAimPosition = xf * mTargetAimPosition;
+  mAssistedTargetAim = xf * mAssistedTargetAim;
+  mGunWorldXf = xf * mGunWorldXf;
+  SetLastNonCollidingState(GetMotionState());
+
+  // Strafing around a point (L held without a target) carries through with the player. A target
+  // or grapple point is left behind in the other room, so those break.
+  if (mOrbitState == kOS_OrbitPoint) {
+    mOrbitPoint = xf * mOrbitPoint;
+    mOrbitVector = rotation.Rotate(mOrbitVector);
+  } else {
+    BreakGrapple(kOB_Respawn, mgr);
+    BreakOrbit(kOB_Respawn, mgr);
+  }
+
+  mgr.GetCameraManager()->FirstPersonCamera()->TransformThroughDock(xf);
+  CBallCamera* ballCamera = mgr.GetCameraManager()->BallCamera();
+  ballCamera->TeleportCamera(xf * ballCamera->GetTransform(), mgr);
+  ballCamera->TeleportLookAtStuff(mgr);
+  // Not ForceGunOrientation: that holsters the gun, which would make it vanish and redraw.
+  mGun->TransformThroughDock(xf);
+}
+#endif
+
 bool CPlayer::CheckSubmerged() const {
   if (!IsInFluid()) {
     return false;

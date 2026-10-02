@@ -628,3 +628,30 @@ rstl::optional_object< CAABox > CProjectileWeapon::GetBounds() const {
 
   return rstl::optional_object_null();
 }
+
+#if defined(TARGET_PC)
+void CProjectileWeapon::TransformThroughDock(const CTransform4f& xf) {
+  // The position is mLocalToWorldXf * (local offsets) + mWorldOffset, and velocity and gravity are
+  // in the local frame, so turning the local frame and moving the world offset moves it all.
+  mLocalToWorldXf = xf.GetRotation() * mLocalToWorldXf;
+  mWorldOffset = xf * mWorldOffset;
+  if (mAPSMGen) {
+    mAPSMGen->TransformThroughDock(xf, mAP11);
+  }
+  if (mAPS2Gen) {
+    mAPS2Gen->TransformThroughDock(xf, mAP21);
+  }
+  if (x104_) {
+    x104_->TransformThroughDock(xf, false);
+  }
+  if (mSwoosh1) {
+    mSwoosh1->TransformThroughDock(xf, mAS11);
+  }
+  if (mSwoosh2) {
+    mSwoosh2->TransformThroughDock(xf, mAS12);
+  }
+  if (mSwoosh3) {
+    mSwoosh3->TransformThroughDock(xf, mAS13);
+  }
+}
+#endif

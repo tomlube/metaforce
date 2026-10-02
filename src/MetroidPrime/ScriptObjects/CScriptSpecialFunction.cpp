@@ -40,6 +40,10 @@
 #include "math.h"
 #include "rstl/optional_object.hpp"
 
+#if defined(TARGET_PC)
+#include "Metaforce/Randomizer/Hooks.hpp"
+#endif
+
 CScriptSpecialFunction::CScriptSpecialFunction(
     TUniqueId uid, const rstl::string& name, const CEntityInfo& info, const CTransform4f& xf,
     ESpecialFunction func, const rstl::string& lcName, float f1, float f2, float f3, float f4,
@@ -434,7 +438,11 @@ void CScriptSpecialFunction::AcceptScriptMsg(EScriptObjectMessage msg, TUniqueId
       switch (msg) {
       case kSM_Decrement:
       case kSM_Increment: {
-        if (mAreaSaveId != -1u && mLayerIdx != -1u) {
+        if (mAreaSaveId != -1u && mLayerIdx != -1u
+#if defined(TARGET_PC)
+            && metaforce::randomizer::AllowLayerChange(mAreaSaveId, mLayerIdx)
+#endif
+        ) {
           bool active = msg == kSM_Increment;
           TAreaId aId = mgr.GetWorld()->GetAreaIdForSaveId(mAreaSaveId);
           CScriptLayerManager* worldLayerState = nullptr;

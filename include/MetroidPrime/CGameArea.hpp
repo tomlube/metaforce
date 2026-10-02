@@ -72,6 +72,10 @@ public:
     const CVector3f& GetPoint(int idx) const { return mPlaneVertices[idx]; }
     bool IsReferenced() const;
     void SetReferenceCount(int v);
+#if defined(TARGET_PC)
+    // Points every reference of this dock at `dock` of `area` instead.
+    void Redirect(TAreaId area, int dock);
+#endif
   };
 
   virtual ~IGameArea();
@@ -176,7 +180,7 @@ public:
     rstl::vector< CWorldLight > mLightsB;
     rstl::vector< CLight > mGfxLightsB;
     rstl::single_ptr< CPVSAreaSet > mPvs;
-    rstl::reserved_vector< SPVSActorInfo, 1024 > mPvsEntityMap;
+    rstl::reserved_vector< SPVSActorInfo, kMaxObjects > mPvsEntityMap;
     int mPvsVersion;
     rstl::optional_object< TLockedToken< CPFArea > > mPathToken;
     CPFArea* mPathArea;
@@ -229,6 +233,10 @@ public:
 
   TAreaId GetId() const { return mSelfIdx; }
   int GetNumAttachedAreas() const { return mAttachedAreaIndices.size(); }
+#if defined(TARGET_PC)
+  // Lists `area` as a neighbor, for doors that now lead there.
+  void AddAttachedArea(TAreaId area);
+#endif
   TAreaId GetAttachedAreaId(int idx) const { return TAreaId(mAttachedAreaIndices[idx]); }
   int GetTokenCount() const { return mTokens.size(); }
   const rstl::pair< uint, uint >& GetAssetID(int idx) const { return mDeps2[idx]; }

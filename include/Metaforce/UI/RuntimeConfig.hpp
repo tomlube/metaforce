@@ -29,6 +29,11 @@ struct RuntimeConfig {
     RuntimeVar< bool > lockAspectRatio{false};
   } video;
 
+  struct Input {
+    RuntimeVar< bool > allowBackgroundInput{false};
+    RuntimeVar< bool > smartLockOn{true};
+  } input;
+
   struct Interface {
     RuntimeVar< int > scale{100};
     RuntimeVar< bool > sounds{true};

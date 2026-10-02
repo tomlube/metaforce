@@ -82,8 +82,8 @@ add_subdirectory(extern/musyx EXCLUDE_FROM_ALL)
 
 set(GAME_LIBS
       aurora::core aurora::gx aurora::vi aurora::pad aurora::mtx aurora::os aurora::dvd aurora::thp aurora::card aurora::main
-      borealis::cli borealis::crash borealis::data borealis::disc borealis::io borealis::log borealis::presentation borealis::ui
-      musyx ZLIB::ZLIB TracyClient fmt::fmt)
+      borealis::cli borealis::crash borealis::data borealis::disc borealis::file_select borealis::io borealis::log borealis::presentation borealis::ui
+      musyx ZLIB::ZLIB TracyClient fmt::fmt nlohmann_json::nlohmann_json)
 
 set(GAME_FILES
       src/WorldFormat/CPVSAreaSet.cpp
@@ -723,17 +723,34 @@ set(GAME_FILES
       src/Metaforce/Alloc.cpp
       src/Metaforce/Audio.cpp
       src/Metaforce/Display.cpp
+      src/Metaforce/Cheats.cpp
+      src/Metaforce/DockPortals.cpp
+      src/Metaforce/GameOptionDefaults.cpp
       src/Metaforce/CModelSectionReader.cpp
+      src/Metaforce/Input.cpp
       src/Metaforce/MapData.cpp
       src/Metaforce/PathData.cpp
       src/Metaforce/Runtime.cpp
       src/Metaforce/Stubs.cpp
+      src/Metaforce/Warp.cpp
       src/Metaforce/CImGuiIOWin.cpp
       src/Metaforce/ResourceNameDatabase.cpp
       src/Metaforce/ScriptObjectDebug.cpp
+      src/Metaforce/UI/CheatsWindow.cpp
+      src/Metaforce/UI/ControllerConfigWindow.cpp
       src/Metaforce/UI/MenuBar.cpp
+      src/Metaforce/UI/RandomizerWindow.cpp
       src/Metaforce/UI/SettingsWindow.cpp
       src/Metaforce/UI/UI.cpp
+      src/Metaforce/UI/WarpWindow.cpp
+      src/Metaforce/Randomizer/CrossWorldDoors.cpp
+      src/Metaforce/Randomizer/Generator.cpp
+      src/Metaforce/Randomizer/Logic.cpp
+      src/Metaforce/Randomizer/PickupTables.cpp
+      src/Metaforce/Randomizer/Randomizer.cpp
+      src/Metaforce/Randomizer/RoomRando.cpp
+      src/Metaforce/Randomizer/Seed.cpp
+      src/Metaforce/Randomizer/Settings.cpp
 )
 
 if (ANDROID)
