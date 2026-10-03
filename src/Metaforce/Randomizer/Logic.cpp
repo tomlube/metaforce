@@ -9,7 +9,7 @@ namespace metaforce::randomizer {
 namespace {
 using json = nlohmann::json;
 
-constexpr int kLogicVersion = 2;
+constexpr int kLogicVersion = 3;
 
 std::string NodeKey(std::string_view region, std::string_view area, std::string_view node) {
   std::string key;
@@ -148,26 +148,53 @@ bool Database::Load(const std::filesystem::path& path, std::string& error) {
 
     RequirementParser parser(*this, root.at("templates"));
 
-    struct DockWeakness {
-      Requirement open;
-      std::optional< Requirement > lock;
-    };
-    std::unordered_map< std::string, DockWeakness > weaknesses;
     for (const auto& [name, weakness] : root.at("dock_weaknesses").items()) {
-      DockWeakness w{.open = parser.Parse(weakness.at("open"))};
+      DockWeakness w{.name = name, .type = name.substr(0, name.find('/')),
+                     .open = parser.Parse(weakness.at("open"))};
       if (!weakness.at("lock").is_null()) {
         w.lock = parser.Parse(weakness.at("lock"));
+        const std::string& lockType = weakness.at("lock_type").get_ref< const std::string& >();
+        w.lockType = lockType == "front-blast-back-free-unlock" ? DockLockType::FrontBlastBackFreeUnlock
+                     : lockType == "front-blast-back-impossible" ? DockLockType::FrontBlastBackImpossible
+                     : lockType == "front-blast-back-if-matching"
+                         ? DockLockType::FrontBlastBackIfMatching
+                         : DockLockType::FrontBlastBackBlast;
       }
-      weaknesses.emplace(name, std::move(w));
+      if (!weakness.at("shield").is_null()) {
+        w.shield = weakness.at("shield");
+      }
+      if (!weakness.at("blast_shield").is_null()) {
+        w.blastShield = weakness.at("blast_shield");
+      }
+      w.unsafe = weakness.at("unsafe");
+      mWeaknesses.push_back(std::move(w));
+    }
+    const auto weaknessIndex = [this](const std::string& name) {
+      const int index = FindWeakness(name);
+      if (index < 0) {
+        throw std::runtime_error("unknown dock weakness " + name);
+      }
+      return index;
+    };
+    for (const auto& [type, distributor] : root.at("dock_types").items()) {
+      DockTypeDistributor d{.type = type, .label = distributor.at("label"),
+                            .unlocked = weaknessIndex(distributor.at("unlocked"))};
+      if (!distributor.at("locked").is_null()) {
+        d.locked = weaknessIndex(distributor.at("locked"));
+      }
+      for (const auto& name : distributor.at("change_from")) {
+        d.changeFrom.push_back(weaknessIndex(name));
+      }
+      for (const auto& name : distributor.at("change_to")) {
+        d.changeTo.push_back(weaknessIndex(name));
+      }
+      mDockTypes.push_back(std::move(d));
     }
 
     // First pass: create regions, areas and nodes so connections can be resolved by name.
     struct PendingDock {
       int node;
-      std::string weakness;
       std::string target;
-      std::optional< Requirement > open;
-      std::optional< Requirement > lock;
     };
     std::vector< PendingDock > docks;
     std::vector< std::pair< int, const json* > > pendingConnections;
@@ -177,6 +204,7 @@ bool Database::Load(const std::filesystem::path& path, std::string& error) {
       const int regionIndex = static_cast< int >(mRegions.size());
       for (const auto& areaJson : regionJson.at("areas")) {
         Area area{areaJson.at("name"), areaJson.at("asset_id").get< uint32_t >(), regionIndex};
+        area.saveStation = areaJson.at("save_station");
         const int areaIndex = static_cast< int >(mAreas.size());
         const std::string& defaultNode = areaJson.at("default_node").is_null()
                                              ? std::string{}
@@ -210,6 +238,17 @@ bool Database::Load(const std::filesystem::path& path, std::string& error) {
             DockInfo& info = node.dock.emplace();
             info.type = dock.at("type");
             info.weakness = dock.at("weakness");
+            info.weaknessIndex = weaknessIndex(info.weakness);
+            info.excludeFromDockRando = dock.at("exclude");
+            for (const auto& name : dock.at("incompatible")) {
+              info.incompatibleWeaknesses.push_back(weaknessIndex(name));
+            }
+            if (!dock.at("open").is_null()) {
+              info.openOverride = parser.Parse(dock.at("open"));
+            }
+            if (!dock.at("lock").is_null()) {
+              info.lockOverride = parser.Parse(dock.at("lock"));
+            }
             info.index = dock.at("index").is_null() ? -1 : dock.at("index").get< int >();
             info.nonstandard = dock.at("nonstandard");
             if (dock.contains("shape")) {
@@ -219,17 +258,9 @@ bool Database::Load(const std::filesystem::path& path, std::string& error) {
               info.height = shape.at(1);
               info.facing = shape.at(2);
             }
-            PendingDock pending{nodeIndex, dock.at("weakness"),
-                                NodeKey(target.at(0).get_ref< const std::string& >(),
-                                        target.at(1).get_ref< const std::string& >(),
-                                        target.at(2).get_ref< const std::string& >())};
-            if (!dock.at("open").is_null()) {
-              pending.open = parser.Parse(dock.at("open"));
-            }
-            if (!dock.at("lock").is_null()) {
-              pending.lock = parser.Parse(dock.at("lock"));
-            }
-            docks.push_back(std::move(pending));
+            docks.push_back({nodeIndex, NodeKey(target.at(0).get_ref< const std::string& >(),
+                                                target.at(1).get_ref< const std::string& >(),
+                                                target.at(2).get_ref< const std::string& >())});
           }
           if (node.name == defaultNode) {
             area.defaultNode = nodeIndex;
@@ -263,20 +294,19 @@ bool Database::Load(const std::filesystem::path& path, std::string& error) {
     }
     for (auto& dock : docks) {
       auto target = mNodeLookup.find(dock.target);
-      auto weakness = weaknesses.find(dock.weakness);
-      if (target == mNodeLookup.end() || weakness == weaknesses.end()) {
+      if (target == mNodeLookup.end()) {
         continue;
       }
       DockInfo& info = *mNodes[dock.node].dock;
       info.target = target->second;
-      Requirement open = dock.open ? std::move(*dock.open) : weakness->second.open;
-      std::optional< Requirement > lock = dock.lock ? std::move(dock.lock) : weakness->second.lock;
-      if (lock) {
+      const Requirement* lock = DockLockRequirement(dock.node, info.weaknessIndex);
+      if (lock != nullptr) {
         info.lock = *lock;
       }
       // Blast shields are treated as requiring their weapon from both sides, which is never
       // more permissive than the game.
-      Requirement req = lock ? MakeAnd(std::move(open), std::move(*lock)) : std::move(open);
+      Requirement open = DockOpenRequirement(dock.node, info.weaknessIndex);
+      Requirement req = lock != nullptr ? MakeAnd(std::move(open), *lock) : std::move(open);
       if (req.kind == Requirement::Kind::Or && req.children.empty()) {
         continue;
       }
@@ -303,6 +333,35 @@ bool Database::Load(const std::filesystem::path& path, std::string& error) {
 int Database::FindItem(std::string_view name) const { return IndexOf(mItems, name); }
 int Database::FindEvent(std::string_view name) const { return IndexOf(mEvents, name); }
 int Database::FindMisc(std::string_view name) const { return IndexOf(mMisc, name); }
+int Database::FindWeakness(std::string_view name) const { return IndexOf(mWeaknesses, name); }
+
+const DockTypeDistributor* Database::FindDockType(std::string_view type) const {
+  for (const DockTypeDistributor& d : mDockTypes) {
+    if (d.type == type) {
+      return &d;
+    }
+  }
+  return nullptr;
+}
+
+const Requirement& Database::DockOpenRequirement(int node, int weakness) const {
+  const DockInfo& dock = *mNodes[node].dock;
+  if (weakness == dock.weaknessIndex && dock.openOverride) {
+    return *dock.openOverride;
+  }
+  return mWeaknesses[weakness].open;
+}
+
+const Requirement* Database::DockLockRequirement(int node, int weakness) const {
+  const DockInfo& dock = *mNodes[node].dock;
+  if (!mWeaknesses[weakness].lock) {
+    return nullptr;
+  }
+  if (weakness == dock.weaknessIndex && dock.lockOverride) {
+    return &*dock.lockOverride;
+  }
+  return &*mWeaknesses[weakness].lock;
+}
 
 int Database::FindNode(std::string_view region, std::string_view area, std::string_view node) const {
   auto it = mNodeLookup.find(NodeKey(region, area, node));

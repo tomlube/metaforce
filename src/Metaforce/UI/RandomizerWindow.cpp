@@ -186,6 +186,10 @@ RandomizerWindow::RandomizerWindow() {
     reset_tab_elements();
     build_rooms_tab(content);
   });
+  add_tab("Door Locks", [this](Rml::Element* content) {
+    reset_tab_elements();
+    build_doors_tab(content);
+  });
 }
 
 void RandomizerWindow::reset_tab_elements() {
@@ -572,6 +576,127 @@ void RandomizerWindow::build_rooms_tab(Rml::Element* content) {
                         "always stay as they are.",
                         EscapeRml(name), doors));
   }
+}
+
+namespace {
+// "door/Missile Blast Shield (randomprime)" -> "Missile Blast Shield"
+std::string WeaknessLabel(const std::string& name) {
+  std::string label = name.substr(name.find('/') + 1);
+  constexpr std::string_view kSuffix = " (randomprime)";
+  if (label.ends_with(kSuffix)) {
+    label.erase(label.size() - kSuffix.size());
+  }
+  return label;
+}
+} // namespace
+
+void RandomizerWindow::build_doors_tab(Rml::Element* content) {
+  auto& leftPane = add_child< Pane >(content, Pane::Type::Controlled);
+  auto& rightPane = add_child< Pane >(content, Pane::Type::Uncontrolled);
+  auto& settings = rando::GetSettings();
+  const rando::Database& db = *rando::GetDatabase();
+  const rando::DockTypeDistributor* doors = db.FindDockType("door");
+  if (doors == nullptr) {
+    leftPane.add_rml("<icon class=\"warning\"/> The randomizer data has no door lock settings.");
+    return;
+  }
+  const auto disabled = [&settings] { return settings.doorLockMode == 0; };
+
+  leftPane.add_section(EscapeRml(doors->label));
+  std::vector< DropdownButton::Option > modes;
+  for (const char* name : rando::kDoorLockModeNames) {
+    modes.push_back({name});
+  }
+  AddDropdown(leftPane, rightPane, "Mode",
+              "Changes which weapon opens each door, after Randovania's door lock "
+              "randomizer.<br/><br/><b>Unmodified</b> keeps the original door locks.<br/><br/>"
+              "<b>Individually</b> randomizes each door individually. Items are placed as if "
+              "every door that can change were blue, then each door gets a lock you can open by "
+              "the time you first reach it. A door that can be walked around both ways may be "
+              "locked for good.<br/><br/>With door locks randomized, the game's own missile blast "
+              "shields are replaced with ones that open from behind: opening the door from the "
+              "other side removes them.",
+              std::move(modes), [&settings] { return settings.doorLockMode; },
+              [&settings](int v) {
+                const int mode =
+                    std::clamp(v, 0, static_cast< int >(std::size(rando::kDoorLockModeNames)) - 1);
+                // As Randovania does when the mode changes.
+                if (mode != 0 && settings.doorLockMode == 0) {
+                  settings.unlockSaveStationDoors = true;
+                  settings.blastShieldLockOn = true;
+                }
+                settings.doorLockMode = mode;
+              },
+              [&settings] { return settings.doorLockMode != 0; });
+
+  const auto addWeaknesses = [&](const char* section, const std::vector< int >& weaknesses,
+                                 std::set< std::string > rando::Settings::*set,
+                                 std::set< std::string > (*defaults)(), const char* help) {
+    leftPane.add_section(section);
+    for (const int weakness : weaknesses) {
+      const std::string name = db.Weaknesses()[weakness].name;
+      // The unlocked door is what any door falls back to, so it can always be changed into.
+      const bool always = set == &rando::Settings::doorLockChangeTo && weakness == doors->unlocked;
+      auto& button = leftPane.add_child< BoolButton >(BoolButton::Props{
+          .key = EscapeRml(WeaknessLabel(name)),
+          .getValue = [&settings, set, name,
+                       always] { return always || (settings.*set).contains(name); },
+          .setValue =
+              [&settings, set, name](bool v) {
+                if (v) {
+                  (settings.*set).insert(name);
+                } else {
+                  (settings.*set).erase(name);
+                }
+                Save();
+              },
+          .isDisabled = [disabled, always] { return always || disabled(); },
+          .isModified =
+              [&settings, set, defaults, name] {
+                return (settings.*set).contains(name) != defaults().contains(name);
+              },
+      });
+      SetHelp(leftPane, rightPane, button,
+              always ? Rml::String("Doors that can't get any other lock stay blue, so this is "
+                                   "always allowed.")
+                     : Rml::String(help));
+    }
+  };
+  addWeaknesses("Doors to Change", doors->changeFrom, &rando::Settings::doorLockChangeFrom,
+                &rando::Settings::DefaultDoorLockChangeFrom,
+                "Whether doors with this lock in the original game get a new lock.");
+  addWeaknesses("Change Into", doors->changeTo, &rando::Settings::doorLockChangeTo,
+                &rando::Settings::DefaultDoorLockChangeTo,
+                "Whether doors can get this lock. Locks that need items are only given to doors "
+                "you can reach with those items.");
+
+  leftPane.add_section("Changes");
+  auto& saves = leftPane.add_child< BoolButton >(BoolButton::Props{
+      .key = "Unlock Save Station Doors",
+      .getValue = [&settings] { return settings.unlockSaveStationDoors; },
+      .setValue =
+          [&settings](bool v) {
+            settings.unlockSaveStationDoors = v;
+            Save();
+          },
+      .isDisabled = disabled,
+      .isModified = [&settings] { return !settings.unlockSaveStationDoors; },
+  });
+  SetHelp(leftPane, rightPane, saves,
+          "Sets all Save Station doors to blue regardless of door randomization mode.");
+  auto& lockOn = leftPane.add_child< BoolButton >(BoolButton::Props{
+      .key = "Enable Blast Shield Lock-On",
+      .getValue = [&settings] { return settings.blastShieldLockOn; },
+      .setValue =
+          [&settings](bool v) {
+            settings.blastShieldLockOn = v;
+            Save();
+          },
+      .isDisabled = disabled,
+      .isModified = [&settings] { return !settings.blastShieldLockOn; },
+  });
+  SetHelp(leftPane, rightPane, lockOn,
+          "Makes all Blast Shield locks targetable in Combat Visor.");
 }
 
 void RandomizerWindow::build_logic_tab(Rml::Element* content) {

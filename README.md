@@ -139,7 +139,7 @@ This fork builds on the work of:
 
 * [Metaforce](https://github.com/AxioDL/metaforce) and the [Metroid Prime decompilation](https://github.com/PrimeDecomp/prime)
 * [Randovania](https://github.com/randovania/randovania): Metroid Prime logic database, pickup database and Starter Preset used by the randomizer (GPL-3.0)
-* [randomprime](https://github.com/randovania/randomprime): pickup location tables and pickup models (MIT)
+* [randomprime](https://github.com/randovania/randomprime): pickup location tables, pickup models, door tables and door textures (MIT)
 * [Dusklight](https://github.com/TwilitRealm/dusklight) (CC0 1.0)
 * [Dusklight Randomizer](https://github.com/TwilitRealm/dusklight-randomizer) (CC0 1.0)
 

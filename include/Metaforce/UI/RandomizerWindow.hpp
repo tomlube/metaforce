@@ -27,6 +27,7 @@ private:
   void build_logic_tab(Rml::Element* content);
   void build_pool_tab(Rml::Element* content);
   void build_rooms_tab(Rml::Element* content);
+  void build_doors_tab(Rml::Element* content);
   void build_start_regions(const randomizer::Database& db);
   std::vector< borealis::ui::List::Item > start_list_items() const;
   void on_start_pressed(uint64_t key);

@@ -106,6 +106,11 @@ json Settings::ToJson() const {
       {"room_rando", roomRando},
       {"room_rando_excluded_regions", roomRandoExcludedRegions},
       {"room_rando_morph_ball_doors", roomRandoMorphBallDoors},
+      {"door_lock_mode", doorLockMode},
+      {"door_lock_change_from", doorLockChangeFrom},
+      {"door_lock_change_to", doorLockChangeTo},
+      {"unlock_save_station_doors", unlockSaveStationDoors},
+      {"blast_shield_lock_on", blastShieldLockOn},
   };
   json& standardJson = root["standard"] = json::object();
   for (const auto& [name, state] : standard) {
@@ -135,6 +140,12 @@ bool Settings::FromJson(const json& root) {
     result.roomRandoExcludedRegions =
         root.value("room_rando_excluded_regions", DefaultExcludedRegions());
     result.roomRandoMorphBallDoors = root.value("room_rando_morph_ball_doors", true);
+    result.doorLockMode = std::clamp(root.value("door_lock_mode", 0), 0,
+                                     static_cast< int >(std::size(kDoorLockModeNames)) - 1);
+    result.doorLockChangeFrom = root.value("door_lock_change_from", DefaultDoorLockChangeFrom());
+    result.doorLockChangeTo = root.value("door_lock_change_to", DefaultDoorLockChangeTo());
+    result.unlockSaveStationDoors = root.value("unlock_save_station_doors", true);
+    result.blastShieldLockOn = root.value("blast_shield_lock_on", true);
     for (const auto& [name, state] : root.at("standard").items()) {
       result.standard[name] = {state.value("shuffled", 0), state.value("starting", 0),
                                state.value("ammo", 0)};

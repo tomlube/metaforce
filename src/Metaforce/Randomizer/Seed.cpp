@@ -2,6 +2,7 @@
 
 #include <fmt/format.h>
 
+#include <algorithm>
 #include <fstream>
 #include <tuple>
 
@@ -81,12 +82,26 @@ json Seed::ToJson() const {
                            {"target_morph_ball", dock.targetMorphBall}});
     }
   }
+  if (doorLocksRandomized) {
+    json& locks = root["door_locks"] = {{"lock_on", blastShieldLockOn}, {"doors", json::array()}};
+    for (const auto& door : doorLocks) {
+      locks["doors"].push_back({{"world", door.world},
+                                {"area", door.area},
+                                {"dock", door.dock},
+                                {"shield", door.shield},
+                                {"blast_shield", door.blastShield},
+                                {"weakness", door.weakness},
+                                {"name", door.name},
+                                {"changed", door.changed}});
+    }
+  }
   return root;
 }
 
 std::optional< Seed > Seed::FromJson(const json& root, std::string& error) {
   try {
-    if (root.at("format_version").get< int >() != kFormatVersion) {
+    const int version = root.at("format_version").get< int >();
+    if (version < kOldestFormatVersion || version > kFormatVersion) {
       error = "Seed was made by an incompatible version of Metaforce";
       return std::nullopt;
     }
@@ -123,6 +138,17 @@ std::optional< Seed > Seed::FromJson(const json& root, std::string& error) {
                               dock.at("target_area"), dock.at("target_dock"),
                               dock.value("name", ""), dock.value("target_name", ""),
                               dock.value("target_morph_ball", false)});
+      }
+    }
+    if (root.contains("door_locks")) {
+      const json& locks = root.at("door_locks");
+      seed.doorLocksRandomized = true;
+      seed.blastShieldLockOn = locks.value("lock_on", false);
+      for (const auto& door : locks.at("doors")) {
+        seed.doorLocks.push_back({door.at("world"), door.at("area"), door.at("dock"),
+                                  door.at("shield"), door.value("blast_shield", ""),
+                                  door.value("weakness", ""), door.value("name", ""),
+                                  door.value("changed", true)});
       }
     }
     return seed;
@@ -185,6 +211,15 @@ std::string Seed::SpoilerText(const std::vector< std::string >& locationNames) c
       // Each pair is listed in both directions; print it once.
       if (std::tie(dock.area, dock.dock) < std::tie(dock.targetArea, dock.targetDock)) {
         out += fmt::format("  {} <-> {}\n", dock.name, dock.targetName);
+      }
+    }
+  }
+  if (std::any_of(doorLocks.begin(), doorLocks.end(),
+                  [](const DoorLock& door) { return door.changed; })) {
+    out += "\nDoor locks:\n";
+    for (const auto& door : doorLocks) {
+      if (door.changed) {
+        out += fmt::format("  {}: {}\n", door.name, door.weakness);
       }
     }
   }

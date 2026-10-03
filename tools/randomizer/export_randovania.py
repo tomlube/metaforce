@@ -15,12 +15,15 @@ Usage:
 
 --disc points at the files directory of an extracted game disc (for example from
 `nodtool extract`). It provides the size and facing of every dock, which the room randomizer
-needs to pair doors that line up. Without it the room randomizer is unavailable.
+needs to pair doors that line up. Without it, the dock shapes of the previous logic.json are
+kept, and if there are none the room randomizer is unavailable.
 
 Outputs:
   res/randomizer/prime1/logic.json     compact logic database
   res/randomizer/prime1/pickups.json   item pool definitions and preset defaults
+  res/randomizer/prime1/door_assets/   randomprime's door and blast shield textures
   src/Metaforce/Randomizer/PickupTables.cpp
+  src/Metaforce/Randomizer/DoorTables.cpp
 """
 
 import argparse
@@ -35,8 +38,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 OUT_RES = ROOT / "res" / "randomizer" / "prime1"
 OUT_TABLES = ROOT / "src" / "Metaforce" / "Randomizer" / "PickupTables.cpp"
+OUT_DOOR_TABLES = ROOT / "src" / "Metaforce" / "Randomizer" / "DoorTables.cpp"
+OUT_ASSETS = OUT_RES / "door_assets"
 
-LOGIC_VERSION = 2
+LOGIC_VERSION = 3
 
 # Pak order as listed in randomprime's ROOM_INFO.
 RANDOMPRIME_PAKS = [
@@ -120,13 +125,32 @@ def export_logic(prime1: Path, dock_shapes: dict | None) -> dict:
     }
 
     dock_weaknesses = {}
+    dock_types = {}
     for type_name, dock_type in header["dock_type_database"]["types"].items():
         for weakness_name, weakness in dock_type["items"].items():
             lock = weakness.get("lock")
+            extra = weakness.get("extra", {})
             dock_weaknesses[f"{type_name}/{weakness_name}"] = {
                 "open": compact_requirement(weakness["requirement"]),
                 "lock": compact_requirement(lock["requirement"]) if lock else None,
                 "lock_type": lock["lock_type"] if lock else None,
+                # What randomprime turns the door into: its shield color and blast shield.
+                "shield": extra.get("shieldType"),
+                "blast_shield": extra.get("blastShieldType"),
+                "unsafe": bool(weakness.get("unsafe_target_in_distributor_wtw", False)),
+            }
+        # Randovania's door lock randomizer settings for the type.
+        distributor = dock_type.get("weakness_distributor")
+        if distributor is not None:
+            def names(weaknesses: list[str]) -> list[str]:
+                return [f"{type_name}/{name}" for name in weaknesses]
+
+            dock_types[type_name] = {
+                "unlocked": f"{type_name}/{distributor['unlocked']}",
+                "locked": f"{type_name}/{distributor['locked']}" if distributor["locked"] else None,
+                "change_from": names(distributor["change_from"]),
+                "change_to": names(distributor["change_to"]),
+                "label": distributor["ui_label"],
             }
 
     regions = []
@@ -171,6 +195,10 @@ def export_logic(prime1: Path, dock_shapes: dict | None) -> dict:
                         "lock": compact_requirement(node["override_default_lock_requirement"])
                         if node["override_default_lock_requirement"]
                         else None,
+                        "exclude": bool(node.get("exclude_from_dock_rando", False)),
+                        "incompatible": [
+                            f"{node['dock_type']}/{name}" for name in node.get("incompatible_dock_weaknesses", [])
+                        ],
                     }
                     shape = (dock_shapes or {}).get((area["extra"].get("asset_id", 0), dock_index))
                     if shape is not None:
@@ -181,6 +209,7 @@ def export_logic(prime1: Path, dock_shapes: dict | None) -> dict:
                     "name": area_name,
                     "asset_id": area["extra"].get("asset_id", 0),
                     "default_node": area["default_node"],
+                    "save_station": bool(area["extra"].get("unlocked_save_station", False)),
                     "nodes": nodes,
                 }
             )
@@ -193,6 +222,7 @@ def export_logic(prime1: Path, dock_shapes: dict | None) -> dict:
         "damage_reductions": damage_reductions,
         "templates": templates,
         "dock_weaknesses": dock_weaknesses,
+        "dock_types": dock_types,
         "starting_location": [start["region"], start["area"], start["node"]],
         "victory": compact_requirement(header["victory_condition"]),
         "regions": regions,
@@ -287,6 +317,21 @@ def read_dock_shapes(files: Path) -> dict:
 
                     shapes[(mrea, dock_index)] = [round(math.dist(a, b), 2), round(math.dist(b, c), 2), facing]
     return shapes
+
+
+def read_existing_dock_shapes(logic_path: Path) -> dict | None:
+    """Dock shapes from a previous export, for re-exporting without the game disc."""
+    if not logic_path.is_file():
+        return None
+    logic = json.loads(logic_path.read_text())
+    shapes = {}
+    for region in logic["regions"]:
+        for area in region["areas"]:
+            for node in area["nodes"]:
+                dock = node.get("dock")
+                if dock is not None and "shape" in dock:
+                    shapes[(area["asset_id"], dock["index"])] = dock["shape"]
+    return shapes or None
 
 
 # ---------------------------------------------------------------------------
@@ -413,6 +458,129 @@ def parse_room_pickups(meta: str) -> dict[int, list[dict]]:
     return rooms
 
 
+DOOR_RE = re.compile(
+    r"DoorLocation \{\s*"
+    r"door_location: (None|Some\(ScriptObjectLocation \{ layer: \d+, instance_id: (\d+) \}\)),\s*"
+    r"door_rotation: (None|Some\(\[([^\]]+)\]\)),\s*"
+    r"door_force_locations: &\[([^\]]*)\],\s*"
+    r"door_shield_locations: &\[([^\]]*)\],\s*"
+    r"dock_number: (\d+),\s*"
+    r"dock_position: \[([^\]]+)\],",
+    re.S,
+)
+INSTANCE_RE = re.compile(r"instance_id: (\d+)")
+
+# Docks whose door is in a floor or ceiling, which randomprime gives the vertical shield models.
+# From randomprime's patches.rs.
+VERTICAL_DOCKS = {
+    (0x11BD63B7, 0),  # Tower Chamber
+    (0x0D72F1F7, 1),  # Tower of Light
+    (0xFB54A0CB, 4),  # Hall of the Elders
+    (0xE1981EFC, 0),  # Elder Chamber
+    (0x43E4CC25, 1),  # Research Lab Hydra
+    (0x37BBB33C, 1),  # Observatory Access
+    (0xD8E905DD, 1),  # Research Core Access
+    (0x21B4BFF6, 1),  # Research Lab Aether
+    (0x3F375ECC, 2),  # Omega Research
+    (0xF517A1EA, 1),  # Dynamo Access
+    (0x8A97BB54, 1),  # Elite Research
+    (0xA20201D4, 0),  # Security Access B
+    (0xA20201D4, 1),  # Security Access B
+    (0x956F1552, 1),  # Mine Security Station
+    (0xC50AF17A, 2),  # Elite Control
+    (0x90709AAC, 1),
+}
+
+# Shield actors randomprime uses in place of the ones in its table. From randomprime's patches.rs.
+SHIELD_OVERRIDES = {
+    (0xD5CDB809, 4): [0x20004],  # Main Plaza
+}
+
+
+def parse_room_doors(meta: str) -> dict[int, list[dict]]:
+    rooms = {}
+    room_starts = [(m.start(), int(m.group(1), 16)) for m in ROOM_RE.finditer(meta)]
+    room_starts.append((len(meta), None))
+    for (start, mrea), (end, _) in zip(room_starts, room_starts[1:]):
+        doors = []
+        for m in DOOR_RE.finditer(meta[start:end]):
+            if m.group(2) is None:
+                continue  # dock without a door, like an open passage
+            dock = int(m.group(7))
+            shields = [int(v) for v in INSTANCE_RE.findall(m.group(6))]
+            doors.append(
+                {
+                    "dock": dock,
+                    "door": int(m.group(2)) & 0x3FFFFFF,
+                    "rotation": [float(v) for v in m.group(4).split(",")] if m.group(4) else [0.0, 0.0, 0.0],
+                    "forces": [int(v) & 0x3FFFFFF for v in INSTANCE_RE.findall(m.group(5))],
+                    "shields": [v & 0x3FFFFFF for v in SHIELD_OVERRIDES.get((mrea, dock), shields)],
+                    "vertical": (mrea, dock) in VERTICAL_DOCKS,
+                }
+            )
+        if doors:
+            rooms[mrea] = doors
+    return rooms
+
+
+# randomprime's textures for the door colors and blast shields Randovania can ask for. The custom
+# models that use them are built from the game's own models at runtime (see CustomAssets.cpp).
+DOOR_ASSET_PREFIXES = [
+    "charge_beam",
+    "flamethrower",
+    "ice_spreader",
+    "morph_ball_bombs",
+    "power_bomb",
+    "super_missile",
+    "wavebuster",
+]
+DOOR_ASSET_SUFFIXES = ["animated_glow", "glow_border", "glow_trim", "holorim", "metal_body", "metal_trim"]
+DOOR_ASSET_EXTRA = ["power_beam_holorim.TXTR", "orange.txtr", "pink.txtr", "yellow.txtr", "testbnew.txtr"]
+
+
+def copy_door_assets(randomprime: Path, out: Path) -> None:
+    files = [f"{p}_{s}.TXTR" for p in DOOR_ASSET_PREFIXES for s in DOOR_ASSET_SUFFIXES] + DOOR_ASSET_EXTRA
+    out.mkdir(parents=True, exist_ok=True)
+    for name in files:
+        (out / name.lower()).write_bytes((randomprime / "extra_assets" / name).read_bytes())
+
+
+def write_door_tables(randomprime: Path, out: Path) -> None:
+    meta_in = (randomprime / "src" / "pickup_meta.rs.in").read_text()
+    rooms = parse_room_doors(meta_in)
+
+    def ids(values: list[int]) -> str:
+        values = (values + [0, 0])[:2]
+        return "{" + ", ".join(f"0x{v:08X}" for v in values) + "}"
+
+    lines = [
+        "// Generated by tools/randomizer/export_randovania.py. Do not edit.",
+        "// Door script objects are derived from randomprime",
+        "// (https://github.com/randovania/randomprime, MIT License).",
+        "",
+        '#include "Metaforce/Randomizer/DoorTables.hpp"',
+        "",
+        "namespace metaforce::randomizer {",
+        "",
+        "const DoorLocationInfo kDoorLocations[] = {",
+    ]
+    for mrea in sorted(rooms):
+        for door in sorted(rooms[mrea], key=lambda d: d["dock"]):
+            rot = ", ".join(f"{v}f" for v in door["rotation"])
+            lines.append(
+                f"    {{0x{mrea:08X}, {door['dock']}, 0x{door['door']:08X}, {ids(door['forces'])}, "
+                f"{ids(door['shields'])}, {{{rot}}}, {'true' if door['vertical'] else 'false'}}},"
+            )
+    lines += [
+        "};",
+        "const int kDoorLocationCount = sizeof(kDoorLocations) / sizeof(kDoorLocations[0]);",
+        "",
+        "} // namespace metaforce::randomizer",
+        "",
+    ]
+    out.write_text("\n".join(lines))
+
+
 MODEL_RE = re.compile(r"PickupModel::(\w+) => &\[([^\]]*)\]", re.S)
 MODEL_NAME_RE = re.compile(r'PickupModel::(\w+) => "([^"]+)"')
 
@@ -534,9 +702,14 @@ def main() -> int:
         print(f"error: {prime1} not found", file=sys.stderr)
         return 1
 
-    dock_shapes = read_dock_shapes(args.disc) if args.disc else None
-    if dock_shapes is None:
-        print("warning: no --disc given, the room randomizer will be unavailable", file=sys.stderr)
+    if args.disc:
+        dock_shapes = read_dock_shapes(args.disc)
+    else:
+        dock_shapes = read_existing_dock_shapes(OUT_RES / "logic.json")
+        if dock_shapes is None:
+            print("warning: no --disc given, the room randomizer will be unavailable", file=sys.stderr)
+        else:
+            print("No --disc given, keeping the dock shapes of the previous export")
     logic = export_logic(prime1, dock_shapes)
     pickups = export_pickups(prime1, logic)
 
@@ -544,7 +717,10 @@ def main() -> int:
     (OUT_RES / "logic.json").write_text(json.dumps(logic, separators=(",", ":")))
     (OUT_RES / "pickups.json").write_text(json.dumps(pickups, indent=1))
     write_tables(logic, args.randomprime, OUT_TABLES)
-    print(f"Wrote {OUT_RES / 'logic.json'}, {OUT_RES / 'pickups.json'} and {OUT_TABLES}")
+    write_door_tables(args.randomprime, OUT_DOOR_TABLES)
+    copy_door_assets(args.randomprime, OUT_ASSETS)
+    print(f"Wrote {OUT_RES / 'logic.json'}, {OUT_RES / 'pickups.json'}, {OUT_TABLES}, {OUT_DOOR_TABLES} "
+          f"and {OUT_ASSETS}")
     return 0
 
 

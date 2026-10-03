@@ -85,6 +85,24 @@ struct Settings {
   }
   std::set< std::string > roomRandoExcludedRegions = DefaultExcludedRegions();
   bool roomRandoMorphBallDoors = true;
+  // Door lock randomizer, after Randovania's "Door Locks" settings. Weaknesses are logic
+  // database names ("door/Ice Door"). The defaults are Randovania's Starter Preset.
+  int doorLockMode = 0; // index into kDoorLockModeNames
+  static std::set< std::string > DefaultDoorLockChangeFrom() {
+    return {"door/Ice Door", "door/Missile Blast Shield (randomprime)", "door/Normal Door",
+            "door/Plasma Door", "door/Wave Door"};
+  }
+  static std::set< std::string > DefaultDoorLockChangeTo() {
+    return {"door/Ice Door",      "door/Missile Blast Shield (randomprime)",
+            "door/Normal Door",   "door/Permanently Locked",
+            "door/Plasma Door",   "door/Wave Door"};
+  }
+  std::set< std::string > doorLockChangeFrom = DefaultDoorLockChangeFrom();
+  std::set< std::string > doorLockChangeTo = DefaultDoorLockChangeTo();
+  // Only with door locks randomized: save rooms always have blue doors, and blast shields can
+  // be locked on to.
+  bool unlockSaveStationDoors = true;
+  bool blastShieldLockOn = true;
   std::map< std::string, StandardPickupState > standard;
   std::map< std::string, AmmoPickupState > ammo;
 
@@ -103,6 +121,13 @@ inline constexpr const char* kDamageStrictnessNames[] = {"Strict", "Medium", "Le
 inline constexpr const char* kRoomRandoNames[] = {"Off", "Two-way", "Two-way, mixed regions"};
 // kRoomRandoNames index of the mode that pairs doors across regions.
 inline constexpr int kRoomRandoMixed = 2;
+inline constexpr const char* kDoorLockModeNames[] = {"Unmodified", "Individually"};
+inline constexpr const char* kDoorLockModeDescriptions[] = {
+    "Original door locks",
+    "Randomizes each door individually",
+};
+// kDoorLockModeNames index of the mode that gives each door its own lock after items are placed.
+inline constexpr int kDoorLockIndividual = 1;
 inline constexpr const char* kTrickLevelNames[] = {
     "Disabled", "Beginner", "Intermediate", "Advanced", "Expert", "Ludicrous",
 };

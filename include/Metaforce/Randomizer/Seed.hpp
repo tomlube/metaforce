@@ -46,8 +46,25 @@ struct DockConnection {
   bool targetMorphBall = false;
 };
 
+// A door the door lock randomizer restyles, as randomprime's door types: dock `dock` of room
+// `area` (an MREA asset id) in world `world`.
+struct DoorLock {
+  uint32_t world = 0;
+  uint32_t area = 0;
+  int dock = -1;
+  std::string shield;      // shield color, as Randovania's "shieldType" ("Blue", "Ice Beam", ...)
+  std::string blastShield; // blast shield in front of it ("Missile", ...), empty for none
+  std::string weakness;    // Randovania's name for the lock, for the spoiler log
+  std::string name;        // "Region / Area / Node"
+  // False for doors that keep their lock and are only restyled, like the game's own missile
+  // blast shields becoming randomprime's.
+  bool changed = true;
+};
+
 struct Seed {
-  static constexpr int kFormatVersion = 1;
+  // Version 2 added door locks. Version 1 seeds still load, with the game's own doors.
+  static constexpr int kFormatVersion = 2;
+  static constexpr int kOldestFormatVersion = 1;
 
   std::string hash;
   std::string seedString;
@@ -70,6 +87,12 @@ struct Seed {
 
   // Doors the room randomizer moved, one entry per direction. Empty when rooms aren't shuffled.
   std::vector< DockConnection > docks;
+
+  // Door lock randomizer. With it on, the game's own missile blast shields are replaced (by the
+  // entries in doorLocks), and every door listed is restyled.
+  bool doorLocksRandomized = false;
+  bool blastShieldLockOn = false;
+  std::vector< DoorLock > doorLocks;
 
   // Playthrough spheres, each a list of "Location: Item" lines.
   std::vector< std::vector< std::string > > spheres;

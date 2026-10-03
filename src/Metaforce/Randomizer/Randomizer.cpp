@@ -423,7 +423,11 @@ std::vector< SeedSummary > ListSeeds() {
       continue;
     }
     const json root = json::parse(in, nullptr, false);
-    if (root.is_discarded() || root.value("format_version", 0) != Seed::kFormatVersion) {
+    if (root.is_discarded()) {
+      continue;
+    }
+    const int version = root.value("format_version", 0);
+    if (version < Seed::kOldestFormatVersion || version > Seed::kFormatVersion) {
       continue;
     }
     SeedSummary summary{root.value("hash", ""), root.value("seed", ""), {},

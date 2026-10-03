@@ -75,11 +75,51 @@ struct Connection {
   Requirement requirement;
 };
 
+// How a dock's lock (blast shield) can be gotten past from behind, as Randovania models it.
+enum class DockLockType : uint8_t {
+  None,
+  FrontBlastBackBlast,      // the weapon is needed from both sides (the game's own blast shields)
+  FrontBlastBackFreeUnlock, // opening the door from behind removes it (randomprime's)
+  FrontBlastBackImpossible,
+  FrontBlastBackIfMatching,
+};
+
+// One of Randovania's dock weaknesses: what a door looks like and what opening it takes.
+struct DockWeakness {
+  std::string name; // "type/weakness"
+  std::string type; // dock type
+  Requirement open;
+  std::optional< Requirement > lock;
+  DockLockType lockType = DockLockType::None;
+  // What randomprime turns the door into, empty when the weakness doesn't say: the shield color
+  // (Randovania's "shieldType") and the blast shield in front of it ("blastShieldType").
+  std::string shield;
+  std::string blastShield;
+  bool unsafe = false; // not safe as a target when converting every door of a weakness
+};
+
+// Randovania's door lock randomizer settings for a dock type. Weaknesses are indices into
+// Database::Weaknesses().
+struct DockTypeDistributor {
+  std::string type;
+  std::string label;
+  int unlocked = -1;
+  int locked = -1;
+  std::vector< int > changeFrom;
+  std::vector< int > changeTo;
+};
+
 // A dock node's door: where it leads in the vanilla game and what the room randomizer needs to
 // pair it with another door.
 struct DockInfo {
   std::string type;     // Randovania dock type: "door", "morph_ball", "teleporter", ...
   std::string weakness; // "type/weakness"
+  int weaknessIndex = -1; // into Database::Weaknesses()
+  // The node's own requirements, standing in for its default weakness's.
+  std::optional< Requirement > openOverride;
+  std::optional< Requirement > lockOverride;
+  bool excludeFromDockRando = false;
+  std::vector< int > incompatibleWeaknesses;
   int index = -1;       // dock number in the area, as in the MLVL and the Dock script objects
   bool nonstandard = false;
   // Dock plane size and facing (0 wall, 1 ceiling, -1 floor, 2 tilted wall), when the database
@@ -112,6 +152,7 @@ struct Area {
   uint32_t assetId = 0;
   int region = -1;
   int defaultNode = -1;
+  bool saveStation = false; // a save room whose doors "Unlock Save Station Doors" turns blue
   std::vector< int > nodes;
 };
 
@@ -146,9 +187,20 @@ public:
   // Node index for each pickup index, -1 for unknown indices.
   const std::vector< int >& PickupNodes() const { return mPickupNodes; }
 
+  const std::vector< DockWeakness >& Weaknesses() const { return mWeaknesses; }
+  const std::vector< DockTypeDistributor >& DockTypes() const { return mDockTypes; }
+  // The door lock randomizer settings of a dock type, or null if it has none.
+  const DockTypeDistributor* FindDockType(std::string_view type) const;
+  // What opening dock node `node` takes with weakness `weakness`, and what getting past its lock
+  // takes (null if the weakness has none). A node's own overrides only apply to its default
+  // weakness.
+  const Requirement& DockOpenRequirement(int node, int weakness) const;
+  const Requirement* DockLockRequirement(int node, int weakness) const;
+
   int FindItem(std::string_view name) const;
   int FindEvent(std::string_view name) const;
   int FindMisc(std::string_view name) const;
+  int FindWeakness(std::string_view name) const;
   int FindNode(std::string_view region, std::string_view area, std::string_view node) const;
   // Whether every dock node has a shape, which the room randomizer needs.
   bool HasDockShapes() const { return mHasDockShapes; }
@@ -162,6 +214,8 @@ private:
   std::vector< NamedResource > mDamage;
   std::vector< NamedResource > mMisc;
   std::vector< std::vector< DamageReduction > > mDamageReductions;
+  std::vector< DockWeakness > mWeaknesses;
+  std::vector< DockTypeDistributor > mDockTypes;
   std::vector< Region > mRegions;
   std::vector< Area > mAreas;
   std::vector< Node > mNodes;

@@ -144,9 +144,13 @@ public:
         // A new start each attempt, so starts that can't reach enough locations get rerolled.
         mStartNode = mRandomStarts[rng() % mRandomStarts.size()];
       }
-      if (roomRando && !ShuffleRoomsWithOpenStart(rng)) {
-        ++mRoomFailures;
-        continue;
+      if (roomRando) {
+        if (!ShuffleRoomsWithOpenStart(rng)) {
+          ++mRoomFailures;
+          continue;
+        }
+      } else {
+        AssignPreFillWeaknesses();
       }
       std::vector< int > placement;
       if (!Fill(rng, placement)) {
@@ -158,12 +162,23 @@ public:
         ++mPlaythroughFailures;
         continue;
       }
+      if (!mDocksToAssign.empty()) {
+        Report(static_cast< float >(attempt) / maxAttempts,
+               fmt::format("Attempt {}: placing door locks", attempt + 1));
+        DistributeDoorLocks(rng, placement);
+        spheres.clear();
+        if (!Playthrough(placement, &spheres)) {
+          ++mDoorLockFailures;
+          continue;
+        }
+      }
       return MakeSeed(placement, std::move(spheres), seedHash);
     }
     error = fmt::format("Could not generate a beatable seed after {} attempts ({} fill, {} "
-                        "playthrough, {} room layout failures). Try more lenient settings, a "
-                        "higher trick level, or more items in the pool.",
-                        maxAttempts, mFillFailures, mPlaythroughFailures, mRoomFailures);
+                        "playthrough, {} room layout, {} door lock failures). Try more lenient "
+                        "settings, a higher trick level, or more items in the pool.",
+                        maxAttempts, mFillFailures, mPlaythroughFailures, mRoomFailures,
+                        mDoorLockFailures);
     return std::nullopt;
   }
 
@@ -207,6 +222,9 @@ private:
               "randomizer";
       return false;
     }
+    if (mSettings.doorLockMode == kDoorLockIndividual && !SetupDoorLocks(error)) {
+      return false;
+    }
 
     for (int index = 0; index < static_cast< int >(mDb.PickupNodes().size()); ++index) {
       if (mDb.PickupNodes()[index] >= 0) {
@@ -242,6 +260,237 @@ private:
     } else if (req.resourceType == ResourceType::Event && (req.negate || !negatedOnly)) {
       out[req.resource] = 1;
     }
+  }
+
+  // Door lock randomizer, after Randovania's dock weakness distributor in "Individually" mode:
+  // every door whose lock may change is unlocked for the fill, then given a lock afterwards that
+  // the player can open by the time they first reach it.
+  bool SetupDoorLocks(std::string& error) {
+    mDoorTypes = mDb.FindDockType("door");
+    if (mDoorTypes == nullptr) {
+      error = "The logic database has no door lock randomizer settings";
+      return false;
+    }
+    mChangeFrom.assign(mDb.Weaknesses().size(), 0);
+    mChangeTo.assign(mDb.Weaknesses().size(), 0);
+    for (const int weakness : mDoorTypes->changeFrom) {
+      mChangeFrom[weakness] = mSettings.doorLockChangeFrom.contains(mDb.Weaknesses()[weakness].name);
+    }
+    for (const int weakness : mDoorTypes->changeTo) {
+      mChangeTo[weakness] = mSettings.doorLockChangeTo.contains(mDb.Weaknesses()[weakness].name);
+    }
+    // The unlocked door is what a door falls back to when nothing else fits.
+    mChangeTo[mDoorTypes->unlocked] = 1;
+    mForcedUnlocked = mSettings.unlockSaveStationDoors ? mDb.FindWeakness("door/Normal Door (Forced)")
+                                                        : -1;
+    // Randovania's logic has a few tricks that only work with the game's own door locks.
+    if (const int misc = mDb.FindMisc("dock_rando"); misc >= 0) {
+      mCtx.misc[misc] = 1;
+    }
+    if (const int misc = mDb.FindMisc("blue_save_doors"); misc >= 0 && mForcedUnlocked >= 0) {
+      mCtx.misc[misc] = 1;
+    }
+    mDoorLocks = true;
+    return true;
+  }
+
+  // Where a dock node leads with the current room layout.
+  int DockTarget(int node) const {
+    return mDockRemap.empty() || mDockRemap[node] < 0 ? mDb.GetNode(node).dock->target
+                                                      : mDockRemap[node];
+  }
+
+  // Gives every dock its weakness for the fill: save room doors become blue, and the doors whose
+  // lock is randomized are unlocked. Depends on the room layout.
+  void AssignPreFillWeaknesses() {
+    mDocksToAssign.clear();
+    if (!mDoorLocks) {
+      return;
+    }
+    const int nodeCount = static_cast< int >(mDb.Nodes().size());
+    mWeakness.assign(nodeCount, -1);
+    for (int node = 0; node < nodeCount; ++node) {
+      if (const Node& n = mDb.GetNode(node); n.dock) {
+        mWeakness[node] = n.dock->weaknessIndex;
+      }
+    }
+    // Randovania leaves doors it already changed alone.
+    std::vector< uint8_t > forced(nodeCount, 0);
+    if (mForcedUnlocked >= 0) {
+      for (int node = 0; node < nodeCount; ++node) {
+        const Node& n = mDb.GetNode(node);
+        if (!n.dock || n.dock->type != "door" || !mDb.Areas()[n.area].saveStation) {
+          continue;
+        }
+        for (const int side : {node, DockTarget(node)}) {
+          if (side >= 0 && mDb.GetNode(side).dock && mDb.GetNode(side).dock->type == "door") {
+            mWeakness[side] = mForcedUnlocked;
+            forced[side] = 1;
+          }
+        }
+      }
+    }
+    std::vector< uint8_t > listed(nodeCount, 0);
+    for (int node = 0; node < nodeCount; ++node) {
+      const Node& n = mDb.GetNode(node);
+      if (!n.dock || forced[node] || n.dock->type != "door" || n.dock->excludeFromDockRando ||
+          !mChangeFrom[n.dock->weaknessIndex]) {
+        continue;
+      }
+      mWeakness[node] = mDoorTypes->unlocked;
+      // One entry per pair of doors; the lock goes on both when both may change.
+      const int target = DockTarget(node);
+      if (target < 0 || !listed[target]) {
+        mDocksToAssign.push_back(node);
+      }
+      listed[node] = 1;
+    }
+  }
+
+  // Crossing dock `node` into `target` with the door locks of this seed. Like Randovania, the
+  // lock on the far side of the door only matters for kinds of lock that can't be removed from
+  // behind.
+  bool CanCrossDock(int node, int target, const ResourceState& state) const {
+    if (!mBlocked.empty() && mBlocked[node]) {
+      return false;
+    }
+    const int weakness = mWeakness[node];
+    if (!IsSatisfied(mDb.DockOpenRequirement(node, weakness), mCtx, state)) {
+      return false;
+    }
+    if (const Requirement* lock = mDb.DockLockRequirement(node, weakness);
+        lock != nullptr && !IsSatisfied(*lock, mCtx, state)) {
+      return false;
+    }
+    if (!mDb.GetNode(target).dock) {
+      return true;
+    }
+    const int back = mWeakness[target];
+    switch (mDb.Weaknesses()[back].lockType) {
+    case DockLockType::FrontBlastBackImpossible:
+      return false;
+    case DockLockType::FrontBlastBackIfMatching:
+      return back == weakness;
+    case DockLockType::FrontBlastBackBlast:
+      return back == weakness || IsSatisfied(*mDb.DockLockRequirement(target, back), mCtx, state);
+    default:
+      return true;
+    }
+  }
+
+  // What the player has when they first reach either side of a door, with the door itself
+  // impassable: pickups are collected sphere by sphere until one side comes into reach. Returns
+  // the side reached as well, or nothing if neither side ever is.
+  std::optional< std::pair< ResourceState, int > > ReachDoor(const std::vector< int >& placement,
+                                                             int dock, int target) {
+    mBlocked[dock] = 1;
+    mBlocked[target] = 1;
+    std::optional< std::pair< ResourceState, int > > result;
+    ResourceState state = *mStartState;
+    std::vector< uint8_t > collected(placement.size(), 0);
+    const std::vector< int > noPickups(placement.size(), -1);
+    for (;;) {
+      std::vector< uint8_t > none(placement.size(), 0);
+      const Reach reach = Explore(state, noPickups, none);
+      if (reach.forward[dock] || reach.forward[target]) {
+        result.emplace(state, reach.forward[dock] ? dock : target);
+        break;
+      }
+      std::vector< int > found;
+      for (const int index : mLocations) {
+        const int node = mDb.PickupNodes()[index];
+        if (collected[index] || !reach.forward[node]) {
+          continue;
+        }
+        ResourceState after = state;
+        Apply(after, mPool[placement[index]]);
+        if (IsCollectable(reach, node, after, false)) {
+          found.push_back(index);
+        }
+      }
+      if (found.empty()) {
+        break;
+      }
+      for (const int index : found) {
+        collected[index] = 1;
+        Apply(state, mPool[placement[index]]);
+      }
+    }
+    mBlocked[dock] = 0;
+    mBlocked[target] = 0;
+    return result;
+  }
+
+  // The weaknesses door `dock` (the side the player reached first) and `target` could get, with
+  // their weights, after Randovania's _determine_valid_weaknesses: always the unlocked door; a
+  // permanently locked door, twice as likely, when the player can get around it both ways; and
+  // any other allowed lock the player can already open.
+  std::vector< std::pair< int, double > > ValidWeaknesses(int dock, int target,
+                                                          const ResourceState& state) {
+    std::vector< std::pair< int, double > > weighted{{mDoorTypes->unlocked, 1.0}};
+    std::vector< uint8_t > excluded(mDb.Weaknesses().size(), 0);
+    for (const int side : {dock, target}) {
+      for (const int weakness : mDb.GetNode(side).dock->incompatibleWeaknesses) {
+        excluded[weakness] = 1;
+      }
+    }
+    excluded[mDoorTypes->unlocked] = 1;
+    const int locked = mDoorTypes->locked;
+    if (locked >= 0 && mChangeTo[locked] && !excluded[locked]) {
+      mBlocked[dock] = 1;
+      mBlocked[target] = 1;
+      if (Forward(dock, state)[target] && Forward(target, state)[dock]) {
+        weighted.emplace_back(locked, 2.0);
+      }
+      mBlocked[dock] = 0;
+      mBlocked[target] = 0;
+    }
+    if (locked >= 0) {
+      excluded[locked] = 1;
+    }
+    for (const int weakness : mDoorTypes->changeTo) {
+      const DockWeakness& w = mDb.Weaknesses()[weakness];
+      if (mChangeTo[weakness] && !excluded[weakness] && IsSatisfied(w.open, mCtx, state) &&
+          (!w.lock || IsSatisfied(*w.lock, mCtx, state))) {
+        weighted.emplace_back(weakness, 1.0);
+      }
+    }
+    return weighted;
+  }
+
+  // Gives each door listed by AssignPreFillWeaknesses its lock, in random order, each one picked
+  // with the locks placed before it in effect.
+  void DistributeDoorLocks(std::mt19937_64& rng, const std::vector< int >& placement) {
+    mBlocked.assign(mDb.Nodes().size(), 0);
+    std::vector< int > order = mDocksToAssign;
+    std::shuffle(order.begin(), order.end(), rng);
+    const bool onlyUnlocked = std::count(mChangeTo.begin(), mChangeTo.end(), 1) == 1;
+    for (const int node : order) {
+      const int target = DockTarget(node);
+      std::vector< std::pair< int, double > > weighted{{mDoorTypes->unlocked, 1.0}};
+      if (!onlyUnlocked && target >= 0) {
+        if (auto reached = ReachDoor(placement, node, target)) {
+          const bool fromTarget = reached->second == target;
+          weighted = ValidWeaknesses(fromTarget ? target : node, fromTarget ? node : target,
+                                     reached->first);
+        }
+      }
+      std::vector< double > weights;
+      for (const auto& [weakness, weight] : weighted) {
+        weights.push_back(weight);
+      }
+      std::discrete_distribution< size_t > pick(weights.begin(), weights.end());
+      const int weakness = weighted[pick(rng)].first;
+      mWeakness[node] = weakness;
+      if (target >= 0) {
+        const DockInfo& other = *mDb.GetNode(target).dock;
+        if (other.type == "door" && !other.excludeFromDockRando &&
+            mChangeFrom[other.weaknessIndex] && mWeakness[target] != mForcedUnlocked) {
+          mWeakness[target] = weakness;
+        }
+      }
+    }
+    mBlocked.clear();
   }
 
   int FindStartNode(const std::string& key) const {
@@ -386,6 +635,8 @@ private:
       if (mDockRemap.empty()) {
         return false;
       }
+      // Save room doors and the doors whose locks get randomized depend on where doors lead.
+      AssignPreFillWeaknesses();
       const int starts = mRandomStarts.empty() ? 1 : kStartsPerLayout;
       for (int i = 0; i < starts; ++i) {
         if (!mRandomStarts.empty()) {
@@ -450,7 +701,11 @@ private:
   }
 
   bool CanTraverse(int node, int connection, int target, const ResourceState& state) const {
-    const Connection& conn = mDb.GetNode(node).connections[connection];
+    const Node& from = mDb.GetNode(node);
+    if (!mWeakness.empty() && from.dock && from.dock->connection == connection) {
+      return CanCrossDock(node, target, state);
+    }
+    const Connection& conn = from.connections[connection];
     return IsSatisfied(conn.requirement, mCtx, state) &&
            (target == conn.target || IsSatisfied(mDb.GetNode(target).dock->lock, mCtx, state));
   }
@@ -735,6 +990,29 @@ private:
                             mDb.Areas()[to.area].assetId, to.dock->index, mDb.NodeName(node),
                             mDb.NodeName(target), to.dock->type == "morph_ball"});
     }
+    if (mDoorLocks) {
+      seed.doorLocksRandomized = true;
+      seed.blastShieldLockOn = mSettings.blastShieldLockOn;
+      for (int node = 0; node < static_cast< int >(mWeakness.size()); ++node) {
+        const Node& n = mDb.GetNode(node);
+        if (!n.dock || n.dock->type != "door") {
+          continue;
+        }
+        const DockWeakness& weakness = mDb.Weaknesses()[mWeakness[node]];
+        const DockWeakness& original = mDb.Weaknesses()[n.dock->weaknessIndex];
+        const bool changed =
+            weakness.shield != original.shield || weakness.blastShield != original.blastShield;
+        // Every blast shield is listed: the game's own missile blast shields are replaced too.
+        if ((!changed && weakness.blastShield.empty()) || weakness.shield.empty()) {
+          continue;
+        }
+        const Area& area = mDb.Areas()[n.area];
+        seed.doorLocks.push_back({mDb.Regions()[area.region].assetId, area.assetId, n.dock->index,
+                                  weakness.shield, weakness.blastShield,
+                                  weakness.name.substr(weakness.name.find('/') + 1),
+                                  mDb.NodeName(node), changed});
+      }
+    }
     if (mTrimmed > 0) {
       seed.warnings.push_back(fmt::format(
           "Removed {} {}(s) to fit the pool into the available locations", mTrimmed, kFillerPickup));
@@ -761,6 +1039,17 @@ private:
   int mStartNode = -1;
   std::vector< int > mRandomStarts;
   std::vector< int > mDockRemap; // per node, where its dock leads; empty when rooms aren't shuffled
+  // Door lock randomizer, see SetupDoorLocks.
+  bool mDoorLocks = false;
+  const DockTypeDistributor* mDoorTypes = nullptr;
+  std::vector< uint8_t > mChangeFrom; // per weakness, from the settings
+  std::vector< uint8_t > mChangeTo;
+  int mForcedUnlocked = -1; // the weakness save room doors get, -1 to leave them alone
+  // Per node, its dock's weakness in this seed. Empty when door locks aren't randomized, and
+  // docks are crossed by their connections in the database.
+  std::vector< int > mWeakness;
+  std::vector< int > mDocksToAssign; // doors to give a lock after the fill, one per pair
+  std::vector< uint8_t > mBlocked;   // per node, docks closed while their lock is picked
   std::vector< std::vector< std::pair< int, int > > > mIncoming;
   std::vector< uint8_t > mNegatedEvents; // per event, whether a requirement needs it not to happen
   std::vector< uint8_t > mVictoryEvents; // per event, whether the victory condition needs it
@@ -776,6 +1065,7 @@ private:
   int mFillFailures = 0;
   int mPlaythroughFailures = 0;
   int mRoomFailures = 0;
+  int mDoorLockFailures = 0;
 };
 
 } // namespace
