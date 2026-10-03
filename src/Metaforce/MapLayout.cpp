@@ -48,6 +48,10 @@ constexpr float kPi = 3.14159265f;
 
 // Set METAFORCE_NO_MAP_LAYOUT=1 to keep the vanilla map with the room randomizer.
 const bool sDisabled = std::getenv("METAFORCE_NO_MAP_LAYOUT") != nullptr;
+// Every room is joined to the layout by one of its doors, even where that lays it over other rooms:
+// the door with the least overlap is taken. Set METAFORCE_MAP_LAYOUT_ISLANDS=1 to put rooms that
+// don't fit by any door into free space instead, as islands.
+const bool sForceDoors = std::getenv("METAFORCE_MAP_LAYOUT_ISLANDS") == nullptr;
 // Set METAFORCE_MAP_LAYOUT_LOG=1 to log how every room and moved door was laid out.
 const bool sLogEnabled = std::getenv("METAFORCE_MAP_LAYOUT_LOG") != nullptr;
 
@@ -303,6 +307,7 @@ struct Result {
   std::vector< int > steps;        // by group: when it was placed
   std::vector< int > parents;      // by group: the group it's joined to by a door, or -1
   int islands = 0;
+  int forcedOverlaps = 0; // cells of rooms joined by doors with no free space
   float area = 0.f;
 };
 
@@ -351,12 +356,15 @@ public:
       const int root = attempt < 2 ? mRooms[0].group : static_cast< int >(rng() % mGroups.size());
       mBigFirst = attempt % 2 == 1;
       Result result = Attempt(root, rng);
-      if (attempt == 0 || result.islands < best.islands ||
-          (result.islands == best.islands && result.area < best.area)) {
+      const bool better = result.islands != best.islands ? result.islands < best.islands
+                          : result.forcedOverlaps != best.forcedOverlaps
+                              ? result.forcedOverlaps < best.forcedOverlaps
+                              : result.area < best.area;
+      if (attempt == 0 || better) {
         best = std::move(result);
         bestAttempt = attempt;
       }
-      if (best.islands == 0) {
+      if (best.islands == 0 && best.forcedOverlaps == 0) {
         break;
       }
     }
@@ -387,11 +395,12 @@ public:
     const auto ms = std::chrono::duration_cast< std::chrono::milliseconds >(
                         std::chrono::steady_clock::now() - start)
                         .count();
-    Log.info("Laid out {} rooms in {} groups: {} of {} moved doors meet, {} islands ({} before "
-             "repair; layout {} of {}, {}), in {} ms",
-             mRooms.size(), mGroups.size(), met / 2, moved / 2, best.islands, greedyIslands,
-             bestAttempt + 1, kAttempts, bestAttempt % 2 == 1 ? "biggest first" : "breadth first",
-             ms);
+    Log.info(
+        "Laid out {} rooms in {} groups: {} of {} moved doors meet, {} islands ({} before "
+        "repair), {} cells overlapping where doors were forced (layout {} of {}, {}), in {} ms",
+        mRooms.size(), mGroups.size(), met / 2, moved / 2, best.islands, greedyIslands,
+        best.forcedOverlaps, bestAttempt + 1, kAttempts,
+        bestAttempt % 2 == 1 ? "biggest first" : "breadth first", ms);
     FindOverlaps(best, overlaps);
     if (sLogEnabled) {
       LogLayout(best);
@@ -1402,6 +1411,23 @@ private:
         Place(c.group, c.pose, c.depth, result, depths, frontier, rng);
         result.kinds[c.group] = kPL_Door;
         result.parents[c.group] = c.parent;
+      } else if (first >= 0 && sForceDoors) {
+        // Every door into what's placed is blocked: take the one with the least overlap.
+        int chosen = -1;
+        int chosenHits = INT_MAX;
+        for (int i = 0; i < static_cast< int >(frontier.size()); ++i) {
+          const Candidate& c = frontier[i];
+          const int hits = CountOverlaps(c.group, c.pose, 0, chosenHits, &c.door);
+          if (hits < chosenHits || (hits == chosenHits && Before(c, frontier[chosen]))) {
+            chosen = i;
+            chosenHits = hits;
+          }
+        }
+        const Candidate c = frontier[chosen];
+        Place(c.group, c.pose, c.depth, result, depths, frontier, rng);
+        result.kinds[c.group] = kPL_Door;
+        result.parents[c.group] = c.parent;
+        result.forcedOverlaps += chosenHits;
       } else if (first >= 0) {
         // Every door into what's placed is blocked. Of all those doors, the island goes by the
         // one with free space nearest it, so at least that door's two sides end up close.
