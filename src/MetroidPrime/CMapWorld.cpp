@@ -22,14 +22,25 @@
 
 #if defined(TARGET_PC)
 #include "Metaforce/MergedWorld.hpp"
+#include "Metaforce/Randomizer/Hooks.hpp"
 
 // The map objects of a room appended from another region keep that region's editor ids, but its
 // doors and their visited state go by ids in the loaded world. The map area itself is left alone:
-// the same MAPA can be loaded again as a host map.
-static CMappableObject GetLoadedMappableObject(const CMapArea& area, int areaIdx, int idx) {
+// the same MAPA can be loaded again as a host map. Also marks the doors the randomizer saw the
+// player go through.
+static CMappableObject GetLoadedMappableObject(const CMapWorld::CMapWorldDrawParms& parms,
+                                               const CMapArea& area, int areaIdx, int idx) {
   CMappableObject object = area.GetMappableObject(idx);
-  object.SetObjId(
-      TEditorId(metaforce::merged::ToLoadedEditorId(TAreaId(areaIdx), object.GetObjId().value)));
+  const uint sourceId = object.GetObjId().value;
+  CAssetId world = parms.GetWorld().IGetWorldAssetId();
+  // Only the loaded world is merged; a world viewed from the map universe is not.
+  const CWorld* loaded = parms.GetStateManager().GetWorld();
+  if (loaded != nullptr && loaded->GetWorldAssetId() == world) {
+    object.SetObjId(TEditorId(metaforce::merged::ToLoadedEditorId(TAreaId(areaIdx), sourceId)));
+    world = metaforce::merged::GetSourceWorld(world, TAreaId(areaIdx));
+  }
+  object.SetTraversed(CMappableObject::IsDoorType(object.GetType()) &&
+                      metaforce::randomizer::IsDoorTraversed(world, sourceId));
   return object;
 }
 #endif
@@ -437,7 +448,7 @@ void CMapWorld::DrawAreas(const CMapWorldDrawParms& parms, int selArea,
     int surfaceBase = 0;
     for (j = 0; j < area->GetNumMappableObjects(); surfaceBase += 6, ++j) {
 #if defined(TARGET_PC)
-      const CMappableObject object = GetLoadedMappableObject(*area, areaIdx, j);
+      const CMappableObject object = GetLoadedMappableObject(parms, *area, areaIdx, j);
 #else
       const CMappableObject& object = area->GetMappableObject(j);
 #endif
@@ -511,7 +522,7 @@ void CMapWorld::DrawAreas(const CMapWorldDrawParms& parms, int selArea,
       } else if (type == CMapObjectSortInfo::kOC_Door || type == CMapObjectSortInfo::kOC_Object) {
         EDrawMode mode = type == CMapObjectSortInfo::kOC_Door ? kDM_Door : kDM_Object;
 #if defined(TARGET_PC)
-        const CMappableObject object = GetLoadedMappableObject(*area, areaIdx, idx);
+        const CMappableObject object = GetLoadedMappableObject(parms, *area, areaIdx, idx);
 #else
         const CMappableObject& object = area->GetMappableObject(idx);
 #endif
@@ -530,7 +541,7 @@ void CMapWorld::DrawAreas(const CMapWorldDrawParms& parms, int selArea,
         lastMode = mode;
       } else if (type == CMapObjectSortInfo::kOC_DoorSurface) {
 #if defined(TARGET_PC)
-        const CMappableObject object = GetLoadedMappableObject(*area, areaIdx, idx / 6);
+        const CMappableObject object = GetLoadedMappableObject(parms, *area, areaIdx, idx / 6);
 #else
         const CMappableObject& object = area->GetMappableObject(idx / 6);
 #endif

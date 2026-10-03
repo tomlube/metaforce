@@ -1,5 +1,7 @@
 #include "Metaforce/DockPortals.hpp"
 
+#include "Metaforce/Randomizer/Hooks.hpp"
+
 #include "Kyoto/Graphics/CGraphics.hpp"
 #include "Kyoto/Math/CFrustumPlanes.hpp"
 #include "Kyoto/Math/CRelAngle.hpp"
@@ -183,6 +185,7 @@ bool GetDockTransform(const CWorld& world, TAreaId area, int dock, CTransform4f&
 }
 
 void OnPlayerCrossedDock(CStateManager& mgr, TAreaId area, int dock) {
+  randomizer::OnPlayerCrossedDock(mgr, area.Value(), dock);
   CTransform4f xf = CTransform4f::Identity();
   if (!GetDockTransform(*mgr.GetWorld(), area, dock, xf)) {
     return;

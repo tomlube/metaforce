@@ -33,6 +33,7 @@
 #include <mutex>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace metaforce::randomizer {
 namespace {
@@ -117,6 +118,10 @@ struct Session {
   std::vector< std::wstring > memoText;
   int templeLocation = -1;
   bool pendingNewGame = false;
+  // Doors gone through in the game being played, by ObjectKey, and the save slot they belong to.
+  // Written to TraversedFile() as they're added.
+  std::unordered_set< uint64_t > traversedDoors;
+  std::string traversedSlot;
 
   std::thread worker;
   std::atomic< bool > cancel{false};
@@ -132,6 +137,7 @@ Session& S() {
 fs::path SessionFile() { return S().root / "session.json"; }
 fs::path SettingsFile() { return S().root / "settings.json"; }
 fs::path SeedsRoot() { return S().root / "seeds"; }
+fs::path TraversedFile(const std::string& slot) { return S().root / "traversed" / (slot + ".json"); }
 
 void SaveSession() {
   const json root{
@@ -176,6 +182,48 @@ void Deactivate() {
   s.memoText.clear();
   s.templeLocation = -1;
   s.pendingNewGame = false;
+  s.traversedDoors.clear();
+  s.traversedSlot.clear();
+}
+
+void SaveTraversed() {
+  const auto& s = S();
+  if (!s.active || s.traversedSlot.empty()) {
+    return;
+  }
+  const json root{{"seed", s.active->hash},
+                  {"doors", std::vector< uint64_t >(s.traversedDoors.begin(),
+                                                    s.traversedDoors.end())}};
+  std::error_code ec;
+  fs::create_directories(TraversedFile(s.traversedSlot).parent_path(), ec);
+  std::ofstream file(TraversedFile(s.traversedSlot), std::ios::binary | std::ios::trunc);
+  file << root.dump();
+}
+
+// Starts tracking doors for `slot`: from its file, or from nothing for a new game.
+void LoadTraversed(const std::string& slot, bool newGame) {
+  auto& s = S();
+  s.traversedDoors.clear();
+  s.traversedSlot = slot;
+  if (newGame) {
+    std::error_code ec;
+    fs::remove(TraversedFile(slot), ec);
+    return;
+  }
+  std::ifstream file(TraversedFile(slot), std::ios::binary);
+  if (!file || !s.active) {
+    return;
+  }
+  const json root = json::parse(file, nullptr, false);
+  if (root.is_discarded() || root.value("seed", "") != s.active->hash ||
+      !root.contains("doors") || !root["doors"].is_array()) {
+    return;
+  }
+  for (const json& door : root["doors"]) {
+    if (door.is_number_unsigned()) {
+      s.traversedDoors.insert(door.get< uint64_t >());
+    }
+  }
 }
 
 void Activate(Seed seed) {
@@ -524,6 +572,19 @@ bool OnQuickReloadInput(bool r, bool z, bool dpadLeft) {
   return true;
 }
 
+void MarkDoorTraversed(unsigned int world, unsigned int editorId) {
+  auto& s = S();
+  if (s.active && !s.traversedSlot.empty() &&
+      s.traversedDoors.insert(ObjectKey(world, editorId)).second) {
+    SaveTraversed();
+  }
+}
+
+bool IsDoorTraversed(unsigned int worldId, unsigned int editorId) {
+  const auto& s = S();
+  return s.active && s.traversedDoors.count(ObjectKey(worldId, editorId)) != 0;
+}
+
 bool QuickReloadHoldsMap(bool r) { return r && S().active && S().quickReload; }
 
 void OnGameLoad() {
@@ -542,6 +603,7 @@ void OnGameLoad() {
     }
     s.slots[key] = s.active->hash;
     SaveSession();
+    LoadTraversed(key, true);
     gpGameState->SetCurrentWorldId(s.active->startWorld);
     CWorldState& world = gpGameState->StateForWorld(s.active->startWorld);
     world.SetDesiredAreaAssetId(s.active->startArea);
@@ -557,8 +619,8 @@ void OnGameLoad() {
   const auto it = s.slots.find(key);
   if (it == s.slots.end()) {
     Deactivate();
-  } else {
-    ActivateByHash(it->second);
+  } else if (ActivateByHash(it->second)) {
+    LoadTraversed(key, false);
   }
 }
 

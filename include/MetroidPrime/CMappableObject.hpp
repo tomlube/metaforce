@@ -63,6 +63,7 @@ public:
   TEditorId GetObjId() const { return mObjId; }
 #if defined(TARGET_PC)
   void SetObjId(TEditorId id) { mObjId = id; }
+  void SetTraversed(bool traversed) { mTraversed = traversed; }
 #endif
   const CTransform4f& GetTransform() const { return mTransform; }
 
@@ -79,6 +80,10 @@ private:
   uint xc_;
   CTransform4f mTransform;
   uchar mPad[0x10];
+#if defined(TARGET_PC)
+  // Randomizer: the player went through this door. Drawn green.
+  bool mTraversed;
+#endif
 };
 CHECK_SIZEOF(CMappableObject, 0x50)
 

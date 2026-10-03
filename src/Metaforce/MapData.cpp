@@ -108,7 +108,8 @@ CMappableObject::CMappableObject(CResourceReader& in)
 , mVisibilityMode(ReadObjectVisibility(in))
 , mObjId(in.Read< uint >())
 , xc_(in.Read< uint >())
-, mTransform(in.ReadTransform()) {
+, mTransform(in.ReadTransform())
+, mTraversed(false) {
   const auto padding = in.Take(sizeof(mPad));
   std::memcpy(mPad, padding.data(), padding.size());
   mTransform = AdjustTransformForType();

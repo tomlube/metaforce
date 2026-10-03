@@ -92,6 +92,14 @@ int GetScriptTimerSpawns(unsigned int worldId, unsigned int areaAssetId,
 // one that takes Samus's upgrades after the frigate) would take them away again.
 bool AllowSpawnPointInventoryReset();
 
+// DockPortals::OnPlayerCrossedDock, whenever the player walks through dock `dock` of `area`:
+// marks the doors on both sides of it as gone through.
+void OnPlayerCrossedDock(CStateManager& mgr, int area, int dock);
+
+// CMapWorld: whether the player ever went through the door with this editor id of `worldId` (the
+// region it was read from) in this game. The map draws those doors green.
+bool IsDoorTraversed(unsigned int worldId, unsigned int editorId);
+
 // CScriptPickup::Touch, after the item was given.
 void OnPickupCollected(CStateManager& mgr, int itemType);
 

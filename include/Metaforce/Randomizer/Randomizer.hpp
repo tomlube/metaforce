@@ -49,6 +49,10 @@ void SetArmedSeed(const std::string& hash);
 // The seed of the game being played, if any.
 const Seed* GetActiveSeed();
 
+// Records that the player went through a door (by region and editor id) in the game being played.
+// Kept per save slot from the moment it happens, whether or not the game is saved after.
+void MarkDoorTraversed(unsigned int world, unsigned int editorId);
+
 // Whether R + Z + D-pad Left reloads the last save in a randomized game. On by default.
 bool GetQuickReload();
 void SetQuickReload(bool enabled);

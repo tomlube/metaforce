@@ -114,6 +114,12 @@ struct State {
 
   // Where the next world load should put the player.
   std::optional< Arrival > arriving;
+
+  // The door the player came out of after a cross-world door, when it wasn't loaded yet to be
+  // marked as gone through, and how many more frames to look for it.
+  TAreaId pendingMarkArea = kInvalidAreaId;
+  int pendingMarkDock = -1;
+  int pendingMarkFrames = 0;
 };
 
 State sState;
@@ -158,6 +164,7 @@ void SyncWorld(const CStateManager& mgr) {
   sState.lastPlayerPos.reset();
   sState.lastPlayerArea = kInvalidAreaId;
   sState.leaving.reset();
+  sState.pendingMarkFrames = 0;
 }
 
 // The door standing in dock `dock` of `area`, if it has one.
@@ -175,6 +182,19 @@ const CScriptDoor* FindDoor(const CStateManager& mgr, TAreaId area, int dock) {
     }
   }
   return nullptr;
+}
+
+// Marks the door standing in dock `dock` of `area` as gone through. False if it has none loaded.
+bool MarkDockDoor(const CStateManager& mgr, TAreaId area, int dock) {
+  const CScriptDoor* door = FindDoor(mgr, area, dock);
+  if (door == nullptr) {
+    return false;
+  }
+  CAssetId world = mgr.GetWorld()->GetWorldAssetId();
+  const uint editorId =
+      merged::ToSourceEditorId(mgr.GetEditorIdForUniqueId(door->GetUniqueId()).value, world);
+  MarkDoorTraversed(world, editorId);
+  return true;
 }
 
 float PlayerYaw(const CPlayer& player) {
@@ -241,6 +261,12 @@ void UpdateCrossWorldDoors(CStateManager& mgr, float dt) {
     return;
   }
   SyncWorld(mgr);
+  if (sState.pendingMarkFrames > 0) {
+    --sState.pendingMarkFrames;
+    if (MarkDockDoor(mgr, sState.pendingMarkArea, sState.pendingMarkDock)) {
+      sState.pendingMarkFrames = 0;
+    }
+  }
   if (sState.leaving) {
     sState.fadeLeft -= dt;
     if (sState.fadeLeft <= 0.f) {
@@ -285,9 +311,28 @@ void UpdateCrossWorldDoors(CStateManager& mgr, float dt) {
       go = lastPos && CVector3f::Dot(*lastPos - frame.center, frame.normal) <= 0.f && dist > 0.f;
     }
     if (go) {
+      MarkDockDoor(mgr, current, dock);
       BeginLeaving(mgr, *door);
       return;
     }
+  }
+}
+
+void OnPlayerCrossedDock(CStateManager& mgr, int area, int dock) {
+  const CWorld* world = mgr.GetWorld();
+  if (GetActiveSeed() == nullptr || world == nullptr || !world->DoesAreaExist(TAreaId(area)) ||
+      dock < 0 || dock >= world->GetAreaAlways(TAreaId(area)).GetDockCount()) {
+    return;
+  }
+  MarkDockDoor(mgr, TAreaId(area), dock);
+  const IGameArea::Dock& gameDock = world->GetAreaAlways(TAreaId(area)).GetDock(dock);
+  if (gameDock.GetDockRefs().empty()) {
+    return;
+  }
+  const int ref = gameDock.GetReferenceCount();
+  const TAreaId other = gameDock.GetConnectedAreaId(ref);
+  if (world->DoesAreaExist(other)) {
+    MarkDockDoor(mgr, other, gameDock.GetOtherDockNumber(ref));
   }
 }
 
@@ -330,6 +375,12 @@ void ApplyCrossWorldArrival(CStateManager& mgr) {
     spawn = frame.center + inward * depth;
     spawn.SetZ(std::min(frame.bottom + height, frame.center.GetZ()));
     facing = inward;
+  }
+
+  if (!MarkDockDoor(mgr, areaId, arrival.dock)) {
+    sState.pendingMarkArea = areaId;
+    sState.pendingMarkDock = arrival.dock;
+    sState.pendingMarkFrames = 60;
   }
 
   player->Teleport(CTransform4f::LookAt(spawn, spawn + facing, CVector3f::Up()), mgr, true);

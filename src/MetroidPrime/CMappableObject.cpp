@@ -104,6 +104,11 @@ CMappableObject::GetDoorColors(int curAreaId, const CMapWorldInfo& mwInfo, float
   } else {
     firstColor = CColor(0);
   }
+#if defined(TARGET_PC)
+  if (mTraversed) {
+    firstColor = CColor(0.2f, 1.f, 0.2f, gpTweakAutoMapper->mDoorColors[0].GetAlpha());
+  }
+#endif
 
   firstColor = firstColor.WithAlphaModulatedBy(alpha);
   const CColor secondColor(rstl::min_val(1.0f, firstColor.GetRed() * 1.4f),
@@ -254,6 +259,11 @@ bool CMappableObject::GetIsVisibleToAutoMapper(bool worldVis, const CMapWorldInf
     return worldVis || areaVis;
   case kVM_Visit:
     if (IsDoorType(mType)) {
+#if defined(TARGET_PC)
+      if (mTraversed) {
+        return true;
+      }
+#endif
       return mwInfo.IsDoorVisited(mObjId);
     }
     return areaVis;
