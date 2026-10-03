@@ -27,6 +27,16 @@
 
 #if defined(TARGET_PC)
 #include "Metaforce/Input.hpp"
+
+// Options a Metaforce setting overrides still show their value, greyed out, but can't be changed.
+static bool IsOptionLocked(EGameOption option) {
+  return option == kGO_SwapBeamControls && metaforce::input::ModernControlsEnabled();
+}
+
+static void SetLockedTableColors(CGuiTableGroup* table) {
+  table->SetColors(CColor(uchar(128), uchar(128), uchar(128), uchar(110)),
+                   CColor(uchar(128), uchar(128), uchar(128), uchar(40)));
+}
 #endif
 
 static const int skQuitTitles[] = {24, 25, 26, 27, 28};
@@ -522,8 +532,17 @@ void COptionsScreen::UpdateOptionView() {
   case kOT_DoubleEnum:
     mTablegroup_double->SetUserSelection(CGameOptions::GetOption(opt.option));
     mTablegroup_double->SetIsVisible(true);
+#if defined(TARGET_PC)
+    mTablegroup_double->SetIsActive(!IsOptionLocked(opt.option));
+#else
     mTablegroup_double->SetIsActive(true);
+#endif
     UpdateSideTable(mTablegroup_double);
+#if defined(TARGET_PC)
+    if (IsOptionLocked(opt.option)) {
+      SetLockedTableColors(mTablegroup_double);
+    }
+#endif
     mTablegroup_double->SetLocalPosition(mTableDoubleStart + CVector3f(0.f, 0.f, zOff));
     break;
   case kOT_TripleEnum:
@@ -716,12 +735,21 @@ void SOptionsFrontEndFrame::HandleRightSelectionChange() {
   case kOT_DoubleEnum:
     mTablegroup_double->SetUserSelection(CGameOptions::GetOption(option.option));
     mTablegroup_double->SetIsVisible(true);
+#if defined(TARGET_PC)
+    mTablegroup_double->SetIsActive(!IsOptionLocked(option.option));
+#else
     mTablegroup_double->SetIsActive(true);
+#endif
     mTablegroup_double->SetO2PTransform(
         CTransform4f::Translate(0.f, 0.f,
                                 mTablegroup_rightmenu->GetUserSelection() * mRowPitch) *
         mTablegroup_double->GetTransform());
     SetTableColors(mTablegroup_double);
+#if defined(TARGET_PC)
+    if (IsOptionLocked(option.option)) {
+      SetLockedTableColors(mTablegroup_double);
+    }
+#endif
     break;
   case kOT_TripleEnum:
     mTablegroup_triple->SetUserSelection(CGameOptions::GetOption(option.option));

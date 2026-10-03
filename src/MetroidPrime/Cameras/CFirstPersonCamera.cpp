@@ -87,9 +87,19 @@ void CFirstPersonCamera::UpdateTransform(CStateManager& mgr, float dt) {
   }
 
   const CTransform4f playerXf = player->GetTransform();
+#if defined(TARGET_PC)
+  // Modern look holds its own pitch and replaces the scripted pitch volumes, which exist to help
+  // a stick that couldn't aim up or down.
+  const bool modernLook = player->UseModernLook();
+  const float pitch = modernLook ? player->GetModernLookPitch() : mPitch;
+  float sinPitch = sinf(pitch);
+  sinPitch = CMath::Limit(sinPitch, 1.f);
+  float cosPitch = cosf(pitch);
+#else
   float sinPitch = sinf(mPitch);
   sinPitch = CMath::Limit(sinPitch, 1.f);
   float cosPitch = cosf(mPitch);
+#endif
   cosPitch = CMath::Limit(cosPitch, 1.f);
   CVector3f lookDir = playerXf.Rotate(CVector3f(0.f, cosPitch, sinPitch));
   if (player->IsInFreeLook()) {
@@ -144,6 +154,12 @@ void CFirstPersonCamera::UpdateTransform(CStateManager& mgr, float dt) {
     }
     break;
   case CPlayer::kOS_NoOrbit:
+#if defined(TARGET_PC)
+    // Jumps and falls tip the view down unless the player is aiming it themselves.
+    if (modernLook) {
+      break;
+    }
+#endif
     if (player->GetMorphballTransitionState() == CPlayer::kMS_Unmorphed &&
         !player->IsInFreeLook() && mPitchId == kInvalidUniqueId) {
       if (player->GetJumpCameraTimer() > 0.f) {
@@ -195,6 +211,14 @@ void CFirstPersonCamera::UpdateTransform(CStateManager& mgr, float dt) {
       if (newFront.CanBeNormalized()) {
         newFront.Normalize();
       }
+#if defined(TARGET_PC)
+      // Yaw already snaps above; with the pitch held by the player, the vertical easing would
+      // only add lag.
+      if (modernLook) {
+        gunRotation = CQuaternion::LookAt(newFront, lookDir, CRelAngle::FromRadians(M_2PIF));
+        break;
+      }
+#endif
       angularStep *= gpTweakPlayer->GetFirstPersonCameraSpeed();
       float angle = CMath::Limit(CVector3f::Dot(newFront, lookDir), 1.f);
       float t = acosf(angle) / angularStep;

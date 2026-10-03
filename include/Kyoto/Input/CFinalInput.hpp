@@ -36,7 +36,16 @@ public:
   , mAnaRightTriggerP(other.mAnaRightTriggerP)
   , btns1(other.btns1)
   , btns2(other.btns2)
-  , btns3(other.btns3) {}
+  , btns3(other.btns3)
+#if defined(TARGET_PC)
+  , mMouseDeltaX(other.mMouseDeltaX)
+  , mMouseDeltaY(other.mMouseDeltaY)
+  , mRightAsLeftX(other.mRightAsLeftX)
+  , mRightAsLeftY(other.mRightAsLeftY)
+  , mBeamKeys(other.mBeamKeys)
+#endif
+  {
+  }
 
   void InitializeAnalog(float leftDiv, float rightDiv);
 
@@ -46,6 +55,24 @@ public:
   void SetTime(float time) { mDt = time; }
 
   int ControllerNumber() const { return mControllerIdx; }
+
+#if defined(TARGET_PC)
+  // Raw mouse motion since the previous input, in counts (positive right and down). Only the
+  // input on channel 0 carries it, and only while mouse look has the cursor.
+  float MouseDeltaX() const { return mMouseDeltaX; }
+  float MouseDeltaY() const { return mMouseDeltaY; }
+  void SetMouseDelta(float x, float y) {
+    mMouseDeltaX = x;
+    mMouseDeltaY = y;
+  }
+  // The right stick scaled like the left one (the left divisor, and ScaleAnalogueSticks' left
+  // factor), for modern controls that move left-stick jobs onto it without changing their feel.
+  float RightXAsLeft() const { return mRightAsLeftX; }
+  float RightYAsLeft() const { return mRightAsLeftY; }
+  // Held beam keys (Metaforce/Input.hpp BeamKeysHeld), one bit per beam command.
+  uchar BeamKeys() const { return mBeamKeys; }
+  void SetBeamKeys(uchar keys) { mBeamKeys = keys; }
+#endif
 
   float ALAUp() const { return mAnaLeftY > 0.f ? mAnaLeftY : 0.f; }
 
@@ -244,6 +271,13 @@ private:
     };
     uchar btns3;
   };
+#if defined(TARGET_PC)
+  float mMouseDeltaX;
+  float mMouseDeltaY;
+  float mRightAsLeftX;
+  float mRightAsLeftY;
+  uchar mBeamKeys;
+#endif
 };
 
 CHECK_SIZEOF(CFinalInput, 48)

@@ -5,6 +5,10 @@
 
 #include "Kyoto/Basics/COsContext.hpp"
 
+#if defined(TARGET_PC)
+#include "Metaforce/Input.hpp"
+#endif
+
 CInputGenerator::CInputGenerator(COsContext* ctx, float leftDiv, float rightDiv)
 : mContext(ctx)
 , mController(IController::Create(*ctx))
@@ -22,6 +26,13 @@ bool CInputGenerator::Update(float dt, CArchitectureQueue& queue) {
   }
 
   bool firstController = false;
+#if defined(TARGET_PC)
+  // Gameplay reads port 0, so the mouse and beam keys ride on whichever input lands there.
+  float mouseX;
+  float mouseY;
+  metaforce::input::ConsumeMouseDelta(mouseX, mouseY);
+  const uchar beamKeys = metaforce::input::BeamKeysHeld();
+#endif
   if (!mController.null()) {
     const int count = mController->GetDeviceCount();
     mController->Poll();
@@ -32,7 +43,15 @@ bool CInputGenerator::Update(float dt, CArchitectureQueue& queue) {
           firstController = true;
         }
         {
+#if defined(TARGET_PC)
+          CFinalInput input(i, dt, cont, mLeftDiv, mRightDiv);
+          if (i == 0) {
+            input.SetMouseDelta(mouseX, mouseY);
+            input.SetBeamKeys(beamKeys);
+          }
+#else
           const CFinalInput input(i, dt, cont, mLeftDiv, mRightDiv);
+#endif
           const CArchitectureMessage msg = MakeMsg::CreateUserInput(kAMT_Game, input);
           queue.Push(msg);
         }
@@ -49,7 +68,14 @@ bool CInputGenerator::Update(float dt, CArchitectureQueue& queue) {
   }
 
   if (!firstController) {
+#if defined(TARGET_PC)
+    CFinalInput input(0, dt, *mContext);
+    input.SetMouseDelta(mouseX, mouseY);
+    input.SetBeamKeys(beamKeys);
+    const CArchitectureMessage msg = MakeMsg::CreateUserInput(kAMT_Game, input);
+#else
     const CArchitectureMessage msg = MakeMsg::CreateUserInput(kAMT_Game, CFinalInput(0, dt, *mContext));
+#endif
     queue.Push(msg);
   } else {
     const CArchitectureMessage msg =

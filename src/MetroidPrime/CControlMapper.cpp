@@ -65,6 +65,15 @@ static ControlMapper::EFunctionList GetMapping(ControlMapper::ECommands command,
     return mapping;
   }
 }
+
+// The keyboard's beam keys hold their beam command, the way the C-stick does. Beam changes read
+// the analog value, so presses aren't reported.
+static bool BeamKeyHeld(ControlMapper::ECommands command, const CFinalInput& input) {
+  if (command < ControlMapper::kC_PowerBeam || command > ControlMapper::kC_PlasmaBeam) {
+    return false;
+  }
+  return (input.BeamKeys() & (1 << (command - ControlMapper::kC_PowerBeam))) != 0;
+}
 #endif
 
 const FAnalogInput ControlMapper::gAnalogInputs[] = {
@@ -328,6 +337,9 @@ const char* ControlMapper::GetDescriptionForCommand(ECommands command) {
 float ControlMapper::GetAnalogInput(ECommands command, const CFinalInput& input) {
 #if defined(TARGET_PC)
   if (gCommandFilterFlag[command]) {
+    if (BeamKeyHeld(command, input)) {
+      return 1.f;
+    }
     const EFunctionList mapping = ::GetMapping(command, input);
     if (gAnalogInputs[mapping] != nullptr) {
       return (input.*gAnalogInputs[mapping])();
@@ -347,6 +359,9 @@ float ControlMapper::GetAnalogInput(ECommands command, const CFinalInput& input)
 bool ControlMapper::GetDigitalInput(ECommands command, const CFinalInput& input) {
 #if defined(TARGET_PC)
   if (gCommandFilterFlag[command]) {
+    if (BeamKeyHeld(command, input)) {
+      return true;
+    }
     const EFunctionList mapping = ::GetMapping(command, input);
     if (gDigitalInputs[mapping] != nullptr) {
       return (input.*gDigitalInputs[mapping])();

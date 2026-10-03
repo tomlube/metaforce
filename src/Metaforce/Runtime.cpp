@@ -2,6 +2,7 @@
 #include "Metaforce/Audio.hpp"
 #include "Metaforce/Display.hpp"
 #include "Metaforce/GameOptionDefaults.hpp"
+#include "Metaforce/Input.hpp"
 
 #include "Kyoto/Basics/COsContext.hpp"
 #include "Kyoto/CResFactory.hpp"
@@ -476,6 +477,7 @@ int Initialize(int argc, char** argv) {
   borealis::crash::install();
   randomizer::Initialize(paths.userPath);
   options::Initialize(paths.userPath);
+  ui::LoadRuntimeConfig(paths.userPath);
   save_anywhere::Initialize(paths.userPath);
 
   if (dataStatus.code == borealis::data::ErrorCode::MigrationIncomplete) {
@@ -504,6 +506,10 @@ int Initialize(int argc, char** argv) {
       .logLevel = borealis::log::to_aurora_level(logOptions.level),
   };
   const auto auroraInfo = aurora_initialize(argc, argv, &config);
+  if (ui::GetRuntimeConfig().video.fullscreen) {
+    VISetWindowFullscreen(true);
+  }
+  aurora_set_background_input(ui::GetRuntimeConfig().input.allowBackgroundInput);
   VISetWindowTitle(
       fmt::format("{} {}", AppInfo.appName, VersionAndBuildTimeText()).c_str());
 
@@ -535,8 +541,9 @@ int Initialize(int argc, char** argv) {
   if (picked) {
     WriteLastDisc(paths.userPath, discPath);
   }
-  ConfigureDisplay(auroraInfo.window, args.count("lock-aspect") != 0);
-  ui::GetRuntimeConfig().video.lockAspectRatio.setValue(args.count("lock-aspect") != 0);
+  // --lock-aspect applies to this launch only and isn't saved.
+  ConfigureDisplay(auroraInfo.window, args.count("lock-aspect") != 0 ||
+                                          ui::GetRuntimeConfig().video.lockAspectRatio);
   borealis::presentation::set_preferred_frame_rate(60.f);
   COsContext::mProgressiveMode = true;
 
@@ -546,6 +553,7 @@ int Initialize(int argc, char** argv) {
     return 1;
   }
   LoadDefaultKeyBindings();
+  input::InitializeGameInput();
   if (!ui::Initialize()) {
     Log.warn("Failed to initialize the Metaforce interface");
   }
@@ -560,6 +568,8 @@ void Shutdown() {
   }
   sndPCStopAudio();
   aurora_dvd_close();
+  input::ShutdownGameInput();
+  ui::SaveRuntimeConfig();
   ui::Shutdown();
   aurora_shutdown();
   borealis::log::shutdown();
@@ -589,6 +599,7 @@ bool BeginFrame() {
   }
   UpdateDisplayAspect();
   ui::Update();
+  ui::SaveRuntimeConfig();
   return true;
 }
 

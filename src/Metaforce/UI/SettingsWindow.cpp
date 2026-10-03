@@ -501,6 +501,56 @@ SettingsWindow::SettingsWindow() {
                 "visors, and tapping Z opens the map when you let go.<br/><br/>Locking on works "
                 "as it always has.",
         });
+    config_bool_select(
+        leftPane, rightPane, GetRuntimeConfig().input.squareDiagonalLook,
+        {
+            .key = "Full-Speed Diagonal Look",
+            .helpText =
+                "The original free look moves slower on a diagonal, because each direction "
+                "only gets its share of the push. On, a full diagonal on the C-stick turns and "
+                "looks up or down at full speed at once.",
+            .isDisabled = [] { return !GetRuntimeConfig().input.modernControls.getValue(); },
+        });
+    config_bool_select(
+        leftPane, rightPane, GetRuntimeConfig().input.mouseLook,
+        {
+            .key = "Mouse Look",
+            .helpText =
+                "The mouse turns Samus and aims her view up and down. Requires Modern "
+                "Controls.<br/><br/>The cursor is captured during gameplay and released in "
+                "menus. Bind fire, missiles and lock-on to mouse buttons under Configure Inputs.",
+            .isDisabled = [] { return !GetRuntimeConfig().input.modernControls.getValue(); },
+        });
+    config_int_select(
+        leftPane, rightPane, GetRuntimeConfig().input.mouseSensitivity, "Mouse Sensitivity",
+        "100% turns 0.044 degrees per mouse count, the same as sensitivity 2 in Source and "
+        "Quake games. Scale it to match the sensitivity you use there.",
+        5, 1000, 5,
+        [] {
+          const auto& input = GetRuntimeConfig().input;
+          return !input.modernControls.getValue() || !input.mouseLook.getValue();
+        },
+        {}, "%");
+    config_bool_select(
+        leftPane, rightPane, GetRuntimeConfig().input.invertMouseY,
+        {
+            .key = "Invert Mouse Y",
+            .helpText = "Moving the mouse forward looks down.",
+            .isDisabled =
+                [] {
+                  const auto& input = GetRuntimeConfig().input;
+                  return !input.modernControls.getValue() || !input.mouseLook.getValue();
+                },
+        });
+    config_bool_select(
+        leftPane, rightPane, GetRuntimeConfig().input.aimAssist,
+        {
+            .key = "Aim Assist",
+            .helpText =
+                "Bends shots toward the targeted enemy, as the original game does.<br/><br/>"
+                "Turning it off sends shots exactly where you aim when not locked on. Locked-on "
+                "shots always lead their target.",
+        });
   });
 
   add_tab("Game", [this](Rml::Element* content) {

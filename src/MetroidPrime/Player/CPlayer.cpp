@@ -75,6 +75,10 @@
 #include "rstl/math.hpp"
 #include "rstl/vector.hpp"
 
+#if defined(TARGET_PC)
+#include "Metaforce/Input.hpp"
+#endif
+
 const bool gkAutoAim = false;
 const bool gkAutoAimAtOrbitedObject = false;
 const bool gkFreeLookPreventsOrbitMovement = true;
@@ -426,7 +430,12 @@ CPlayer::CPlayer(TUniqueId uid, const CTransform4f& xf, const CAABox& aabb, CAss
 , mRadarZRadiusOverride(1.f)
 , mAttachedActorStruggle(0.f)
 , mDamageLoopSfxDelayTicks(2)
-, mSamusExhaustedVoiceTimer(4.f) {
+, mSamusExhaustedVoiceTimer(4.f)
+#if defined(TARGET_PC)
+, mModernLookPitch(0.f)
+, mModernLookActive(false)
+#endif
+{
   CModelData ballTransitionBeamModelData(
       CStaticRes(gpTweakPlayerRes->GetBallTransitionBeamResId(mBeam), playerScale));
   mBallTransitionBeamModel = ballTransitionBeamModelData.IsNull()
@@ -629,6 +638,13 @@ void CPlayer::UpdateAimTargetPrediction(const CTransform4f& xf, CStateManager& m
 }
 
 void CPlayer::UpdateAssistedAiming(const CTransform4f& xf, CStateManager& mgr) {
+#if defined(TARGET_PC)
+  // Without aim assist, free shots go exactly where the view points. Locked-on shots still lead.
+  if (mOrbitState == kOS_NoOrbit && !metaforce::input::AimAssistEnabled()) {
+    mGun->SetAssistAimTransform(xf);
+    return;
+  }
+#endif
   CTransform4f assistXf = xf;
   if (const CActor* target = TCastToConstPtr< CActor >(mgr.GetObjectById(GetAimTargetId()))) {
     CVector3f gunToTarget = mAssistedTargetAim - xf.GetTranslation();
@@ -1295,6 +1311,18 @@ void CPlayer::SetCameraState(EPlayerCameraState camState, CStateManager& mgr) {
 }
 
 void CPlayer::UpdateFreeLookState(const CFinalInput& input, float dt, CStateManager& mgr) {
+#if defined(TARGET_PC)
+  // The modern look already holds a pitch, so free look would only fight it.
+  if (UseModernLook()) {
+    mInFreeLook = false;
+    mLookButtonHeld = false;
+    mLookAnalogHeld = false;
+    mHorizFreeLookAngleVel = 0.f;
+    mVertFreeLookAngleVel = 0.f;
+    UpdateCrosshairsState(input);
+    return;
+  }
+#endif
   if (mOrbitState == kOS_ForcedOrbitObject || IsMorphBallTransitioning() ||
       mMorphBallState != kMS_Unmorphed ||
       (mGrappleState != kGS_None && mGrappleState != kGS_Firing)) {
@@ -1820,6 +1848,13 @@ void CPlayer::ProcessInput(const CFinalInput& input, CStateManager& mgr) {
   if (input.ControllerNumber() != 0) {
     return;
   }
+#if defined(TARGET_PC)
+  // Hold the cursor for all of gameplay, not just while looking, so locking on or morphing
+  // doesn't flash it.
+  if (metaforce::input::MouseLookEnabled()) {
+    metaforce::input::RequestMouseCapture();
+  }
+#endif
 
   float dt = input.Time();
   if (mMorphBallState != kMS_Morphed) {
@@ -1875,6 +1910,9 @@ void CPlayer::ProcessInput(const CFinalInput& input, CStateManager& mgr) {
     }
   }
 
+#if defined(TARGET_PC)
+  UpdateModernLook(input, dt, mgr);
+#endif
   UpdateGrappleState(input, mgr);
   if (mMorphBallState == kMS_Morphed) {
     float leftDiv = gpTweakBall->GetLeftStickDivisor();

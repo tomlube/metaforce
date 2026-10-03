@@ -500,6 +500,19 @@ float CPlayer::StrafeInput(const CFinalInput& input) const {
 }
 
 #if defined(TARGET_PC)
+// The right stick in left-stick units, so turning and looking on it keep the original speeds.
+static void ModernLookStick(const CFinalInput& input, float& x, float& y) {
+  x = input.RightXAsLeft();
+  y = input.RightYAsLeft();
+  if (metaforce::input::SquareDiagonalLook() && x != 0.f && y != 0.f) {
+    // Stretch the stick's circle onto a square: a full diagonal reaches full on both axes.
+    const float length = rstl::min_val(CMath::SqrtF(x * x + y * y), 1.f);
+    const float scale = length / rstl::max_val(CMath::AbsF(x), CMath::AbsF(y));
+    x = CMath::Limit(x * scale, 1.f);
+    y = CMath::Limit(y * scale, 1.f);
+  }
+}
+
 bool CPlayer::UseModernMovement() const {
   return mOrbitState == kOS_NoOrbit && metaforce::input::ModernControlsEnabled();
 }
@@ -542,6 +555,57 @@ float CPlayer::ModernTranslationForce(float input, float localSpeed, float maxSp
   return CMath::Clamp(-1.f, (desiredSpeed - localSpeed) / maxSpeed, 1.f) * acceleration;
 }
 
+bool CPlayer::UseModernLook() const {
+  return mMorphBallState == kMS_Unmorphed && mOrbitState == kOS_NoOrbit &&
+         mGrappleState == kGS_None && metaforce::input::ModernControlsEnabled();
+}
+
+void CPlayer::UpdateModernLook(const CFinalInput& input, float dt, CStateManager& mgr) {
+  if (!UseModernLook()) {
+    mModernLookActive = false;
+    return;
+  }
+  if (!mModernLookActive) {
+    // Start from wherever the camera is looking, so coming out of a lock-on, a grapple or the
+    // morph ball carries on without a snap.
+    const CVector3f lookDir =
+        mgr.GetCameraManager()->GetFirstPersonCamera()->GetTransform().GetForward();
+    mModernLookPitch = asinf(CMath::Clamp(-1.f, lookDir.GetZ(), 1.f));
+    mModernLookActive = true;
+  }
+
+  // The right stick pitches at free look's speed, the only vertical look speed the original has.
+  float turnStick;
+  float pitchStick;
+  ModernLookStick(input, turnStick, pitchStick);
+  if (gpGameState->GameOptions().GetInvertYAxis()) {
+    pitchStick = -pitchStick;
+  }
+  mModernLookPitch += pitchStick * dt * gpTweakPlayer->GetFreeLookSpeed();
+
+  if (metaforce::input::MouseLookEnabled()) {
+    const float radiansPerCount = metaforce::input::MouseRadiansPerCount();
+    float pitch = -input.MouseDeltaY() * radiansPerCount;
+    if (metaforce::input::InvertMouseY()) {
+      pitch = -pitch;
+    }
+    mModernLookPitch += pitch;
+
+    // The mouse turns Samus outright. Stick turning still builds up through ComputeMovement.
+    const float yaw = -input.MouseDeltaX() * radiansPerCount;
+    if (yaw != 0.f) {
+      CTransform4f xf =
+          CTransform4f::RotateZ(CRelAngle::FromRadians(yaw)) * GetTransform().GetRotation();
+      xf.SetTranslation(GetTranslation());
+      SetTransform(xf);
+    }
+  }
+
+  // Free look's vertical limit, which the gun and HUD were built around.
+  const float maxPitch = gpTweakPlayer->GetVerticalFreeLookAngleVel();
+  mModernLookPitch = CMath::Clamp(-maxPitch, mModernLookPitch, maxPitch);
+}
+
 // Jumps trade height for distance by how far the stick is pushed. Modern controls count a strafe.
 static float ModernJumpTravel(const CFinalInput& input, float forward) {
   return rstl::max_val(
@@ -563,8 +627,11 @@ float CPlayer::TurnInput(const CFinalInput& input) const {
   if (UseModernMovement()) {
     // The left stick strafes, so turning moves to the right stick (freed of beams, see
     // CControlMapper). Free look keeps the left stick and doesn't stop the turn.
-    left = input.ARALeft();
-    right = input.ARARight();
+    float turnStick;
+    float pitchStick;
+    ModernLookStick(input, turnStick, pitchStick);
+    left = turnStick < 0.f ? -turnStick : 0.f;
+    right = turnStick > 0.f ? turnStick : 0.f;
   } else if (gpTweakPlayer->GetFreeLookTurnsPlayer()) {
 #else
   if (gpTweakPlayer->GetFreeLookTurnsPlayer()) {
@@ -1081,6 +1148,11 @@ void CPlayer::Teleport(const CTransform4f& transform, CStateManager& mgr,
   }
   ForceGunOrientation(GetTransform(), mgr);
   BreakOrbit(kOB_Respawn, mgr);
+#if defined(TARGET_PC)
+  // The camera was just levelled; pick the look up from there.
+  mModernLookPitch = 0.f;
+  mModernLookActive = false;
+#endif
 }
 
 #if defined(TARGET_PC)

@@ -1,10 +1,14 @@
 #pragma once
 
 #include <cstdint>
+#include <filesystem>
 #include <string>
 #include <utility>
 
 namespace metaforce::ui {
+
+// Set when any value changes, so settings.json is only rewritten after an edit.
+inline bool gRuntimeConfigDirty = false;
 
 // TODO: temp cvar system until I impl borealis::config
 template < typename T >
@@ -15,7 +19,12 @@ public:
 
   const T& getValue() const { return mValue; }
   const T& getDefaultValue() const { return mDefaultValue; }
-  void setValue(T value) { mValue = std::move(value); }
+  void setValue(T value) {
+    if (!(mValue == value)) {
+      gRuntimeConfigDirty = true;
+    }
+    mValue = std::move(value);
+  }
   operator const T&() const { return mValue; }
 
 private:
@@ -33,6 +42,12 @@ struct RuntimeConfig {
     RuntimeVar< bool > allowBackgroundInput{false};
     RuntimeVar< bool > smartLockOn{true};
     RuntimeVar< bool > modernControls{false};
+    RuntimeVar< bool > squareDiagonalLook{true};
+    RuntimeVar< bool > mouseLook{false};
+    // Percent of 0.044 degrees per mouse count (sensitivity 2 in Source and Quake games).
+    RuntimeVar< int > mouseSensitivity{100};
+    RuntimeVar< bool > invertMouseY{false};
+    RuntimeVar< bool > aimAssist{true};
   } input;
 
   struct Interface {
@@ -56,5 +71,11 @@ struct RuntimeConfig {
 };
 
 RuntimeConfig& GetRuntimeConfig();
+
+// Reads settings.json from the user directory, keeping defaults for anything missing or invalid.
+// Call before anything reads the config. The demo values aren't stored.
+void LoadRuntimeConfig(const std::filesystem::path& userPath);
+// Writes settings.json if anything changed since it was loaded or last saved.
+void SaveRuntimeConfig();
 
 } // namespace metaforce::ui

@@ -45,7 +45,16 @@ CFinalInput::CFinalInput()
 , mB28_PDPRight(false)
 , mB29_PDPDown(false)
 , mB30_PDPLeft(false)
-, mB31_PStart(false) {}
+, mB31_PStart(false)
+#if defined(TARGET_PC)
+, mMouseDeltaX(0.f)
+, mMouseDeltaY(0.f)
+, mRightAsLeftX(0.f)
+, mRightAsLeftY(0.f)
+, mBeamKeys(0)
+#endif
+{
+}
 
 CFinalInput::CFinalInput(int channel, float dt, const CControllerGamepadData& data, float leftDiv,
                          float rightDiv)
@@ -86,13 +95,25 @@ CFinalInput::CFinalInput(int channel, float dt, const CControllerGamepadData& da
 , mB28_PDPRight(data.GetButton(kBU_Right).GetPressEvent())
 , mB29_PDPDown(data.GetButton(kBU_Down).GetPressEvent())
 , mB30_PDPLeft(data.GetButton(kBU_Left).GetPressEvent())
-, mB31_PStart(data.GetButton(kBU_Start).GetPressEvent()) {
+, mB31_PStart(data.GetButton(kBU_Start).GetPressEvent())
+#if defined(TARGET_PC)
+, mMouseDeltaX(0.f)
+, mMouseDeltaY(0.f)
+, mRightAsLeftX(0.f)
+, mRightAsLeftY(0.f)
+, mBeamKeys(0)
+#endif
+{
   InitializeAnalog(leftDiv, rightDiv);
 }
 
 static bool sIsAnalogPressed[4][4] = {};
 
 void CFinalInput::InitializeAnalog(float leftDiv, float rightDiv) {
+#if defined(TARGET_PC)
+  mRightAsLeftX = CMath::Clamp(-1.f, mAnaRightX / leftDiv, 1.f);
+  mRightAsLeftY = CMath::Clamp(-1.f, mAnaRightY / leftDiv, 1.f);
+#endif
   mAnaLeftX = CMath::Clamp(-1.f, mAnaLeftX / leftDiv, 1.f);
   mAnaLeftY = CMath::Clamp(-1.f, mAnaLeftY / leftDiv, 1.f);
   mAnaRightX = CMath::Clamp(-1.f, mAnaRightX / rightDiv, 1.f);
@@ -199,7 +220,16 @@ CFinalInput::CFinalInput(int channel, float dt, const COsContext& ctx)
 , mB28_PDPRight(ctx.GetOsKeyState(0x1d).JustPressed())
 , mB29_PDPDown(ctx.GetOsKeyState(0x1e).JustPressed())
 , mB30_PDPLeft(ctx.GetOsKeyState(0x1b).JustPressed())
-, mB31_PStart(ctx.GetOsKeyState(5).JustPressed()) {}
+, mB31_PStart(ctx.GetOsKeyState(5).JustPressed())
+#if defined(TARGET_PC)
+, mMouseDeltaX(0.f)
+, mMouseDeltaY(0.f)
+, mRightAsLeftX(0.f)
+, mRightAsLeftY(0.f)
+, mBeamKeys(0)
+#endif
+{
+}
 
 CFinalInput CFinalInput::ScaleAnalogueSticks(float leftDiv, float rightDiv) const {
   CFinalInput ret = *this;
@@ -207,5 +237,9 @@ CFinalInput CFinalInput::ScaleAnalogueSticks(float leftDiv, float rightDiv) cons
   ret.mAnaLeftY = CMath::Clamp(-1.f, mAnaLeftY / leftDiv, 1.f);
   ret.mAnaRightX = CMath::Clamp(-1.f, mAnaRightX / rightDiv, 1.f);
   ret.mAnaRightY = CMath::Clamp(-1.f, mAnaRightY / rightDiv, 1.f);
+#if defined(TARGET_PC)
+  ret.mRightAsLeftX = CMath::Clamp(-1.f, mRightAsLeftX / leftDiv, 1.f);
+  ret.mRightAsLeftY = CMath::Clamp(-1.f, mRightAsLeftY / leftDiv, 1.f);
+#endif
   return ret;
 }

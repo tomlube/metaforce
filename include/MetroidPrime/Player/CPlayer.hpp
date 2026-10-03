@@ -322,6 +322,11 @@ public:
   bool UseModernMovement() const;
   float ModernStrafeInput(const CFinalInput& input) const;
   float ModernTranslationForce(float input, float localSpeed, float maxSpeed, float dt) const;
+  // Modern controls also give Samus a held look pitch, driven by the right stick and, with mouse
+  // look, the mouse (which turns her directly too). Off while morphed, orbiting or grappling.
+  bool UseModernLook() const;
+  float GetModernLookPitch() const { return mModernLookPitch; }
+  void UpdateModernLook(const CFinalInput& input, float dt, CStateManager& mgr);
 #endif
   float GetActualFirstPersonMaxVelocity(float dt) const;
   float GetActualBallMaxVelocity(float dt) const;
@@ -735,6 +740,10 @@ private:
   float mAttachedActorStruggle;
   int mDamageLoopSfxDelayTicks;
   float mSamusExhaustedVoiceTimer;
+#if defined(TARGET_PC)
+  float mModernLookPitch;
+  bool mModernLookActive;
+#endif
 };
 NESTED_CHECK_SIZEOF(CPlayer, CPlayerStuckTracker, 0x2e0);
 CHECK_SIZEOF(CPlayer,
