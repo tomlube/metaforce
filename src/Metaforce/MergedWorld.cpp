@@ -220,6 +220,13 @@ bool AppendWorld(CAssetId mlvl, rstl::vector< rstl::auto_ptr< CGameArea > >& are
   // Sets up the region's layer state if it was never visited.
   CWorldLayers::ReadWorldLayers(r, version, mlvl);
 
+  if (source.skybox != kInvalidAssetId && sSkies.find(source.skybox) == sSkies.end()) {
+    auto& sky = sSkies
+                    .emplace(source.skybox, TCachedToken< CModel >(gpSimplePool->GetObj(
+                                                SObjectTag('CMDL', source.skybox))))
+                    .first->second;
+    sky.Lock();
+  }
   source.mapAreas = ReadMapAreas(loader, mapw);
   if (static_cast< int >(source.mapAreas.size()) != source.count) {
     Log.warn("MAPW of 0x{:08X} has {} areas for {} rooms", mlvl, source.mapAreas.size(),

@@ -2537,8 +2537,11 @@ void CStateManager::DrawWorld() const {
     gpRender->SetWorldFog(kRFM_None, 0.f, 1.f, CColor::Black());
   }
 #if defined(TARGET_PC)
-  if (!metaforce::portals::SkipMainPassSky())
-    mWorld->DrawSkyForArea(visAreaId, CTransform4f::Translate(backupViewMatrix.GetTranslation()));
+  const TAreaId skyAreaId = metaforce::portals::GetPassSkyArea(visAreaId);
+  if (!metaforce::portals::SkipMainPassSky() && skyAreaId != kInvalidAreaId) {
+    mWorld->DrawSkyForArea(
+        skyAreaId, metaforce::portals::GetPassSkyTransform(backupViewMatrix.GetTranslation()));
+  }
 #else
   mWorld->DrawSky(CTransform4f::Translate(backupViewMatrix.GetTranslation()));
 #endif

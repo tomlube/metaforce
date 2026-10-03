@@ -64,6 +64,10 @@ struct Frame {
   CTransform4f rootXf = CTransform4f::Identity(); // camera -> camera in root space
   bool shifted = false; // the root isn't the player's area
   bool skipMainSky = false;
+  // In a frame whose main pass leaves out the sky: the area whose sky the portal passes draw
+  // instead, and the camera transform it's drawn from (rootXf or a portal's cameraXf).
+  TAreaId skyArea = kInvalidAreaId;
+  CTransform4f skyXf = CTransform4f::Identity();
   std::vector< Portal > portals;
   std::vector< std::pair< TAreaId, CTransform4f > > areaXfs;
   int pass = -1; // portal being drawn, -1 for the main pass
@@ -340,6 +344,7 @@ void PrepareFrame(const CStateManager& mgr) {
   frame.valid = false;
   frame.pass = -1;
   frame.skipMainSky = false;
+  frame.skyArea = kInvalidAreaId;
   frame.portals.clear();
   frame.areaXfs.clear();
   const CWorld* world = mgr.GetWorld();
@@ -478,10 +483,70 @@ const CTransform4f* GetAreaCameraTransform(TAreaId area) {
   return nullptr;
 }
 
+// Whether the camera is close enough to a portal's doorway for the near plane to clip its depth
+// seal. The main pass then leaves out the sky (see SkipMainPassSky).
+bool IsEyeInDoorway(const CStateManager& mgr) {
+  // The main pass's eye: the camera, moved into the root's frame.
+  const CVector3f eye =
+      sFrame.rootXf * mgr.GetCameraManager()->GetCurrentCameraTransform(mgr).GetTranslation();
+  // The near plane's corners reach about three times its distance from the eye at the game's
+  // fields of view; any doorway closer than that may be clipped out of the seal.
+  const float nearReach = 3.f * mgr.GetCameraManager()->GetCurrentCamera(mgr).GetNearClipDistance();
+  for (const Portal& portal : sFrame.portals) {
+    if (portal.doorway.size() < 3) {
+      continue;
+    }
+    CVector3f center = CVector3f::Zero();
+    float radius = 0.f;
+    for (int i = 0; i < portal.doorway.size(); ++i) {
+      center += portal.doorway[i];
+    }
+    center = center * (1.f / static_cast< float >(portal.doorway.size()));
+    for (int i = 0; i < portal.doorway.size(); ++i) {
+      radius = std::max(radius, (portal.doorway[i] - center).Magnitude());
+    }
+    const CVector3f normal =
+        CVector3f::Cross(portal.doorway[1] - portal.doorway[0], portal.doorway[2] - portal.doorway[0]);
+    if (!normal.CanBeNormalized()) {
+      continue;
+    }
+    const float planeDist = std::fabs(CVector3f::Dot(eye - center, normal.AsNormalized()));
+    if (planeDist < nearReach && (eye - center).Magnitude() < radius + nearReach) {
+      return true;
+    }
+  }
+  return false;
+}
+
 bool DrawPortalPasses(const CStateManager& mgr) {
   if (!sFrame.valid || sFrame.pass >= 0 || sFrame.portals.empty() ||
       mgr.GetPlayerState()->GetActiveVisor(mgr) == CPlayerState::kPV_Thermal) {
     return false;
+  }
+  // Decided before the portals are drawn, since in such a frame their sky is what shows behind the
+  // whole view. That sky has to be one a room on screen needs: the room the camera is in if it's
+  // open to the sky, or else a room through a doorway that is (looking out of a tunnel). An
+  // enclosed room on either side would otherwise put its region's sky where the other room's
+  // should be.
+  sFrame.skipMainSky = IsEyeInDoorway(mgr) && !sNeverSkipSky;
+  if (sFrame.skipMainSky) {
+    const CWorld& world = *mgr.GetWorld();
+    if (world.GetAreaAlways(sFrame.root).DoesAreaNeedSkyNow()) {
+      sFrame.skyArea = sFrame.root;
+      sFrame.skyXf = sFrame.rootXf;
+    } else {
+      for (const Portal& portal : sFrame.portals) {
+        if (world.GetAreaAlways(portal.area).DoesAreaNeedSkyNow()) {
+          sFrame.skyArea = portal.area;
+          sFrame.skyXf = portal.cameraXf;
+          break;
+        }
+      }
+    }
+    if (sLogThisFrame) {
+      Log.info("[portal]   eye in doorway: portal passes draw the sky of area {}",
+               sFrame.skyArea.Value());
+    }
   }
   for (int i = 0; i < static_cast< int >(sFrame.portals.size()); ++i) {
     sFrame.pass = i;
@@ -531,38 +596,30 @@ void LogPassArea(TAreaId area, int visState) {
   }
 }
 
-bool SkipMainPassSky() { return sFrame.valid && sFrame.skipMainSky && !sNeverSkipSky; }
+bool SkipMainPassSky() { return sFrame.valid && sFrame.pass < 0 && sFrame.skipMainSky; }
+
+namespace {
+// Whether the current pass is a portal pass drawing the frame's chosen sky (see Frame::skyArea).
+bool DrawsChosenSky() { return sFrame.valid && sFrame.pass >= 0 && sFrame.skipMainSky; }
+} // namespace
+
+TAreaId GetPassSkyArea(TAreaId vanilla) {
+  return DrawsChosenSky() ? sFrame.skyArea : GetPassVisArea(vanilla);
+}
+
+CTransform4f GetPassSkyTransform(const CVector3f& eye) {
+  if (!DrawsChosenSky() || sFrame.skyArea == kInvalidAreaId) {
+    return CTransform4f::Translate(eye);
+  }
+  // A point drawn at p from the sky area's camera is drawn at (this pass's camera * sky area's
+  // camera^-1) p from this one, so every portal pass puts the sky in the same place on screen.
+  const CTransform4f toPass = sFrame.portals[sFrame.pass].cameraXf * sFrame.skyXf.GetInverse();
+  return CTransform4f::Translate(eye) * toPass.GetRotation();
+}
 
 void ResetDepthForMainPass(const CStateManager& mgr) {
   const CTransform4f& view = CGraphics::GetViewMatrix();
   const CVector3f eye = view.GetTranslation();
-
-  // The near plane's corners reach about three times its distance from the eye at the game's
-  // fields of view; any doorway closer than that may be clipped out of the seal.
-  const float nearReach = 3.f * mgr.GetCameraManager()->GetCurrentCamera(mgr).GetNearClipDistance();
-  for (const Portal& portal : sFrame.portals) {
-    if (portal.doorway.size() < 3) {
-      continue;
-    }
-    CVector3f center = CVector3f::Zero();
-    float radius = 0.f;
-    for (int i = 0; i < portal.doorway.size(); ++i) {
-      center += portal.doorway[i];
-    }
-    center = center * (1.f / static_cast< float >(portal.doorway.size()));
-    for (int i = 0; i < portal.doorway.size(); ++i) {
-      radius = std::max(radius, (portal.doorway[i] - center).Magnitude());
-    }
-    const CVector3f normal =
-        CVector3f::Cross(portal.doorway[1] - portal.doorway[0], portal.doorway[2] - portal.doorway[0]);
-    if (!normal.CanBeNormalized()) {
-      continue;
-    }
-    const float planeDist = std::fabs(CVector3f::Dot(eye - center, normal.AsNormalized()));
-    if (planeDist < nearReach && (eye - center).Magnitude() < radius + nearReach) {
-      sFrame.skipMainSky = true;
-    }
-  }
   if (sLogThisFrame) {
     Log.info("[portal]   main pass: {} portal(s) drawn, sky {}, eye {}", sFrame.portals.size(),
              sFrame.skipMainSky ? "skipped" : "drawn", FormatVec(eye));

@@ -12,6 +12,7 @@ class CFrustumPlanes;
 class CGameProjectile;
 class CStateManager;
 class CTransform4f;
+class CVector3f;
 class CWorld;
 
 namespace metaforce::portals {
@@ -79,5 +80,15 @@ void LogPassArea(TAreaId area, int visState);
 // Whether the main pass should leave out the sky. When the camera is standing in a portal's
 // doorway the near plane clips the doorway's depth seal, and the sky would cover the portal.
 bool SkipMainPassSky();
+
+// The area whose sky the current pass draws, or kInvalidAreaId for none. Normally the pass's own
+// area; but in a frame whose main pass leaves out the sky, the portal passes' sky is what shows
+// behind the whole view, so they all draw one chosen sky: the room the camera is in if it needs a
+// sky, or else the first room through a doorway that does.
+TAreaId GetPassSkyArea(TAreaId vanilla);
+
+// The sky's model transform for the current pass, centered on `eye`. A portal pass drawing another
+// area's sky turns it to line up with how that area's own pass would have drawn it.
+CTransform4f GetPassSkyTransform(const CVector3f& eye);
 
 } // namespace metaforce::portals
