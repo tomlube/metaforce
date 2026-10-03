@@ -36,6 +36,14 @@ Randovania's data into a compact format and adds dock geometry read from the use
 - `res/randomizer/prime1/logic.json`
 - `res/randomizer/prime1/pickups.json`
 
+The following files were written for this fork but are heavily based on Randovania's logic
+resolver, item placement and room randomizer. They are licensed under GPL-3.0 only and are not
+covered by the CC0 dedication.
+
+- `include/Metaforce/Randomizer/Logic.hpp`, `src/Metaforce/Randomizer/Logic.cpp`
+- `include/Metaforce/Randomizer/Generator.hpp`, `src/Metaforce/Randomizer/Generator.cpp`
+- `include/Metaforce/Randomizer/RoomRando.hpp`, `src/Metaforce/Randomizer/RoomRando.cpp`
+
 ## randomprime (MIT)
 
 [randomprime](https://github.com/randovania/randomprime), licensed under the MIT License. Its

@@ -79,7 +79,7 @@ Linux:
 ### Prep Directions
 
 ```sh
-git clone --recursive https://github.com/AxioDL/metaforce.git
+git clone --recursive https://github.com/tomlube/metaforce.git
 cd metaforce
 ```
 
