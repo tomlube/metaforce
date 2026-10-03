@@ -1094,13 +1094,18 @@ private:
       OverlapPatch patch;
       patch.areaA = mRooms[rooms.first].id.Value();
       patch.areaB = mRooms[rooms.second].id.Value();
-      const auto addQuad = [&](int iy, int ix0, int ix1, float top) {
-        // A little above the ceiling it lies on, so the two don't fight over depth.
-        const float z = top + 0.5f;
+      // One flat sheet per pair of rooms, a little above the higher ceiling, so the two don't
+      // fight over depth and the sheet doesn't step with the ceilings under it.
+      float top = -FLT_MAX;
+      for (const auto& [cell, cellTop] : cells) {
+        top = std::max(top, cellTop);
+      }
+      const float z = top + 0.5f;
+      const auto addQuad = [&](int iy0, int iy1, int ix0, int ix1) {
         const float x0 = ix0 * kCellSize;
         const float x1 = (ix1 + 1) * kCellSize;
-        const float y0 = iy * kCellSize;
-        const float y1 = (iy + 1) * kCellSize;
+        const float y0 = iy0 * kCellSize;
+        const float y1 = (iy1 + 1) * kCellSize;
         const CVector3f corners[4] = {CVector3f(x0, y0, z), CVector3f(x1, y0, z),
                                       CVector3f(x1, y1, z), CVector3f(x0, y1, z)};
         for (int v = 0; v < 4; ++v) {
@@ -1114,26 +1119,36 @@ private:
           patch.verts.clear();
         }
       };
-      // Runs of cells next to each other in a row, at about the same height.
-      int runRow = 0, runStart = 0, runEnd = 0;
-      float runTop = 0.f;
-      bool inRun = false;
-      for (const auto& [cell, top] : cells) {
+      // Runs of cells next to each other in each row, then runs spanning the same cells in rows
+      // next to each other, as rectangles.
+      struct Run {
+        int row;
+        int start;
+        int end;
+      };
+      std::vector< Run > runs;
+      for (const auto& [cell, cellTop] : cells) {
         const auto [iy, ix] = cell;
-        if (inRun && iy == runRow && ix == runEnd + 1 && std::fabs(top - runTop) < 1.5f) {
-          runEnd = ix;
+        if (!runs.empty() && runs.back().row == iy && runs.back().end + 1 == ix) {
+          runs.back().end = ix;
+        } else {
+          runs.push_back({iy, ix, ix});
+        }
+      }
+      std::vector< char > used(runs.size(), 0);
+      for (size_t i = 0; i < runs.size(); ++i) {
+        if (used[i]) {
           continue;
         }
-        if (inRun) {
-          addQuad(runRow, runStart, runEnd, runTop);
+        int lastRow = runs[i].row;
+        for (size_t j = i + 1; j < runs.size() && runs[j].row <= lastRow + 1; ++j) {
+          if (!used[j] && runs[j].row == lastRow + 1 && runs[j].start == runs[i].start &&
+              runs[j].end == runs[i].end) {
+            used[j] = 1;
+            lastRow = runs[j].row;
+          }
         }
-        inRun = true;
-        runRow = iy;
-        runStart = runEnd = ix;
-        runTop = top;
-      }
-      if (inRun) {
-        addQuad(runRow, runStart, runEnd, runTop);
+        addQuad(runs[i].row, lastRow, runs[i].start, runs[i].end);
       }
       if (!patch.verts.empty()) {
         overlaps.push_back(std::move(patch));
