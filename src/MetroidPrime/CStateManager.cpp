@@ -1271,7 +1271,7 @@ void CStateManager::Update(float dt) {
 
 #if defined(TARGET_PC)
   // Paused too, so a map laid out again in the background shows on the map screen.
-  metaforce::maplayout::Update();
+  metaforce::maplayout::Update(*this);
   if (mGameState == kGS_Running && !isDead) {
     metaforce::portals::UpdatePlayerCrossing(*this);
     metaforce::randomizer::UpdateCrossWorldDoors(*this, dt);

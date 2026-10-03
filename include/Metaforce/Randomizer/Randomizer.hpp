@@ -63,6 +63,17 @@ void SetQuickReload(bool enabled);
 bool GetQuickSave();
 void SetQuickSave(bool enabled);
 
+// Room Rando Map: how the map is drawn when the room randomizer moved doors. Vanilla draws every
+// room where it is in the game; Tidy lays the map out so rooms meet at their doors, putting rooms
+// that fit by none of their doors off on their own; Connected joins every room by one of its
+// doors, overlaps and all. Connected by default.
+inline constexpr const char* kMapLayoutNames[] = {"Vanilla", "Tidy", "Connected"};
+inline constexpr int kMapLayoutVanilla = 0;
+inline constexpr int kMapLayoutTidy = 1;
+inline constexpr int kMapLayoutConnected = 2;
+int GetMapLayout();
+void SetMapLayout(int mode);
+
 enum class GenerationState {
   Idle,
   Running,

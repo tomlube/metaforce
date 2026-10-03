@@ -112,6 +112,7 @@ struct Session {
   std::map< std::string, std::string > slots; // save slot key -> seed hash
   bool quickReload = true;
   bool quickSave = true;
+  int mapLayout = kMapLayoutConnected;
   // Whether each shortcut chord was held on the last input seen, so holding one acts once.
   bool quickReloadHeld = false;
   bool quickSaveHeld = false;
@@ -155,6 +156,7 @@ void SaveSession() {
       {"slots", S().slots},
       {"quick_reload", S().quickReload},
       {"quick_save", S().quickSave},
+      {"map_layout", S().mapLayout},
   };
   std::error_code ec;
   fs::create_directories(S().root, ec);
@@ -174,6 +176,8 @@ void LoadSession() {
   S().armedSeed = root.value("armed", "");
   S().quickReload = root.value("quick_reload", true);
   S().quickSave = root.value("quick_save", true);
+  S().mapLayout = std::clamp(root.value("map_layout", static_cast< int >(kMapLayoutConnected)),
+                             kMapLayoutVanilla, kMapLayoutConnected);
   if (root.contains("slots") && root["slots"].is_object()) {
     S().slots = root["slots"].get< std::map< std::string, std::string > >();
   }
@@ -496,6 +500,13 @@ bool GetQuickSave() { return S().quickSave; }
 
 void SetQuickSave(bool enabled) {
   S().quickSave = enabled;
+  SaveSession();
+}
+
+int GetMapLayout() { return S().mapLayout; }
+
+void SetMapLayout(int mode) {
+  S().mapLayout = std::clamp(mode, kMapLayoutVanilla, kMapLayoutConnected);
   SaveSession();
 }
 

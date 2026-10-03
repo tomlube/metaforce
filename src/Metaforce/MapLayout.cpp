@@ -20,6 +20,7 @@
 #include "MetroidPrime/CGameArea.hpp"
 #include "MetroidPrime/CMapArea.hpp"
 #include "MetroidPrime/CMapWorld.hpp"
+#include "MetroidPrime/CStateManager.hpp"
 #include "MetroidPrime/CWorld.hpp"
 
 #include <borealis/log.hpp>
@@ -53,10 +54,6 @@ constexpr float kPi = 3.14159265f;
 
 // Set METAFORCE_NO_MAP_LAYOUT=1 to keep the vanilla map with the room randomizer.
 const bool sDisabled = std::getenv("METAFORCE_NO_MAP_LAYOUT") != nullptr;
-// Every room is joined to the layout by one of its doors, even where that lays it over other rooms:
-// the door with the least overlap is taken. Set METAFORCE_MAP_LAYOUT_ISLANDS=1 to put rooms that
-// don't fit by any door into free space instead, as islands.
-const bool sForceDoors = std::getenv("METAFORCE_MAP_LAYOUT_ISLANDS") == nullptr;
 // Set METAFORCE_MAP_LAYOUT_LOG=1 to log how every room and moved door was laid out.
 const bool sLogEnabled = std::getenv("METAFORCE_MAP_LAYOUT_LOG") != nullptr;
 
@@ -375,9 +372,10 @@ public:
     return true;
   }
 
-  // Which doors the player went through, from the randomizer. Main thread, while no layout is
-  // being worked out.
-  void ReadTraversed() {
+  // Which doors the player went through and the Connected Map setting, from the randomizer. Main
+  // thread, while no layout is being worked out.
+  void ReadSettings() {
+    mForceDoors = randomizer::GetMapLayout() == randomizer::kMapLayoutConnected;
     for (Link& link : mLinks) {
       link.traversed = randomizer::IsDockTraversed(
           mWorld.GetAreaAlways(mRooms[link.from].id).GetAreaAssetId(), link.dock);
@@ -1504,6 +1502,9 @@ private:
           traversedFit = i;
         }
       }
+      if (!mForceDoors) {
+        traversedAny = -1; // only by a door that fits
+      }
       if (traversedFit < 0 && traversedAny >= 0) {
         int leastHits = INT_MAX;
         for (int i = 0; i < static_cast< int >(frontier.size()); ++i) {
@@ -1531,7 +1532,7 @@ private:
         Place(c.group, c.pose, c.depth, result, depths, frontier, rng);
         result.kinds[c.group] = kPL_Door;
         result.parents[c.group] = c.parent;
-      } else if (first >= 0 && sForceDoors) {
+      } else if (first >= 0 && mForceDoors) {
         // Every door into what's placed is blocked: take the one with the least overlap.
         int chosen = -1;
         int chosenHits = INT_MAX;
@@ -1643,6 +1644,9 @@ private:
   std::unordered_map< std::int64_t, std::vector< Entry > > mGrid;
   std::vector< CAABox > mPlacedBounds; // by placement step
   bool mBigFirst = false;
+  // Connected Map: a room that fits by none of its doors is joined by the one with the least
+  // overlap, rather than put into free space as an island.
+  bool mForceDoors = true;
   int mStartRoom = -1;                             // the seed's start, where layouts grow from
   std::vector< std::pair< int, int > > mElevators; // rooms
 };
@@ -1662,6 +1666,8 @@ std::optional< Output > sReady;
 // A door that didn't meet was gone through while a layout was being worked out: the area to keep
 // in place when the next one starts.
 std::optional< int > sWantedAnchor;
+// Room Rando Map as it was for the layout in use or being worked out, or -1 before the first.
+int sBuiltMode = -1;
 
 // Waits for the worker when the program ends, which a running std::thread can't be destroyed in.
 struct WorkerJoiner {
@@ -1691,7 +1697,8 @@ void StartRebuild(int anchorArea) {
   if (sWorker.joinable()) {
     sWorker.join();
   }
-  sBuilder->ReadTraversed();
+  sBuilder->ReadSettings();
+  sBuiltMode = randomizer::GetMapLayout();
   std::optional< Anchor > anchor;
   if (anchorArea >= 0 && anchorArea < static_cast< int >(sYaws.size())) {
     anchor = Anchor{anchorArea, Pose(sYaws[anchorArea], sTransforms[anchorArea].GetTranslation())};
@@ -1725,9 +1732,13 @@ void Build(const CWorld& world) {
     sBuilder.reset();
     return;
   }
-  sBuilder->ReadTraversed();
-  Publish(sBuilder->Layout(std::nullopt, true));
   sOwner = &world;
+  sBuiltMode = -1;
+  if (randomizer::GetMapLayout() != randomizer::kMapLayoutVanilla) {
+    sBuilder->ReadSettings();
+    sBuiltMode = randomizer::GetMapLayout();
+    Publish(sBuilder->Layout(std::nullopt, true));
+  }
 }
 
 void Release(const CWorld* world) {
@@ -1754,7 +1765,7 @@ void OnDockCrossed(const CWorld& world, int area, int dock, int enteredArea) {
   }
 }
 
-void Update() {
+void Update(const CStateManager& mgr) {
   if (sOwner == nullptr || sBusy) {
     return;
   }
@@ -1768,6 +1779,10 @@ void Update() {
       sReady.reset();
     }
   }
+  const int mode = randomizer::GetMapLayout();
+  if (!sWantedAnchor && mode != randomizer::kMapLayoutVanilla && mode != sBuiltMode) {
+    sWantedAnchor = mgr.GetNextAreaId().Value();
+  }
   if (sWantedAnchor) {
     const int anchor = *sWantedAnchor;
     sWantedAnchor.reset();
@@ -1776,7 +1791,8 @@ void Update() {
 }
 
 bool IsActive(const IWorld& world) {
-  return sOwner != nullptr && static_cast< const IWorld* >(sOwner) == &world;
+  return sOwner != nullptr && static_cast< const IWorld* >(sOwner) == &world &&
+         !sTransforms.empty() && randomizer::GetMapLayout() != randomizer::kMapLayoutVanilla;
 }
 
 CTransform4f GetAreaTransform(const IWorld& world, int area) {

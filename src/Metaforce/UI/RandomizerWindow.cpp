@@ -321,6 +321,27 @@ void RandomizerWindow::build_seeds_tab(Rml::Element* content) {
           "last save at once, as if you had died and chosen Continue.<br/><br/>Without a save, "
           "the seed starts over. While this is on, holding R stops Z from opening the map.");
 
+  std::vector< DropdownButton::Option > mapLayouts;
+  for (const char* name : rando::kMapLayoutNames) {
+    mapLayouts.push_back({name});
+  }
+  auto& mapLayout = leftPane.add_child< DropdownButton >(DropdownButton::Props{
+      .key = "Room Rando Map",
+      .options = std::move(mapLayouts),
+      .getValue = [] { return rando::GetMapLayout(); },
+      .setValue = [](int v) { rando::SetMapLayout(v); },
+      .isModified = [] { return rando::GetMapLayout() != rando::kMapLayoutConnected; },
+  });
+  SetHelp(leftPane, rightPane, mapLayout,
+          "How the map is drawn when the room randomizer moved doors.<br/><br/><b>Vanilla</b> "
+          "draws every room where it is in the game, so the room behind a moved door is "
+          "somewhere else on the map.<br/><br/><b>Tidy</b> lays the map out again so rooms meet "
+          "at the doors between them, the doors you went through first. Rooms that fit by none "
+          "of their doors are drawn apart, next to one of them.<br/><br/><b>Connected</b> joins "
+          "every room by one of its doors, even where that draws it over other rooms; where "
+          "rooms take up the same space, the map outlines it.<br/><br/>Doors closing a loop of "
+          "moved doors can't meet either way.");
+
   leftPane.add_section("Seeds");
   auto& seeds = leftPane.add_group_button({.text = "Generated Seeds"});
   leftPane.register_control(seeds, rightPane, [this](Pane& pane) {

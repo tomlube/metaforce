@@ -22,6 +22,7 @@
 
 #include <vector>
 
+class CStateManager;
 class CTransform4f;
 class CWorld;
 class IWorld;
@@ -41,8 +42,9 @@ void Release(const CWorld* world);
 // `enteredArea` kept where it is.
 void OnDockCrossed(const CWorld& world, int area, int dock, int enteredArea);
 
-// Every frame, on the main thread: takes a layout worked out in the background into use.
-void Update();
+// Every frame, on the main thread: takes a layout worked out in the background into use, and lays
+// the map out again around the player's room when the Room Rando Map setting was changed.
+void Update(const CStateManager& mgr);
 
 // Whether `world` is drawn with a layout of its own rather than the vanilla map.
 bool IsActive(const IWorld& world);
