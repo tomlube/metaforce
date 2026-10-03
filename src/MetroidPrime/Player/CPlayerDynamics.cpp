@@ -285,6 +285,10 @@ void CPlayer::ComputeMovement(const CFinalInput& input, CStateManager& mgr, floa
   // ForwardInput's diagonal boost reads the turn axis as the stick's other half. Modern controls
   // turn on the right stick and handle diagonals themselves below.
   const float forwardInput = ForwardInput(input, UseModernMovement() ? 0.f : turnInput);
+  if (UseModernFreeLookMovement()) {
+    // The mouse turn joins the stick's after the diagonal boost, which belongs to the stick alone.
+    turnInput = CMath::Limit(turnInput + mModernMouseTurn, 1.f);
+  }
 #else
   const float forwardInput = ForwardInput(input, turnInput);
 #endif
@@ -514,7 +518,15 @@ static void ModernLookStick(const CFinalInput& input, float& x, float& y) {
 }
 
 bool CPlayer::UseModernMovement() const {
-  return mOrbitState == kOS_NoOrbit && metaforce::input::ModernControlsEnabled();
+  return mOrbitState == kOS_NoOrbit && !mLookButtonHeld &&
+         metaforce::input::ModernControlsEnabled();
+}
+
+// R held with modern controls: the left stick moves as the original's does under free look
+// (forward, back as a brake, sideways turning, standing still on the ground), and the view stays
+// modern. Speedrunners use the movement this way for its limited air influence.
+bool CPlayer::UseModernFreeLookMovement() const {
+  return mOrbitState == kOS_NoOrbit && mLookButtonHeld && metaforce::input::ModernControlsEnabled();
 }
 
 float CPlayer::ModernStrafeInput(const CFinalInput& input) const {
@@ -593,7 +605,19 @@ void CPlayer::UpdateModernLook(const CFinalInput& input, float dt, CStateManager
 
     // The mouse turns Samus outright. Stick turning still builds up through ComputeMovement.
     const float yaw = -input.MouseDeltaX() * radiansPerCount;
-    if (yaw != 0.f) {
+    if (UseModernFreeLookMovement()) {
+      // Under R the mouse turns as a stick would: as a share of the top turn speed ComputeMovement
+      // allows, building up and capped the same way. Motion past a full push is lost.
+      float turnSpeedMultiplier = gpTweakPlayer->GetTurnSpeedMultiplier();
+      if (gpTweakPlayer->GetFreeLookTurnsPlayer()) {
+        turnSpeedMultiplier = gpTweakPlayer->GetFreeLookTurnSpeedMultiplier();
+      }
+      const float maxTurn = dt * turnSpeedMultiplier *
+                            gpTweakPlayer->GetPlayerRotationMaxSpeed(GetSurfaceRestraint());
+      if (maxTurn > 0.f) {
+        mModernMouseTurn = CMath::Limit(yaw / maxTurn, 1.f);
+      }
+    } else if (yaw != 0.f) {
       CTransform4f xf =
           CTransform4f::RotateZ(CRelAngle::FromRadians(yaw)) * GetTransform().GetRotation();
       xf.SetTranslation(GetTranslation());

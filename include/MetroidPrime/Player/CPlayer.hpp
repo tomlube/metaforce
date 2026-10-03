@@ -318,8 +318,10 @@ public:
   float ForwardInput(const CFinalInput& input, float turnInput) const;
 #if defined(TARGET_PC)
   // Modern controls (Metaforce/Input.hpp) outside of orbit: the left stick strafes as well as
-  // moving forward and back, and the right stick turns.
+  // moving forward and back, and the right stick turns. Holding R hands movement back to the
+  // original free look physics, with the mouse turning as a stick would.
   bool UseModernMovement() const;
+  bool UseModernFreeLookMovement() const;
   float ModernStrafeInput(const CFinalInput& input) const;
   float ModernTranslationForce(float input, float localSpeed, float maxSpeed, float dt) const;
   // Modern controls also give Samus a held look pitch, driven by the right stick and, with mouse
@@ -743,6 +745,7 @@ private:
 #if defined(TARGET_PC)
   float mModernLookPitch;
   bool mModernLookActive;
+  float mModernMouseTurn;
 #endif
 };
 NESTED_CHECK_SIZEOF(CPlayer, CPlayerStuckTracker, 0x2e0);

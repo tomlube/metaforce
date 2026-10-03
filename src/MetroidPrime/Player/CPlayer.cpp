@@ -434,6 +434,7 @@ CPlayer::CPlayer(TUniqueId uid, const CTransform4f& xf, const CAABox& aabb, CAss
 #if defined(TARGET_PC)
 , mModernLookPitch(0.f)
 , mModernLookActive(false)
+, mModernMouseTurn(0.f)
 #endif
 {
   CModelData ballTransitionBeamModelData(
@@ -1312,10 +1313,24 @@ void CPlayer::SetCameraState(EPlayerCameraState camState, CStateManager& mgr) {
 
 void CPlayer::UpdateFreeLookState(const CFinalInput& input, float dt, CStateManager& mgr) {
 #if defined(TARGET_PC)
-  // The modern look already holds a pitch, so free look would only fight it.
+  // The modern look already holds a pitch, so free look would only fight it. R still counts as
+  // held, for the original free look movement (see UseModernFreeLookMovement).
   if (UseModernLook()) {
+    const bool lookHold1 = ControlMapper::GetDigitalInput(ControlMapper::kC_LookHold1, input);
+    const bool lookHold2 = ControlMapper::GetDigitalInput(ControlMapper::kC_LookHold2, input);
+    if (gpTweakPlayer->mHoldButtonsForFreeLook &&
+        (gpTweakPlayer->mTwoButtonsForFreeLook ? lookHold1 && lookHold2
+                                               : lookHold1 || lookHold2)) {
+      // Keep free look's pitch on the view, so locking on with R held picks up from here.
+      const CVector3f lookDir =
+          mgr.GetCameraManager()->GetFirstPersonCamera()->GetTransform().GetForward();
+      mFreeLookPitchAngle = asinf(CMath::Clamp(-1.f, lookDir.GetZ(), 1.f));
+      mFreeLookYawAngle = 0.f;
+      mLookButtonHeld = true;
+    } else {
+      mLookButtonHeld = false;
+    }
     mInFreeLook = false;
-    mLookButtonHeld = false;
     mLookAnalogHeld = false;
     mHorizFreeLookAngleVel = 0.f;
     mVertFreeLookAngleVel = 0.f;
@@ -1854,6 +1869,8 @@ void CPlayer::ProcessInput(const CFinalInput& input, CStateManager& mgr) {
   if (metaforce::input::MouseLookEnabled()) {
     metaforce::input::RequestMouseCapture();
   }
+  // Set again by UpdateModernLook; frozen controls return before it and mustn't turn on a stale one.
+  mModernMouseTurn = 0.f;
 #endif
 
   float dt = input.Time();
