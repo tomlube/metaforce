@@ -256,6 +256,4 @@ bool SquareDiagonalLook() { return ui::GetRuntimeConfig().input.squareDiagonalLo
 
 bool AimAssistEnabled() { return ui::GetRuntimeConfig().input.aimAssist.getValue(); }
 
-bool UnlockedDash() { return ui::GetRuntimeConfig().input.unlockedDash.getValue(); }
-
 } // namespace metaforce::input

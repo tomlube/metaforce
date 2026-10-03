@@ -34,6 +34,7 @@
 #include "rstl/algorithm.hpp"
 
 #if defined(TARGET_PC)
+#include "Metaforce/Cheats.hpp"
 #include "Metaforce/Input.hpp"
 #endif
 
@@ -150,7 +151,7 @@ void CPlayer::UpdateStepCameraZBias(float dt) {
 // that reaches ComputeDash (an empty orbit point or a carcass too) could dash.
 static bool DashOrbitLost(CPlayer::EPlayerOrbitState orbitState) {
 #if defined(TARGET_PC)
-  if (metaforce::input::UnlockedDash()) {
+  if (metaforce::cheats::GetToggles().unlockedDash) {
     return false;
   }
 #endif

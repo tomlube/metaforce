@@ -14,6 +14,7 @@ struct Toggles {
   bool infinitePowerBombs = false;
   bool moonJump = false; // holding jump in the air keeps rising
   bool oneHitKill = false; // anything Samus can hurt dies to one hit
+  bool unlockedDash = false; // the kiosk demo's dash: L orbiting an empty point can dash too
 };
 
 Toggles& GetToggles();

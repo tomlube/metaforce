@@ -585,15 +585,6 @@ SettingsWindow::SettingsWindow() {
                 "Turning it off sends shots exactly where you aim when not locked on. Locked-on "
                 "shots always lead their target.",
         });
-    config_bool_select(
-        leftPane, rightPane, GetRuntimeConfig().input.unlockedDash,
-        {
-            .key = "Unlocked Dash",
-            .helpText =
-                "Restores the kiosk demo's dash. Holding L and jumping sideways dashes even when "
-                "nothing is locked on, arcing around the point L holds in front of you.<br/><br/>"
-                "The retail game only dashes while locked onto a target.",
-        });
   });
 
   add_tab("Game", [this](Rml::Element* content) {

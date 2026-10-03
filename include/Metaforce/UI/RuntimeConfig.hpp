@@ -49,7 +49,6 @@ struct RuntimeConfig {
     RuntimeVar< bool > invertMouseY{false};
     RuntimeVar< bool > uncappedMouseTurnUnderR{true};
     RuntimeVar< bool > aimAssist{true};
-    RuntimeVar< bool > unlockedDash{false};
   } input;
 
   struct Game {

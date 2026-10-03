@@ -297,6 +297,11 @@ void CheatsWindow::build_cheats_tab(Rml::Element* content) {
             &cheats::Toggles::oneHitKill);
   AddToggle(leftPane, rightPane, "Moon Jump",
             "Hold jump in the air to keep rising.", &cheats::Toggles::moonJump);
+  AddToggle(leftPane, rightPane, "Unlocked Dash",
+            "Restores the kiosk demo's dash. Holding L and jumping sideways dashes even when "
+            "nothing is locked on, arcing around the point L holds in front of you.<br/><br/>The "
+            "retail game only dashes while locked onto a target.",
+            &cheats::Toggles::unlockedDash);
   leftPane.add_rml("Cheats stay on until Metaforce closes.");
 }
 
