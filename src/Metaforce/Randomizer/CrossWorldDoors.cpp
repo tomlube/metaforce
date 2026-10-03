@@ -325,6 +325,7 @@ void OnPlayerCrossedDock(CStateManager& mgr, int area, int dock) {
     return;
   }
   MarkDockDoor(mgr, TAreaId(area), dock);
+  MarkDockTraversed(world->GetAreaAlways(TAreaId(area)).GetAreaAssetId(), dock);
   const IGameArea::Dock& gameDock = world->GetAreaAlways(TAreaId(area)).GetDock(dock);
   if (gameDock.GetDockRefs().empty()) {
     return;
@@ -333,6 +334,8 @@ void OnPlayerCrossedDock(CStateManager& mgr, int area, int dock) {
   const TAreaId other = gameDock.GetConnectedAreaId(ref);
   if (world->DoesAreaExist(other)) {
     MarkDockDoor(mgr, other, gameDock.GetOtherDockNumber(ref));
+    MarkDockTraversed(world->GetAreaAlways(other).GetAreaAssetId(),
+                      gameDock.GetOtherDockNumber(ref));
   }
 }
 

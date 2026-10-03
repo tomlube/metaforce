@@ -129,6 +129,8 @@ struct Session {
   // Doors gone through in the game being played, by ObjectKey, and the save slot they belong to.
   // Written to TraversedFile() as they're added.
   std::unordered_set< uint64_t > traversedDoors;
+  // Docks gone through, by DockKey(area MREA, dock), both sides of each.
+  std::unordered_set< uint64_t > traversedDocks;
   std::string traversedSlot;
 
   std::thread worker;
@@ -196,6 +198,7 @@ void Deactivate() {
   s.templeLocation = -1;
   s.pendingNewGame = false;
   s.traversedDoors.clear();
+  s.traversedDocks.clear();
   s.traversedSlot.clear();
 }
 
@@ -204,9 +207,10 @@ void SaveTraversed() {
   if (!s.active || s.traversedSlot.empty()) {
     return;
   }
-  const json root{{"seed", s.active->hash},
-                  {"doors", std::vector< uint64_t >(s.traversedDoors.begin(),
-                                                    s.traversedDoors.end())}};
+  const json root{
+      {"seed", s.active->hash},
+      {"doors", std::vector< uint64_t >(s.traversedDoors.begin(), s.traversedDoors.end())},
+      {"docks", std::vector< uint64_t >(s.traversedDocks.begin(), s.traversedDocks.end())}};
   std::error_code ec;
   fs::create_directories(TraversedFile(s.traversedSlot).parent_path(), ec);
   std::ofstream file(TraversedFile(s.traversedSlot), std::ios::binary | std::ios::trunc);
@@ -217,6 +221,7 @@ void SaveTraversed() {
 void LoadTraversed(const std::string& slot, bool newGame) {
   auto& s = S();
   s.traversedDoors.clear();
+  s.traversedDocks.clear();
   s.traversedSlot = slot;
   if (newGame) {
     std::error_code ec;
@@ -235,6 +240,13 @@ void LoadTraversed(const std::string& slot, bool newGame) {
   for (const json& door : root["doors"]) {
     if (door.is_number_unsigned()) {
       s.traversedDoors.insert(door.get< uint64_t >());
+    }
+  }
+  if (root.contains("docks") && root["docks"].is_array()) {
+    for (const json& dock : root["docks"]) {
+      if (dock.is_number_unsigned()) {
+        s.traversedDocks.insert(dock.get< uint64_t >());
+      }
     }
   }
 }
@@ -617,6 +629,24 @@ void MarkDoorTraversed(unsigned int world, unsigned int editorId) {
       s.traversedDoors.insert(ObjectKey(world, editorId)).second) {
     SaveTraversed();
   }
+}
+
+void MarkDockTraversed(unsigned int areaAssetId, int dock) {
+  auto& s = S();
+  if (s.active && !s.traversedSlot.empty() &&
+      s.traversedDocks.insert(DockKey(areaAssetId, dock)).second) {
+    SaveTraversed();
+  }
+}
+
+bool IsDockTraversed(unsigned int areaAssetId, int dock) {
+  const auto& s = S();
+  return s.active && s.traversedDocks.count(DockKey(areaAssetId, dock)) != 0;
+}
+
+int GetTraversedDockCount() {
+  const auto& s = S();
+  return s.active ? static_cast< int >(s.traversedDocks.size()) : 0;
 }
 
 bool IsDoorTraversed(unsigned int worldId, unsigned int editorId) {

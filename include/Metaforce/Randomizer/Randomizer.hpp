@@ -52,6 +52,8 @@ const Seed* GetActiveSeed();
 // Records that the player went through a door (by region and editor id) in the game being played.
 // Kept per save slot from the moment it happens, whether or not the game is saved after.
 void MarkDoorTraversed(unsigned int world, unsigned int editorId);
+// A dock, by its area's MREA, the player went through, from either side.
+void MarkDockTraversed(unsigned int areaAssetId, int dock);
 
 // Whether R + Z + D-pad Left reloads the last save in a randomized game. On by default.
 bool GetQuickReload();

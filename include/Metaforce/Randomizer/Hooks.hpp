@@ -107,6 +107,11 @@ void OnPlayerCrossedDock(CStateManager& mgr, int area, int dock);
 // region it was read from) in this game. The map draws those doors green.
 bool IsDoorTraversed(unsigned int worldId, unsigned int editorId);
 
+// MapLayout: whether the player ever went through dock `dock` of the area with this MREA, either
+// way, in this game, and how many docks they've gone through, which grows whenever one is added.
+bool IsDockTraversed(unsigned int areaAssetId, int dock);
+int GetTraversedDockCount();
+
 // CScriptPickup::Touch, after the item was given.
 void OnPickupCollected(CStateManager& mgr, int itemType);
 
