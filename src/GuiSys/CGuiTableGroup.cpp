@@ -4,7 +4,16 @@
 #include "Kyoto/Math/CMath.hpp"
 #include "rstl/math.hpp"
 
+#if defined(TARGET_PC)
+#include "Metaforce/MenuPointer.hpp"
+#endif
+
 void CGuiTableGroup::ProcessUserInput(const CFinalInput& input) {
+#if defined(TARGET_PC)
+  if (ProcessPointerInput()) {
+    return;
+  }
+#endif
   if (input.PA()) {
     DoAdvance();
   } else if (input.PB()) {
@@ -25,6 +34,46 @@ void CGuiTableGroup::ProcessUserInput(const CFinalInput& input) {
     }
   }
 }
+
+#if defined(TARGET_PC)
+// Mouse and touch: pointing at a row selects it, clicking it advances, the wheel steps through
+// the table and a right click cancels. Returns whether the controller input should be skipped.
+bool CGuiTableGroup::ProcessPointerInput() {
+  namespace pointer = metaforce::menu_pointer;
+  if (mDoMenuCancel && pointer::ConsumeRightPress()) {
+    DoCancel();
+    return true;
+  }
+  const int hit = pointer::HitTableWorker(*this);
+  if (hit < 0) {
+    return false;
+  }
+  // Rows of a horizontal table without an advance are values (On/Off, Mono/Stereo), so only a
+  // click picks one.
+  const bool hoverSelects = mVertical || HasMenuAdvanceCallback();
+  const bool clicked = pointer::LeftPressed();
+  if (hit != mUserSelection && (clicked || (hoverSelects && pointer::Moved()))) {
+    const int oldSelection = mUserSelection;
+    SelectWorker(hit);
+    if (mDoMenuSelChange) {
+      mDoMenuSelChange(this, oldSelection);
+    }
+  }
+  if (clicked) {
+    pointer::ConsumeLeftPress();
+    DoAdvance();
+    return true;
+  }
+  for (int steps = pointer::ConsumeScrollSteps(); steps != 0; steps += steps < 0 ? 1 : -1) {
+    if (steps < 0) {
+      DoDecrement();
+    } else {
+      DoIncrement();
+    }
+  }
+  return false;
+}
+#endif
 
 CGuiTableGroup* CGuiTableGroup::Create(CGuiFrame* frame, CInputStream& in, CSimplePool* pool) {
   const CGuiWidgetParms parms = ReadWidgetHeader(frame, in);

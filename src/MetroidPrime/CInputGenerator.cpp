@@ -7,6 +7,7 @@
 
 #if defined(TARGET_PC)
 #include "Metaforce/Input.hpp"
+#include "Metaforce/MenuPointer.hpp"
 #endif
 
 CInputGenerator::CInputGenerator(COsContext* ctx, float leftDiv, float rightDiv)
@@ -31,6 +32,7 @@ bool CInputGenerator::Update(float dt, CArchitectureQueue& queue) {
   float mouseX;
   float mouseY;
   metaforce::input::ConsumeMouseDelta(mouseX, mouseY);
+  metaforce::menu_pointer::BeginFrame();
   const uchar beamKeys = metaforce::input::BeamKeysHeld();
   const uchar visorKeys = metaforce::input::ConsumeVisorKeyPresses();
 #endif

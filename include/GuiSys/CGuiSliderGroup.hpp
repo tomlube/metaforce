@@ -34,6 +34,9 @@ public:
   EState GetState() const { return mState; }
 
 private:
+#if defined(TARGET_PC)
+  bool ProcessPointerInput();
+#endif
   float mMinVal;
   float mMaxVal;
   float mRoundedCurVal;

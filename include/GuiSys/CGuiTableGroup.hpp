@@ -49,6 +49,9 @@ public:
   bool HasMenuAdvanceCallback() const { return mDoMenuAdvance; }
 
 private:
+#if defined(TARGET_PC)
+  bool ProcessPointerInput();
+#endif
   bool DoAdvance();
   bool DoCancel();
   bool DoDecrement();

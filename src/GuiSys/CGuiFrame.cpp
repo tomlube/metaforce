@@ -10,6 +10,10 @@
 #include "Kyoto/Input/CFinalInput.hpp"
 #include "rstl/algorithm.hpp"
 
+#if defined(TARGET_PC)
+#include "Metaforce/MenuPointer.hpp"
+#endif
+
 namespace rstl {
 class CWidgetFartherFromCamera {
 public:
@@ -42,6 +46,9 @@ CGuiFrame::CGuiFrame(uint id, CGuiSys& sys, int a, int b, int c, CSimplePool* sp
 }
 
 CGuiFrame::~CGuiFrame() {
+#if defined(TARGET_PC)
+  metaforce::menu_pointer::ForgetFrame(this);
+#endif
   if (mRootWidget) {
     delete mRootWidget;
   }
@@ -99,6 +106,9 @@ void CGuiFrame::Draw(const CGuiWidgetDrawParms& parms) const {
   CGraphics::SetAmbientColor(CColor::White());
   DisableLights();
   mCamera->Draw(parms);
+#if defined(TARGET_PC)
+  metaforce::menu_pointer::RecordFrameView(this, parms.GetAlpha());
+#endif
   CGraphics::SetTevOp(kTS_Stage0, CGraphics::kEnvModulate);
   CGraphics::SetBlendMode(kBM_Blend, kBF_SrcAlpha, kBF_InvSrcAlpha, kLO_Clear);
   for (AUTO(it, mWidgets.begin()); it != mWidgets.end(); ++it) {

@@ -1,5 +1,6 @@
 #include "Metaforce/Input.hpp"
 
+#include "Metaforce/MenuPointer.hpp"
 #include "Metaforce/UI/RuntimeConfig.hpp"
 
 #include <aurora/binding.hpp>
@@ -97,14 +98,18 @@ aurora::input::EventResult on_game_event(const aurora::input::InputEvent& event,
         sMouseY += pointer->delta.y;
       }
     }
+  } else {
+    // A free cursor points at the game's menus.
+    menu_pointer::HandleInputEvent(event);
   }
   // The PAD layer below still needs the keys and mouse buttons.
   return aurora::input::EventResult::Pass;
 }
 
 aurora::input::PointerMode mouse_pointer_mode(void*) {
+  // Free, the cursor shows for the menus and hides again when left alone.
   return sCaptureWanted ? aurora::input::PointerMode::Relative
-                        : aurora::input::PointerMode::None;
+                        : aurora::input::PointerMode::AutoHide;
 }
 
 // CDolphinController::ProcessAnalogButton scales clamped trigger values by 1/150.
@@ -230,6 +235,9 @@ void ConsumeMouseDelta(float& x, float& y) {
 
   sCaptureWanted = sCaptureRequested && MouseLookEnabled();
   sCaptureRequested = false;
+  if (sCaptureWanted) {
+    menu_pointer::Reset();
+  }
   // Another layer (a menu) can hold the cursor even while gameplay asks for it.
   if (!sCaptureWanted || aurora::input::pointer_mode() != aurora::input::PointerMode::Relative) {
     sCapturedFrames = 0;

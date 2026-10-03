@@ -29,6 +29,10 @@
 #include "rstl/math.hpp"
 #include <float.h>
 
+#if defined(TARGET_PC)
+#include "Metaforce/MenuPointer.hpp"
+#endif
+
 CPauseScreen::ESubScreen CPauseScreen::GetPreviousSubscreen(ESubScreen screen) {
   if (screen == kSS_Inventory) {
     return kSS_Options;
@@ -292,7 +296,13 @@ void CPauseScreen::ProcessControllerInput(const CStateManager& mgr, const CFinal
   }
   if (InputEnabled()) {
     bool invalid = IsInvalidSubscreen(mCurSubscreen);
+#if defined(TARGET_PC)
+    // A right click backs out like B; the tables take it first when they have somewhere to go.
+    const bool back = input.PB() || (bExits && metaforce::menu_pointer::ConsumeRightPress());
+    if (input.PStart() || (back && bExits) ||
+#else
     if (input.PStart() || (input.PB() && bExits) ||
+#endif
         (!mScreens[mActiveIdx].null() &&
          mScreens[mActiveIdx]->ShouldExitPauseScreen())) {
       CSfxManager::SfxStart(0x59a, 0x7f, 0x40, false, CSfxManager::kMedPriority, false,

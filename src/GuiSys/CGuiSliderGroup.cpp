@@ -4,6 +4,10 @@
 #include "Kyoto/Math/CMath.hpp"
 #include "rstl/math.hpp"
 
+#if defined(TARGET_PC)
+#include "Metaforce/MenuPointer.hpp"
+#endif
+
 CGuiWidget* CGuiSliderGroup::Create(CGuiFrame* frame, CInputStream& in, CSimplePool* sp) {
   CGuiWidgetParms parms = ReadWidgetHeader(frame, in);
   // Retail consumes these values but uses a fixed slider range.
@@ -45,6 +49,11 @@ bool CGuiSliderGroup::AddWorkerWidget(CGuiWidget* worker) {
 }
 
 void CGuiSliderGroup::ProcessUserInput(const CFinalInput& input) {
+#if defined(TARGET_PC)
+  if (ProcessPointerInput()) {
+    return;
+  }
+#endif
   if (input.DLALeft()) {
     MAF_Decrement(nullptr, nullptr);
     return;
@@ -62,6 +71,29 @@ void CGuiSliderGroup::ProcessUserInput(const CFinalInput& input) {
     return;
   }
 }
+
+#if defined(TARGET_PC)
+// Mouse and touch: grabbing the handle or the track drags the value. Update rounds it to the
+// increment, moves the handle and reports the change, as it does for the stick.
+bool CGuiSliderGroup::ProcessPointerInput() {
+  CGuiWidget* handle = mSliderRangeWidgets[0];
+  CGuiWidget* end = mSliderRangeWidgets[1];
+  if (handle == nullptr || end == nullptr || handle->GetParent() == nullptr) {
+    return false;
+  }
+  // Update lerps the handle between both idle positions, in their parent's space.
+  const CTransform4f& parentXf = handle->GetParent()->GetWorldTransform();
+  float t;
+  if (!metaforce::menu_pointer::DragAlong(*this, *handle, parentXf * handle->GetIdlePosition(),
+                                          parentXf * end->GetIdlePosition(), t)) {
+    return false;
+  }
+  mCurVal = mMinVal + t * (mMaxVal - mMinVal);
+  mState = kS_None;
+  mInputPending = false;
+  return true;
+}
+#endif
 
 void CGuiSliderGroup::Update(float dt) {
   float delta = dt * (mMaxVal - mMinVal);
