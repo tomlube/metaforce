@@ -724,6 +724,7 @@ set(GAME_FILES
       src/Metaforce/Audio.cpp
       src/Metaforce/Display.cpp
       src/Metaforce/Cheats.cpp
+      src/Metaforce/CutsceneSkip.cpp
       src/Metaforce/DockPortals.cpp
       src/Metaforce/MergedWorld.cpp
       src/Metaforce/SaveAnywhere.cpp

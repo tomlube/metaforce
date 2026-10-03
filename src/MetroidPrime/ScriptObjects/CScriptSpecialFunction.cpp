@@ -41,6 +41,7 @@
 #include "rstl/optional_object.hpp"
 
 #if defined(TARGET_PC)
+#include "Metaforce/CutsceneSkip.hpp"
 #include "Metaforce/Randomizer/Hooks.hpp"
 #endif
 
@@ -605,6 +606,11 @@ void CScriptSpecialFunction::AcceptScriptMsg(EScriptObjectMessage msg, TUniqueId
 }
 
 bool CScriptSpecialFunction::ShouldSkipCinematic(CStateManager& mgr) const {
+#if defined(TARGET_PC)
+  if (metaforce::cutscenes::TreatAllAsWatched()) {
+    return true;
+  }
+#endif
   CAssetId mlvlId = mgr.GetWorld()->GetWorldAssetId();
   TEditorId cineId = GetEditorId();
   return gpGameState->SystemState().GetCinematicState(

@@ -150,6 +150,9 @@ void LoadRuntimeConfig(const std::filesystem::path& userPath) {
   read_var(input, "aimAssist", config.input.aimAssist);
   read_var(input, "unlockedDash", config.input.unlockedDash);
 
+  const json& game = section_of(root, "game");
+  read_int(game, "cutsceneSkips", config.game.cutsceneSkips, 0, 2);
+
   const json& ui = section_of(root, "interface");
   read_int(ui, "scale", config.ui.scale, 50, 200);
   read_var(ui, "sounds", config.ui.sounds);
@@ -182,6 +185,10 @@ void SaveRuntimeConfig() {
            {"uncappedMouseTurnUnderR", config.input.uncappedMouseTurnUnderR.getValue()},
            {"aimAssist", config.input.aimAssist.getValue()},
            {"unlockedDash", config.input.unlockedDash.getValue()},
+       }},
+      {"game",
+       {
+           {"cutsceneSkips", config.game.cutsceneSkips.getValue()},
        }},
       {"interface",
        {

@@ -25,6 +25,7 @@
 #include "rstl/math.hpp"
 
 #if defined(TARGET_PC)
+#include "Metaforce/CutsceneSkip.hpp"
 #include "Metaforce/Input.hpp"
 #include "Metaforce/Randomizer/Hooks.hpp"
 #include "Metaforce/Warp.hpp"
@@ -41,12 +42,18 @@ CMFGame::CMFGame(rstl::ncrc_ptr< CStateManager > stateManager,
 , mInitialized(false)
 , mPlayerAlive(true) {
   gpMain->SetGameFlowBuilt(true);
+#if defined(TARGET_PC)
+  metaforce::cutscenes::Reset();
+#endif
 }
 
 CMFGame::~CMFGame() {
   gpMain->SetGameFlowBuilt(false);
   gpMain->SetScreenFading(false);
   CDecalManager::Reinitialize();
+#if defined(TARGET_PC)
+  metaforce::cutscenes::Reset();
+#endif
 }
 
 void CMFGame::Touch() const {
@@ -121,7 +128,12 @@ CIOWin::EMessageReturn CMFGame::OnMessage(const CArchitectureMessage& message,
       mStateManager->SetRandomAvailable(true);
       switch (mStateManager->GetDeferredStateTransition()) {
       case kSMT_InGame:
+#if defined(TARGET_PC)
+        // Runs extra updates while a cutscene fast-forwards.
+        metaforce::cutscenes::Update(*mStateManager, dt);
+#else
         mStateManager->Update(dt);
+#endif
         if (mStateManager->GetWantsToQuit())
           CGraphics::SetIsBeginSceneClearFb(false);
         break;
@@ -206,6 +218,13 @@ CIOWin::EMessageReturn CMFGame::OnMessage(const CArchitectureMessage& message,
           } else if (!cineCam) {
             mStateManager->DeferStateTransition(kSMT_PauseGame);
           }
+#if defined(TARGET_PC)
+          // A cutscene with no skip function: fast-forward it if the Cutscene Skips setting
+          // allows.
+          else if (metaforce::cutscenes::TryStartFastForward(*mStateManager)) {
+            break;
+          }
+#endif
         }
 #if defined(TARGET_PC)
         else if (mapPressed && !cineCam && mStateManager->CanShowMapScreen()) {
@@ -257,6 +276,16 @@ void CMFGame::Draw() const {
                                   CCameraFilterPass::kFS_Fullscreen,
                                   CColor(intensity, intensity, intensity, intensity), nullptr, 1.f);
   }
+#if defined(TARGET_PC)
+  // Leaves the pause and message screens visible when they interrupt a fast-forward.
+  const float brightness = metaforce::cutscenes::Brightness();
+  if (brightness < 1.f && mFlowState != kGFS_Paused) {
+    CCameraFilterPass::DrawFilter(CCameraFilterPass::kFT_Multiply,
+                                  CCameraFilterPass::kFS_Fullscreen,
+                                  CColor(brightness, brightness, brightness, brightness), nullptr,
+                                  1.f);
+  }
+#endif
 }
 
 void CMFGame::EnterMapScreen() {

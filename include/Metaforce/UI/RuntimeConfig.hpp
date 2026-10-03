@@ -52,6 +52,11 @@ struct RuntimeConfig {
     RuntimeVar< bool > unlockedDash{false};
   } input;
 
+  struct Game {
+    // metaforce::cutscenes::ESkipMode
+    RuntimeVar< int > cutsceneSkips{0};
+  } game;
+
   struct Interface {
     RuntimeVar< int > scale{100};
     RuntimeVar< bool > sounds{true};

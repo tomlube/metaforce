@@ -55,6 +55,13 @@ constexpr std::array kLogbookEntries = {
     "Meta Ridley",      "Metroid Prime",
 };
 
+// Indexed by metaforce::cutscenes::ESkipMode.
+constexpr std::array kCutsceneSkipNames = {
+    "Watched Only",
+    "All Skippable",
+    "Any Cutscene",
+};
+
 struct ConfigBoolProps {
   Rml::String key;
   Rml::String icon;
@@ -225,6 +232,17 @@ void add_game_tab(Pane& leftPane, Pane& rightPane) {
   option_bool_select(leftPane, rightPane, &Defaults::swapBeamControls, "Swap Beam Controls",
                      "Swap the beam and visor controls: the C-Stick selects visors and the "
                      "D-Pad selects beams.");
+
+  leftPane.add_section("Cutscenes");
+  config_choice_select(
+      leftPane, rightPane, GetRuntimeConfig().game.cutsceneSkips, "Cutscene Skips",
+      kCutsceneSkipNames,
+      "<br/>When Start skips a cutscene.<br/><br/><b>Watched Only</b>: the original behavior. "
+      "Cutscenes the game lets you skip can be skipped once you've watched them; the save "
+      "remembers which.<br/><br/><b>All Skippable</b>: those cutscenes can be skipped the first "
+      "time too.<br/><br/><b>Any Cutscene</b>: Start also skips cutscenes the game never lets you "
+      "skip. The screen fades out while the cutscene plays at high speed in the background, so "
+      "the room ends up exactly as if you had watched it.");
 }
 
 void add_demo_tab(Window& window, Pane& leftPane, Pane& rightPane) {
