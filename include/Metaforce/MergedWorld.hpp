@@ -102,7 +102,8 @@ bool SendForeignRelayMsgs(TAreaId area, CStateManager& mgr);
 // so the player is wherever the state manager says.
 TAreaId GetQueryArea(const CStateManager& mgr, const CEntity& ent);
 
-// Whether queries made now see `area`: it's in the same region as the current query context.
+// Whether queries made now see `area`: it's in the same region as the current query context, and
+// not a room DockPortals separates from the area asking. Also used when the world isn't merged.
 bool SharesSpace(const CStateManager& mgr, TAreaId area);
 
 // Whether `actor`'s queries should see `other`. Entities without an area count as being where the
@@ -117,6 +118,7 @@ public:
 
 private:
   int mPrevious;
+  int mPreviousArea;
 };
 
 } // namespace metaforce::merged

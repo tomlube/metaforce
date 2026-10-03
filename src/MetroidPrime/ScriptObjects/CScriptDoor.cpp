@@ -21,7 +21,38 @@
 #include "MetroidPrime/TGameTypes.hpp"
 
 #if defined(TARGET_PC)
+#include "Metaforce/DockPortals.hpp"
+#include "Metaforce/MergedWorld.hpp"
 #include "Metaforce/Randomizer/Hooks.hpp"
+#include "MetroidPrime/Player/CPlayer.hpp"
+
+namespace {
+
+// How near the player's collision box may come to a door's before the door waits to close.
+const float kClosingClearance = 0.1f;
+
+// Whether the door's dock was moved by the room randomizer.
+bool IsMovedDoor(const CStateManager& mgr, const CScriptDoor& door) {
+  const CScriptDock* dock =
+      TCastToConstPtr< CScriptDock >(mgr.GetObjectById(door.GetConnectedDockID()));
+  CTransform4f xf = CTransform4f::Identity();
+  return dock != nullptr && metaforce::portals::GetDockTransform(*mgr.GetWorld(), dock->GetAreaId(),
+                                                                 dock->GetDockId(), xf);
+}
+
+bool IsPlayerInDoorway(const CStateManager& mgr, const CScriptDoor& door) {
+  const CPlayer* player = mgr.GetPlayer();
+  if (player == nullptr ||
+      !metaforce::merged::SharesSpace(mgr, mgr.GetNextAreaId(), door.GetCurrentAreaId())) {
+    return false;
+  }
+  const CAABox playerBox = player->GetBoundingBox();
+  const CVector3f margin(kClosingClearance, kClosingClearance, kClosingClearance);
+  return CAABox(playerBox.GetMinPoint() - margin, playerBox.GetMaxPoint() + margin)
+      .DoBoundsOverlap(door.GetBoundingBox());
+}
+
+} // namespace
 #endif
 
 CScriptDoor::CScriptDoor(TUniqueId uid, const rstl::string& name, const CEntityInfo& info,
@@ -50,7 +81,12 @@ CScriptDoor::CScriptDoor(TUniqueId uid, const rstl::string& name, const CEntityI
 , mConditionsMet(false)
 , mProjectilesCollide(projectilesCollide)
 , mBallDoor(ballDoor)
-, mDoClose(false) {
+, mDoClose(false)
+#if defined(TARGET_PC)
+, mPendingCloseMsg(kSM_None)
+, mPendingCloseSender(kInvalidUniqueId)
+#endif
+{
   SetThermalFlags(kTF_Cold);
 
   if (open) {
@@ -217,7 +253,36 @@ void CScriptDoor::SetDoorAnimation(EDoorAnimType state) {
   }
 }
 
+#if defined(TARGET_PC)
+bool CScriptDoor::IsClosingBlocked(const CStateManager& mgr) const {
+  const TUniqueId ids[3] = {GetUniqueId(), mPartner1, mPartner2};
+  bool moved = false;
+  bool blocked = false;
+  for (int i = 0; i < 3; ++i) {
+    const CScriptDoor* door = TCastToConstPtr< CScriptDoor >(mgr.GetObjectById(ids[i]));
+    if (door == nullptr) {
+      continue;
+    }
+    moved = moved || IsMovedDoor(mgr, *door);
+    blocked = blocked || (door->GetActive() && door->IsOpen() && IsPlayerInDoorway(mgr, *door));
+  }
+  return moved && blocked;
+}
+#endif
+
 void CScriptDoor::AcceptScriptMsg(EScriptObjectMessage msg, TUniqueId uid, CStateManager& mgr) {
+#if defined(TARGET_PC)
+  if (msg == kSM_Open) {
+    mPendingCloseMsg = kSM_None;
+  } else if (((msg == kSM_Close && mIsOpen) ||
+              (msg == kSM_Action && (mIsOpen || mPartner1 != kInvalidUniqueId))) &&
+             GetActive() && IsClosingBlocked(mgr)) {
+    mPendingCloseMsg = msg;
+    mPendingCloseSender = uid;
+    return;
+  }
+#endif
+
   switch (msg) {
   case kSM_Close: {
     if (!GetActive()) {
@@ -327,6 +392,14 @@ void CScriptDoor::Think(float dt, CStateManager& mgr) {
     return;
   }
 
+#if defined(TARGET_PC)
+  if (mPendingCloseMsg != kSM_None && !IsClosingBlocked(mgr)) {
+    const EScriptObjectMessage msg = mPendingCloseMsg;
+    mPendingCloseMsg = kSM_None;
+    AcceptScriptMsg(msg, mPendingCloseSender, mgr);
+  }
+#endif
+
   if (!mIsOpen && mAnimTime < 0.05f) {
     mAnimTime += dt;
   }
@@ -392,6 +465,9 @@ bool CScriptDoor::IsConnectedToArea(const CStateManager& mgr, TAreaId areaId) co
 }
 
 void CScriptDoor::ForceClosed(CStateManager& mgr) {
+#if defined(TARGET_PC)
+  mPendingCloseMsg = kSM_None;
+#endif
   if (mIsOpen) {
     mIsOpen = false;
     mWasOpen = false;

@@ -38,6 +38,15 @@ void UpdateProjectileCrossing(CStateManager& mgr, CGameProjectile& projectile);
 // room has a moved door.
 bool TracksProjectileAreas();
 
+// Collision and actor queries. Two loaded rooms whose doorways meet in world space, but that no
+// door in that place joins any more, are separated: neither collides with or sees the other.
+// Otherwise a player standing in a moved doorway runs into the closed door and walls of the room
+// that doorway used to lead to, and gets shoved back out.
+bool AreAreasSeparated(const CStateManager& mgr, TAreaId a, TAreaId b);
+
+// Whether any loaded rooms are separated that way.
+bool HasSeparatedAreas(const CStateManager& mgr);
+
 // Rendering. Each frame is drawn from a root area: the area the camera is in, which is the
 // player's area unless a trailing camera is still on the far side of a moved door. The main pass
 // draws the root and its vanilla neighbors, then each moved door of the root is drawn as a portal

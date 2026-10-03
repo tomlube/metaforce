@@ -339,6 +339,95 @@ void UpdateProjectileCrossing(CStateManager& mgr, CGameProjectile& projectile) {
 
 bool TracksProjectileAreas() { return sFrame.valid; }
 
+namespace {
+
+struct Separations {
+  const CWorld* world = nullptr;
+  uint frame = 0xFFFFFFFF;
+  std::vector< std::pair< TAreaId, TAreaId > > pairs;
+};
+
+Separations sSeparations;
+
+// Whether a dock of `from` leads to `to` through a doorway that stayed where it is.
+bool HasUnmovedDoorTo(const CWorld& world, const CGameArea& from, TAreaId to) {
+  for (int dock = 0; dock < from.GetDockCount(); ++dock) {
+    const IGameArea::Dock& gameDock = from.GetDock(dock);
+    if (!gameDock.GetDockRefs().empty() &&
+        gameDock.GetConnectedAreaId(gameDock.GetReferenceCount()) == to &&
+        !IsMovedDock(world, from.GetId(), dock)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool HaveMeetingDoorways(const CGameArea& a, const CGameArea& b) {
+  for (int i = 0; i < a.GetDockCount(); ++i) {
+    DockFrame frameA;
+    if (!GetDockFrame(a, i, frameA)) {
+      continue;
+    }
+    for (int j = 0; j < b.GetDockCount(); ++j) {
+      DockFrame frameB;
+      if (GetDockFrame(b, j, frameB) &&
+          (frameA.center - frameB.center).Magnitude() < kCoincidentDistance) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+// Worked out once per update frame; doors only move and rooms only load between frames.
+const Separations& GetSeparations(const CStateManager& mgr) {
+  const CWorld* world = mgr.GetWorld();
+  const uint frame = mgr.GetUpdateFrameIndex();
+  if (sSeparations.world == world && sSeparations.frame == frame) {
+    return sSeparations;
+  }
+  sSeparations.world = world;
+  sSeparations.frame = frame;
+  sSeparations.pairs.clear();
+  if (world == nullptr) {
+    return sSeparations;
+  }
+  std::vector< const CGameArea* > alive;
+  for (CGameArea::CConstChainIterator it = world->GetChainHead(CWorld::kC_Alive);
+       it != CWorld::skGlobalEnd; ++it) {
+    if (it->IsPostConstructed()) {
+      alive.push_back(&*it);
+    }
+  }
+  for (size_t i = 0; i < alive.size(); ++i) {
+    for (size_t j = i + 1; j < alive.size(); ++j) {
+      const CGameArea& a = *alive[i];
+      const CGameArea& b = *alive[j];
+      if (HaveMeetingDoorways(a, b) && !HasUnmovedDoorTo(*world, a, b.GetId()) &&
+          !HasUnmovedDoorTo(*world, b, a.GetId())) {
+        sSeparations.pairs.emplace_back(a.GetId(), b.GetId());
+      }
+    }
+  }
+  return sSeparations;
+}
+
+} // namespace
+
+bool AreAreasSeparated(const CStateManager& mgr, TAreaId a, TAreaId b) {
+  if (a == b || a == kInvalidAreaId || b == kInvalidAreaId) {
+    return false;
+  }
+  for (const auto& pair : GetSeparations(mgr).pairs) {
+    if ((pair.first == a && pair.second == b) || (pair.first == b && pair.second == a)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool HasSeparatedAreas(const CStateManager& mgr) { return !GetSeparations(mgr).pairs.empty(); }
+
 void PrepareFrame(const CStateManager& mgr) {
   Frame& frame = sFrame;
   frame.valid = false;

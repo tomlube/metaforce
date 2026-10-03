@@ -52,6 +52,12 @@ public:
   void ForceClosed(CStateManager& mgr);
 
 private:
+#if defined(TARGET_PC)
+  // Whether a room randomizer door told to close should wait: the door (or the one it closes
+  // along with) would turn solid around the player and shove them out of the doorway.
+  bool IsClosingBlocked(const CStateManager& mgr) const;
+#endif
+
   float mAnimLength;
   float mAnimTime;
   EDoorAnimType mDoorState;
@@ -70,6 +76,13 @@ private:
   bool mProjectilesCollide : 1;
   bool mBallDoor : 1;
   bool mDoClose : 1;
+
+#if defined(TARGET_PC)
+  // A close (kSM_Close or kSM_Action) held back by IsClosingBlocked, or kSM_None. Think delivers
+  // it once the player is out of the way.
+  EScriptObjectMessage mPendingCloseMsg;
+  TUniqueId mPendingCloseSender;
+#endif
 };
 CHECK_SIZEOF(CScriptDoor, (VERSION >= VERSION_GM8E_02 ? 0x2c0 : 0x2b0))
 

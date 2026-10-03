@@ -660,7 +660,7 @@ void CStateManager::UpdateActorInSortedLists(CActor& actor) {
 // world, since their rooms can overlap in space.
 static void FilterNearListBySpace(const CStateManager& mgr, TEntityList& list,
                                   const CActor* actor) {
-  if (!metaforce::merged::IsMerged()) {
+  if (!metaforce::merged::IsMerged() && !metaforce::portals::HasSeparatedAreas(mgr)) {
     return;
   }
   const TAreaId actorArea =

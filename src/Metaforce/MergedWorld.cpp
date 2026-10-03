@@ -1,5 +1,6 @@
 #include "Metaforce/MergedWorld.hpp"
 
+#include "Metaforce/DockPortals.hpp"
 #include "Metaforce/Randomizer/Randomizer.hpp"
 
 #include "Kyoto/Audio/CStreamAudioManager.hpp"
@@ -75,6 +76,9 @@ std::map< CAssetId, TCachedToken< CModel > > sSkies;
 // Region of each area for queries: 0 for the host, 1 + index into sState.foreign for the others.
 // -1 means "where the player is".
 int sQueryGroup = -1;
+// Area of the actor making queries, for DockPortals' separated rooms. -1 means "where the player
+// is". Kept whether or not the world is merged.
+int sQueryArea = -1;
 
 const Source* FindSource(int area) {
   for (const Source& source : sState.foreign) {
@@ -114,6 +118,10 @@ int PlayerGroup(const CStateManager& mgr) {
 
 int QueryGroup(const CStateManager& mgr) {
   return sQueryGroup >= 0 ? sQueryGroup : PlayerGroup(mgr);
+}
+
+TAreaId QueryArea(const CStateManager& mgr) {
+  return sQueryArea >= 0 ? TAreaId(sQueryArea) : mgr.GetNextAreaId();
 }
 
 // The regions the active seed's cross-region doors reach from `host`, host first.
@@ -485,27 +493,39 @@ TAreaId GetQueryArea(const CStateManager& mgr, const CEntity& ent) {
 }
 
 bool SharesSpace(const CStateManager& mgr, TAreaId area) {
-  if (!IsMerged() || area == kInvalidAreaId) {
+  if (area == kInvalidAreaId) {
     return true;
   }
-  return GroupOf(area.Value()) == QueryGroup(mgr);
+  if (IsMerged() && GroupOf(area.Value()) != QueryGroup(mgr)) {
+    return false;
+  }
+  return !portals::AreAreasSeparated(mgr, QueryArea(mgr), area);
 }
 
 bool SharesSpace(const CStateManager& mgr, TAreaId actor, TAreaId other) {
-  if (!IsMerged()) {
-    return true;
+  if (IsMerged()) {
+    const int actorGroup = actor == kInvalidAreaId ? QueryGroup(mgr) : GroupOf(actor.Value());
+    const int otherGroup = other == kInvalidAreaId ? PlayerGroup(mgr) : GroupOf(other.Value());
+    if (actorGroup != otherGroup) {
+      return false;
+    }
   }
-  const int actorGroup = actor == kInvalidAreaId ? QueryGroup(mgr) : GroupOf(actor.Value());
-  const int otherGroup = other == kInvalidAreaId ? PlayerGroup(mgr) : GroupOf(other.Value());
-  return actorGroup == otherGroup;
+  return !portals::AreAreasSeparated(mgr, actor == kInvalidAreaId ? QueryArea(mgr) : actor,
+                                     other == kInvalidAreaId ? mgr.GetNextAreaId() : other);
 }
 
-QueryScope::QueryScope(TAreaId area) : mPrevious(sQueryGroup) {
-  if (IsMerged() && area != kInvalidAreaId) {
-    sQueryGroup = GroupOf(area.Value());
+QueryScope::QueryScope(TAreaId area) : mPrevious(sQueryGroup), mPreviousArea(sQueryArea) {
+  if (area != kInvalidAreaId) {
+    sQueryArea = area.Value();
+    if (IsMerged()) {
+      sQueryGroup = GroupOf(area.Value());
+    }
   }
 }
 
-QueryScope::~QueryScope() { sQueryGroup = mPrevious; }
+QueryScope::~QueryScope() {
+  sQueryGroup = mPrevious;
+  sQueryArea = mPreviousArea;
+}
 
 } // namespace metaforce::merged
