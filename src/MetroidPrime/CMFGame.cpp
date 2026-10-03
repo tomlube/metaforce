@@ -27,6 +27,7 @@
 #if defined(TARGET_PC)
 #include "Metaforce/CutsceneSkip.hpp"
 #include "Metaforce/Input.hpp"
+#include "Metaforce/MapLayout.hpp"
 #include "Metaforce/Randomizer/Hooks.hpp"
 #include "Metaforce/Warp.hpp"
 #endif
@@ -177,6 +178,11 @@ CIOWin::EMessageReturn CMFGame::OnMessage(const CArchitectureMessage& message,
       break;
     }
     CStateManager& mgr = *mStateManager;
+#if defined(TARGET_PC)
+    // Paused too: the map screen is drawn while the game is paused, and a map laid out again in
+    // the background, or for a changed Room Rando Map setting, should show there.
+    metaforce::maplayout::Update(mgr);
+#endif
     mGuiManager->Update(mgr, dt, queue, IsCameraActiveFlow());
     if (!wasInitialized)
       gpGameState->WorldTransitionManager()->EndTransition();
