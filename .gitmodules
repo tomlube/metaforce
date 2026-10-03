@@ -6,4 +6,4 @@
 	url = https://github.com/encounter/aurora.git
 [submodule "extern/borealis"]
 	path = extern/borealis
-	url = https://github.com/encounter/borealis.git
+	url = https://github.com/tomlube/borealis.git
