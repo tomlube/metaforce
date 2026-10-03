@@ -259,8 +259,8 @@ public:
         return;
       }
     }
-    if (CScriptDamageableTrigger* trigger =
-            TCastToPtr< CScriptDamageableTrigger >(mgr.ObjectById(mTrigger))) {
+    // As a CActor: TCastToPtr isn't generated for CScriptDamageableTrigger.
+    if (CActor* trigger = TCastToPtr< CActor >(mgr.ObjectById(mTrigger))) {
       if (trigger->HealthInfo(mgr)->GetHP() <= 0.f) {
         Break(mgr);
       }
@@ -297,8 +297,7 @@ private:
     mgr.CameraManager()->AddCameraShaker(CCameraShakeData::HardBothAxesShake(0.5f, 0.2f), true);
     // A door without power keeps its triggers off; it opens normally once it has power.
     for (const TUniqueId force : mForces) {
-      if (CScriptDamageableTrigger* trigger =
-              TCastToPtr< CScriptDamageableTrigger >(mgr.ObjectById(force))) {
+      if (CActor* trigger = TCastToPtr< CActor >(mgr.ObjectById(force))) {
         if (trigger->GetActive()) {
           trigger->HealthInfo(mgr)->SetHP(0.f);
         }
