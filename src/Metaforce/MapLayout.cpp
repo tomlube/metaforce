@@ -306,6 +306,12 @@ struct Result {
   float area = 0.f;
 };
 
+// The range of Z two rooms cover over part of their overlap, for each of the two.
+struct ZRanges {
+  float z0[2] = {FLT_MAX, FLT_MAX};
+  float z1[2] = {-FLT_MAX, -FLT_MAX};
+};
+
 // Where two rooms overlap on the map: quads in map space, drawn when both rooms are. Each patch
 // fits one GX index array, as triangles, drawn without culling so they show from above and
 // below.
@@ -1092,8 +1098,7 @@ private:
     }
 
     // By pair of rooms, by row: the cells and the range of Z the two rooms cover there.
-    std::map< std::pair< int, int >, std::map< std::pair< int, int >, std::pair< float, float > > >
-        pairs;
+    std::map< std::pair< int, int >, std::map< std::pair< int, int >, ZRanges > > pairs;
     for (const auto& [key, cells] : inner) {
       const int ix = static_cast< int >(key >> 32);
       const int iy = static_cast< int >(static_cast< std::int32_t >(key & 0xffffffff));
@@ -1105,12 +1110,12 @@ private:
             continue;
           }
           const std::pair< int, int > rooms(std::min(a.room, b.room), std::max(a.room, b.room));
-          std::pair< float, float >& range =
-              pairs[rooms]
-                  .try_emplace(std::make_pair(iy, ix), std::make_pair(FLT_MAX, -FLT_MAX))
-                  .first->second;
-          range.first = std::min(range.first, std::min(a.z0, b.z0));
-          range.second = std::max(range.second, std::max(a.z1, b.z1));
+          ZRanges& ranges = pairs[rooms][std::make_pair(iy, ix)];
+          for (const Inner* cell : {&a, &b}) {
+            const int which = cell->room == rooms.first ? 0 : 1;
+            ranges.z0[which] = std::min(ranges.z0[which], cell->z0);
+            ranges.z1[which] = std::max(ranges.z1[which], cell->z1);
+          }
         }
       }
     }
@@ -1164,14 +1169,16 @@ private:
   // The overlap of two rooms as seen from above, from their map triangles on a fine grid, with
   // smooth edges by marching squares, as one flat sheet a little above the higher ceiling.
   void AddSmoothOverlap(const Result& result, int roomA, int roomB,
-                        const std::map< std::pair< int, int >, std::pair< float, float > >& cells,
+                        const std::map< std::pair< int, int >, ZRanges >& cells,
                         std::vector< OverlapPatch >& overlaps) const {
-    float bottom = FLT_MAX;
-    float top = -FLT_MAX;
+    // The range of Z each room covers over the overlap.
+    ZRanges whole;
     int minX = INT_MAX, maxX = INT_MIN, minY = INT_MAX, maxY = INT_MIN;
     for (const auto& [cell, range] : cells) {
-      bottom = std::min(bottom, range.first);
-      top = std::max(top, range.second);
+      for (int k = 0; k < 2; ++k) {
+        whole.z0[k] = std::min(whole.z0[k], range.z0[k]);
+        whole.z1[k] = std::max(whole.z1[k], range.z1[k]);
+      }
       minY = std::min(minY, cell.first);
       maxY = std::max(maxY, cell.first);
       minX = std::min(minX, cell.second);
@@ -1204,11 +1211,18 @@ private:
       }
     }
 
-    // A shell around the overlap: its outline as a floor a little below the lower room's floor
-    // and a ceiling a little above the higher room's ceiling, walls between them along the
-    // outline, and the outline drawn as lines at both heights.
-    const float zTop = top + 0.5f;
-    const float zBottom = bottom - 0.5f;
+    // A shell around where the two rooms take up the same space: the overlap's outline as a floor
+    // a little below the higher of their floors and a ceiling a little above the lower of their
+    // ceilings, walls between them along the outline, and the outline drawn as lines at both
+    // heights. Rooms that only lie above one another get none.
+    const float shellBottom = std::max(whole.z0[0], whole.z0[1]);
+    const float shellTop = std::min(whole.z1[0], whole.z1[1]);
+    if (shellTop - shellBottom < kZTolerance) {
+      return;
+    }
+    const std::pair< float, float > shells[] = {{shellBottom, shellTop}};
+    float zTop = 0.f;
+    float zBottom = 0.f;
     OverlapPatch faces;
     faces.areaA = mRooms[roomA].id.Value();
     faces.areaB = mRooms[roomB].id.Value();
@@ -1273,42 +1287,47 @@ private:
         {1, 4, 6}, {1, 6, 7}, {1, 6, 7}, {1, 4, 6}, {2, 5, 6, 7, 4}, {1, 5, 6},
         {1, 7, 5}, {1, 4, 5}, {1, 7, 4}, {0},
     };
-    for (int j = 0; j + 1 < height; ++j) {
-      int fullStart = -1;
-      for (int i = 0; i + 1 <= width; ++i) {
-        int which = 0;
-        if (i + 1 < width) {
-          which = (both[j * width + i] ? 1 : 0) | (both[j * width + i + 1] ? 2 : 0) |
-                  (both[(j + 1) * width + i + 1] ? 4 : 0) | (both[(j + 1) * width + i] ? 8 : 0);
-        }
-        // Full squares next to each other in a row become one rectangle.
-        if (which == 15) {
-          if (fullStart < 0) {
-            fullStart = i;
+    for (const auto& [low, high] : shells) {
+      zBottom = low - 0.5f;
+      zTop = high + 0.5f;
+      for (int j = 0; j + 1 < height; ++j) {
+        int fullStart = -1;
+        for (int i = 0; i + 1 <= width; ++i) {
+          int which = 0;
+          if (i + 1 < width) {
+            which = (both[j * width + i] ? 1 : 0) | (both[j * width + i + 1] ? 2 : 0) |
+                    (both[(j + 1) * width + i + 1] ? 4 : 0) | (both[(j + 1) * width + i] ? 8 : 0);
           }
-          continue;
-        }
-        if (fullStart >= 0) {
-          const float rect[4][2] = {{static_cast< float >(fullStart), static_cast< float >(j)},
-                                    {static_cast< float >(i), static_cast< float >(j)},
-                                    {static_cast< float >(i), static_cast< float >(j + 1)},
-                                    {static_cast< float >(fullStart), static_cast< float >(j + 1)}};
-          addPolygon(rect, 4);
-          fullStart = -1;
-        }
-        const int count = kCases[which][0];
-        if (count >= 3) {
-          float points[6][2];
-          for (int k = 0; k < count; ++k) {
-            points[k][0] = i + kPoints[kCases[which][k + 1]][0];
-            points[k][1] = j + kPoints[kCases[which][k + 1]][1];
+          // Full squares next to each other in a row become one rectangle.
+          if (which == 15) {
+            if (fullStart < 0) {
+              fullStart = i;
+            }
+            continue;
           }
-          addPolygon(points, count);
-        }
-        for (int k = 0; k < kSegments[which][0]; ++k) {
-          const float* from = kPoints[kSegments[which][1 + 2 * k]];
-          const float* to = kPoints[kSegments[which][2 + 2 * k]];
-          addSegment(i + from[0], j + from[1], i + to[0], j + to[1]);
+          if (fullStart >= 0) {
+            const float rect[4][2] = {
+                {static_cast< float >(fullStart), static_cast< float >(j)},
+                {static_cast< float >(i), static_cast< float >(j)},
+                {static_cast< float >(i), static_cast< float >(j + 1)},
+                {static_cast< float >(fullStart), static_cast< float >(j + 1)}};
+            addPolygon(rect, 4);
+            fullStart = -1;
+          }
+          const int count = kCases[which][0];
+          if (count >= 3) {
+            float points[6][2];
+            for (int k = 0; k < count; ++k) {
+              points[k][0] = i + kPoints[kCases[which][k + 1]][0];
+              points[k][1] = j + kPoints[kCases[which][k + 1]][1];
+            }
+            addPolygon(points, count);
+          }
+          for (int k = 0; k < kSegments[which][0]; ++k) {
+            const float* from = kPoints[kSegments[which][1 + 2 * k]];
+            const float* to = kPoints[kSegments[which][2 + 2 * k]];
+            addSegment(i + from[0], j + from[1], i + to[0], j + to[1]);
+          }
         }
       }
     }
