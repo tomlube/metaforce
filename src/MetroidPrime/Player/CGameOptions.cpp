@@ -15,6 +15,11 @@
 
 #if defined(TARGET_PC)
 #include "Metaforce/GameOptionDefaults.hpp"
+#include "Metaforce/Input.hpp"
+
+bool CGameOptions::GetSwapBeamControls() const {
+  return mSwapBeamsControls && !metaforce::input::ModernControlsEnabled();
+}
 #endif
 
 const bool CGameOptions::skDefaultHudLag = true;

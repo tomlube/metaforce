@@ -13,6 +13,10 @@ constexpr float kAnalogTriggerOnThreshold = 0.05f;
 bool sPrevDigitalL[PAD_CHANMAX] = {};
 u8 sPrevTriggerL[PAD_CHANMAX] = {};
 
+// Set by a Z press seen in game; cleared by a beam chord, Start, or opening the map. The map
+// screen eats the Z press that closes it, so a Z release without a press we saw never opens it.
+bool sMapArmed = false;
+
 bool soft_lock_active(u8 triggerLeft) {
   return static_cast< float >(triggerLeft) / kTriggerFull > kAnalogTriggerOnThreshold;
 }
@@ -43,6 +47,27 @@ void ApplySmartLockOn(PADStatus* status) {
     }
     sPrevTriggerL[port] = pad.triggerLeft;
   }
+}
+
+bool ModernControlsEnabled() { return ui::GetRuntimeConfig().input.modernControls.getValue(); }
+
+bool FilterMapButton(bool zPressed, bool zHeld, bool dpadPressed, bool startPressed) {
+  if (!ModernControlsEnabled()) {
+    sMapArmed = false;
+    return zPressed;
+  }
+
+  if (zPressed) {
+    sMapArmed = true;
+  }
+  if ((zHeld && dpadPressed) || startPressed) {
+    sMapArmed = false;
+  }
+  if (!zHeld && sMapArmed) {
+    sMapArmed = false;
+    return true;
+  }
+  return false;
 }
 
 } // namespace metaforce::input

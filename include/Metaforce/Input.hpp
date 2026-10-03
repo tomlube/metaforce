@@ -12,4 +12,13 @@ namespace metaforce::input {
 // drives analog L to full, reproducing the trigger's travel. Call on clamped PADRead output.
 void ApplySmartLockOn(PADStatus* status);
 
+// Modern controls: the left stick moves and strafes, the right stick turns. The C-stick beams move
+// to Z + D-pad, and the D-pad alone still picks visors.
+bool ModernControlsEnabled();
+
+// Z opens the map. With modern controls, Z is also the beam modifier, so the map waits for Z to
+// be released and opens only if no D-pad direction was pressed while it was held. Call once for
+// every in-game input on port 0, before the pause and map checks. Returns whether to open the map.
+bool FilterMapButton(bool zPressed, bool zHeld, bool dpadPressed, bool startPressed);
+
 } // namespace metaforce::input

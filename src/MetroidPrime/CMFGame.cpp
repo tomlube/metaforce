@@ -25,6 +25,7 @@
 #include "rstl/math.hpp"
 
 #if defined(TARGET_PC)
+#include "Metaforce/Input.hpp"
 #include "Metaforce/Randomizer/Hooks.hpp"
 #include "Metaforce/Warp.hpp"
 #endif
@@ -179,6 +180,22 @@ CIOWin::EMessageReturn CMFGame::OnMessage(const CArchitectureMessage& message,
         const CGameCamera& camera =
             mStateManager->GetCameraManager()->GetCurrentCamera(*mStateManager);
         const CCinematicCamera* const cineCam = TCastToConstPtr< CCinematicCamera >(camera);
+#if defined(TARGET_PC)
+        // R + Z + D-pad Left reloads the last save in randomized games. R cancels a Z press like a
+        // beam chord does, so the map stays shut while the chord is put together.
+        const bool rHeld = input.DR() || input.DRTrigger();
+        const bool reloadHoldsMap = metaforce::randomizer::QuickReloadHoldsMap(rHeld);
+        const bool mapPressed =
+            metaforce::input::FilterMapButton(
+                input.PZ(), input.DZ(),
+                input.PDPUp() || input.PDPDown() || input.PDPLeft() || input.PDPRight() ||
+                    reloadHoldsMap,
+                input.PStart()) &&
+            !reloadHoldsMap;
+        if (metaforce::randomizer::OnQuickReloadInput(rHeld, input.DZ(), input.DDPLeft())) {
+          break;
+        }
+#endif
         if (input.PStart()) {
           if (cineCam && mStateManager->GetCinematicSkipObject() != kInvalidUniqueId) {
             CMidiManager::StopAll();
@@ -189,7 +206,12 @@ CIOWin::EMessageReturn CMFGame::OnMessage(const CArchitectureMessage& message,
           } else if (!cineCam) {
             mStateManager->DeferStateTransition(kSMT_PauseGame);
           }
-        } else if (input.PZ() && !cineCam && mStateManager->CanShowMapScreen()) {
+        }
+#if defined(TARGET_PC)
+        else if (mapPressed && !cineCam && mStateManager->CanShowMapScreen()) {
+#else
+        else if (input.PZ() && !cineCam && mStateManager->CanShowMapScreen()) {
+#endif
           mStateManager->DeferStateTransition(kSMT_MapScreen);
         }
       }

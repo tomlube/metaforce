@@ -6,7 +6,66 @@
 
 #include "Kyoto/Input/CFinalInput.hpp"
 
+#if defined(TARGET_PC)
+#include "Metaforce/Input.hpp"
+#endif
+
 rstl::reserved_vector< bool, 67 > ControlMapper::gCommandFilterFlag(true);
+
+#if defined(TARGET_PC)
+// Modern controls give the right stick to turning, so beams bound to it move to the same
+// directions on the D-pad behind a Z hold, and visors on the D-pad stand aside while Z is held.
+// This assumes the normal layout, so the swapped one (gpTweakPlayerControl2) is ignored.
+static ControlMapper::EFunctionList GetMapping(ControlMapper::ECommands command,
+                                               const CFinalInput& input) {
+  if (!metaforce::input::ModernControlsEnabled()) {
+    return gpTweakPlayerControlCurrent->GetMapping(command);
+  }
+
+  const ControlMapper::EFunctionList mapping = gpTweakPlayerControl1->GetMapping(command);
+
+  switch (command) {
+  case ControlMapper::kC_PowerBeam:
+  case ControlMapper::kC_IceBeam:
+  case ControlMapper::kC_WaveBeam:
+  case ControlMapper::kC_PlasmaBeam: {
+    ControlMapper::EFunctionList dpad;
+    switch (mapping) {
+    case ControlMapper::kFL_RightStickUp:
+      dpad = ControlMapper::kFL_DPadUp;
+      break;
+    case ControlMapper::kFL_RightStickDown:
+      dpad = ControlMapper::kFL_DPadDown;
+      break;
+    case ControlMapper::kFL_RightStickLeft:
+      dpad = ControlMapper::kFL_DPadLeft;
+      break;
+    case ControlMapper::kFL_RightStickRight:
+      dpad = ControlMapper::kFL_DPadRight;
+      break;
+    default:
+      return mapping;
+    }
+    return input.DZ() ? dpad : ControlMapper::kFL_None;
+  }
+  case ControlMapper::kC_XrayVisor:
+  case ControlMapper::kC_ThermoVisor:
+  case ControlMapper::kC_EnviroVisor:
+  case ControlMapper::kC_NoVisor:
+    switch (mapping) {
+    case ControlMapper::kFL_DPadUp:
+    case ControlMapper::kFL_DPadDown:
+    case ControlMapper::kFL_DPadLeft:
+    case ControlMapper::kFL_DPadRight:
+      return input.DZ() ? ControlMapper::kFL_None : mapping;
+    default:
+      return mapping;
+    }
+  default:
+    return mapping;
+  }
+}
+#endif
 
 const FAnalogInput ControlMapper::gAnalogInputs[] = {
     nullptr,
@@ -267,30 +326,60 @@ const char* ControlMapper::GetDescriptionForCommand(ECommands command) {
 }
 
 float ControlMapper::GetAnalogInput(ECommands command, const CFinalInput& input) {
+#if defined(TARGET_PC)
+  if (gCommandFilterFlag[command]) {
+    const EFunctionList mapping = ::GetMapping(command, input);
+    if (gAnalogInputs[mapping] != nullptr) {
+      return (input.*gAnalogInputs[mapping])();
+    }
+  }
+  return 0.f;
+#else
   if (gCommandFilterFlag[command]) {
     if (gAnalogInputs[gpTweakPlayerControlCurrent->GetMapping(command)] != nullptr) {
       return (input.*gAnalogInputs[gpTweakPlayerControlCurrent->GetMapping(command)])();
     }
   }
   return 0.f;
+#endif
 }
 
 bool ControlMapper::GetDigitalInput(ECommands command, const CFinalInput& input) {
+#if defined(TARGET_PC)
+  if (gCommandFilterFlag[command]) {
+    const EFunctionList mapping = ::GetMapping(command, input);
+    if (gDigitalInputs[mapping] != nullptr) {
+      return (input.*gDigitalInputs[mapping])();
+    }
+  }
+  return false;
+#else
   if (gCommandFilterFlag[command]) {
     if (gDigitalInputs[gpTweakPlayerControlCurrent->GetMapping(command)] != nullptr) {
       return (input.*gDigitalInputs[gpTweakPlayerControlCurrent->GetMapping(command)])();
     }
   }
   return false;
+#endif
 }
 
 bool ControlMapper::GetPressInput(ECommands command, const CFinalInput& input) {
+#if defined(TARGET_PC)
+  if (gCommandFilterFlag[command]) {
+    const EFunctionList mapping = ::GetMapping(command, input);
+    if (gPressInputs[mapping] != nullptr) {
+      return (input.*gPressInputs[mapping])();
+    }
+  }
+  return false;
+#else
   if (gCommandFilterFlag[command]) {
     if (gPressInputs[gpTweakPlayerControlCurrent->GetMapping(command)] != nullptr) {
       return (input.*gPressInputs[gpTweakPlayerControlCurrent->GetMapping(command)])();
     }
   }
   return false;
+#endif
 }
 
 void ControlMapper::ResetCommandFilters() {

@@ -90,7 +90,12 @@ public:
   void SetIsRumbleEnabled(const bool rumble);
   const bool GetIsRumbleEnabled() const { return mRumble; }
   bool GetIsHintSystemEnabled() const { return mHintSystem; }
+#if defined(TARGET_PC)
+  // Modern controls build on the normal layout, so they report it while enabled.
+  bool GetSwapBeamControls() const;
+#else
   bool GetSwapBeamControls() const { return mSwapBeamsControls; }
+#endif
 
 public:
   rstl::reserved_vector< uchar, 64 > x0_;

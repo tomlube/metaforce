@@ -316,6 +316,13 @@ public:
   float TurnInput(const CFinalInput& input) const;
   float StrafeInput(const CFinalInput& input) const;
   float ForwardInput(const CFinalInput& input, float turnInput) const;
+#if defined(TARGET_PC)
+  // Modern controls (Metaforce/Input.hpp) outside of orbit: the left stick strafes as well as
+  // moving forward and back, and the right stick turns.
+  bool UseModernMovement() const;
+  float ModernStrafeInput(const CFinalInput& input) const;
+  float ModernTranslationForce(float input, float localSpeed, float maxSpeed, float dt) const;
+#endif
   float GetActualFirstPersonMaxVelocity(float dt) const;
   float GetActualBallMaxVelocity(float dt) const;
   const CScriptWater* GetVisorRunoffEffect(const CStateManager& mgr) const;

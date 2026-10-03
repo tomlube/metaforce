@@ -32,6 +32,7 @@ struct RuntimeConfig {
   struct Input {
     RuntimeVar< bool > allowBackgroundInput{false};
     RuntimeVar< bool > smartLockOn{true};
+    RuntimeVar< bool > modernControls{false};
   } input;
 
   struct Interface {

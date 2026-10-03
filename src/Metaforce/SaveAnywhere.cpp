@@ -134,9 +134,17 @@ std::string WhyCantSave() {
   if (mgr->GetPlayer()->GetDeathTime() > 0.f) {
     return "Samus is dead.";
   }
-  if (mgr->GetGameState() != CStateManager::kGS_Running || mgr->GetInSaveUI() ||
-      mgr->GetWantsToEnterSaveGameScreen()) {
+  // The pause, map, logbook, save and message screens all hold the state manager's deferred
+  // transition from the request until CMFGame::UnpauseGame, so it tells whether one is up or about
+  // to be. GetInSaveUI is no use here: it latches whether the last save screen was left by saving
+  // (the save station reads it afterwards), and CMFGame copies it on every unpause, so it stays set
+  // long after any save screen has closed.
+  if (mgr->GetDeferredStateTransition() != kSMT_InGame) {
     return "The game is paused.";
+  }
+  // Only a finished scan soft-pauses the game, while its text is up.
+  if (mgr->GetGameState() != CStateManager::kGS_Running) {
+    return "A scan is being shown.";
   }
   if (mgr->GetCameraManager()->IsInCinematicCamera()) {
     return "A cutscene is playing.";
@@ -224,6 +232,8 @@ void AfterGameSaved() {
 }
 
 void OnWorldInitialized(CStateManager& mgr) {
+  // A request whose save screen never opened belongs to the game that was left.
+  sPending.reset();
   if (gpGameState == nullptr || mgr.GetPlayer() == nullptr) {
     return;
   }

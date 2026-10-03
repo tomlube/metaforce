@@ -490,6 +490,17 @@ SettingsWindow::SettingsWindow() {
                 "reticle is showing.<br/><br/>Analog triggers are unaffected. To strafe past a "
                 "target without locking on, bind a separate button to analog L only.",
         });
+    config_bool_select(
+        leftPane, rightPane, GetRuntimeConfig().input.modernControls,
+        {
+            .key = "Modern Controls",
+            .helpText =
+                "Dual-stick movement: the left stick moves and strafes, and the C-stick turns. "
+                "Forward, strafe and turning speeds stay at their original values.<br/><br/>"
+                "Beams move from the C-stick to Z + D-pad. The D-pad alone still selects "
+                "visors, and tapping Z opens the map when you let go.<br/><br/>Locking on works "
+                "as it always has.",
+        });
   });
 
   add_tab("Game", [this](Rml::Element* content) {

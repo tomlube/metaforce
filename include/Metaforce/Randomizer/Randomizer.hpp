@@ -49,6 +49,10 @@ void SetArmedSeed(const std::string& hash);
 // The seed of the game being played, if any.
 const Seed* GetActiveSeed();
 
+// Whether R + Z + D-pad Left reloads the last save in a randomized game. On by default.
+bool GetQuickReload();
+void SetQuickReload(bool enabled);
+
 enum class GenerationState {
   Idle,
   Running,

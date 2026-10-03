@@ -9,6 +9,7 @@
 #include "Kyoto/Math/CRelAngle.hpp"
 #include "Kyoto/Math/CTransform4f.hpp"
 #include "MetroidPrime/CEntityInfo.hpp"
+#include "MetroidPrime/CMain.hpp"
 #include "MetroidPrime/CMemoryCard.hpp"
 #include "MetroidPrime/CScriptLayerManager.hpp"
 #include "MetroidPrime/CStateManager.hpp"
@@ -16,6 +17,7 @@
 #include "MetroidPrime/Player/CPlayer.hpp"
 #include "MetroidPrime/Player/CPlayerState.hpp"
 #include "MetroidPrime/Player/CWorldState.hpp"
+#include "MetroidPrime/Player/CWorldTransManager.hpp"
 
 #include <SDL3/SDL_filesystem.h>
 #include <borealis/log.hpp>
@@ -103,6 +105,9 @@ struct Session {
   bool settingsLoaded = false;
   std::string armedSeed;
   std::map< std::string, std::string > slots; // save slot key -> seed hash
+  bool quickReload = true;
+  // Whether the quick reload chord was held on the last input seen, so holding it reloads once.
+  bool quickReloadHeld = false;
 
   std::optional< Seed > active;
   std::unordered_map< uint64_t, int > pickupByObject;
@@ -129,7 +134,8 @@ fs::path SettingsFile() { return S().root / "settings.json"; }
 fs::path SeedsRoot() { return S().root / "seeds"; }
 
 void SaveSession() {
-  const json root{{"armed", S().armedSeed}, {"slots", S().slots}};
+  const json root{
+      {"armed", S().armedSeed}, {"slots", S().slots}, {"quick_reload", S().quickReload}};
   std::error_code ec;
   fs::create_directories(S().root, ec);
   std::ofstream file(SessionFile(), std::ios::binary | std::ios::trunc);
@@ -146,6 +152,7 @@ void LoadSession() {
     return;
   }
   S().armedSeed = root.value("armed", "");
+  S().quickReload = root.value("quick_reload", true);
   if (root.contains("slots") && root["slots"].is_object()) {
     S().slots = root["slots"].get< std::map< std::string, std::string > >();
   }
@@ -405,6 +412,13 @@ void SetArmedSeed(const std::string& hash) {
 
 const Seed* GetActiveSeed() { return S().active ? &*S().active : nullptr; }
 
+bool GetQuickReload() { return S().quickReload; }
+
+void SetQuickReload(bool enabled) {
+  S().quickReload = enabled;
+  SaveSession();
+}
+
 bool StartGeneration() {
   auto& s = S();
   if (GetGenerationStatus().state == GenerationState::Running) {
@@ -492,6 +506,25 @@ bool GetDockOverride(unsigned int worldId, unsigned int areaAssetId, int dock,
   targetDock = conn.targetDock;
   return true;
 }
+
+bool OnQuickReloadInput(bool r, bool z, bool dpadLeft) {
+  auto& s = S();
+  const bool held = r && z && dpadLeft;
+  const bool completed = held && !s.quickReloadHeld;
+  s.quickReloadHeld = held;
+  if (!completed || !s.active || !s.quickReload || gpStateManager == nullptr) {
+    return false;
+  }
+  // The game over screen's Continue: kRM_StateSetter rebuilds the game state from the backup the
+  // last save left behind (CMain::RefreshGameState), then loads it.
+  Log.info("Quick reload: reloading the last save");
+  gpGameState->WorldTransitionManager()->DisableTransition();
+  gpMain->SetRestartMode(CMain::kRM_StateSetter);
+  gpStateManager->QuitGame();
+  return true;
+}
+
+bool QuickReloadHoldsMap(bool r) { return r && S().active && S().quickReload; }
 
 void OnGameLoad() {
   if (gpGameState == nullptr) {

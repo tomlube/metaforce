@@ -25,6 +25,10 @@
 #include "rstl/math.hpp"
 #include <stdio.h>
 
+#if defined(TARGET_PC)
+#include "Metaforce/Input.hpp"
+#endif
+
 static const int skQuitTitles[] = {24, 25, 26, 27, 28};
 
 CQuitGameScreen::CQuitGameScreen(EQuitType type)
@@ -272,6 +276,12 @@ void CGameOptions::SetOption(EGameOption option, int value) {
     options.SetIsRumbleEnabled(value > 0);
     break;
   case kGO_SwapBeamControls:
+#if defined(TARGET_PC)
+    // Locked to normal under modern controls; keep the saved choice for when they're off.
+    if (metaforce::input::ModernControlsEnabled()) {
+      break;
+    }
+#endif
     options.ToggleControls(value > 0);
     break;
   default:

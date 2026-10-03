@@ -33,6 +33,10 @@
 
 #include "rstl/algorithm.hpp"
 
+#if defined(TARGET_PC)
+#include "Metaforce/Input.hpp"
+#endif
+
 static const float skTransitionFilterTime = .95f;
 
 static const CMaterialList BallTransitionInclude = CMaterialList(kMT_Solid);
@@ -277,7 +281,13 @@ void CPlayer::ComputeDash(const CFinalInput& input, float dt, CStateManager& mgr
 void CPlayer::ComputeMovement(const CFinalInput& input, CStateManager& mgr, float dt) {
   const float jumpInput = JumpInput(input, mgr);
   float turnInput = TurnInput(input);
+#if defined(TARGET_PC)
+  // ForwardInput's diagonal boost reads the turn axis as the stick's other half. Modern controls
+  // turn on the right stick and handle diagonals themselves below.
+  const float forwardInput = ForwardInput(input, UseModernMovement() ? 0.f : turnInput);
+#else
   const float forwardInput = ForwardInput(input, turnInput);
+#endif
   SetVelocityWR(GetDampedClampedVelocityWR());
   float turnSpeedMultiplier = gpTweakPlayer->GetTurnSpeedMultiplier();
   if (gpTweakPlayer->GetFreeLookTurnsPlayer()) {
@@ -340,11 +350,45 @@ void CPlayer::ComputeMovement(const CFinalInput& input, CStateManager& mgr, floa
   } else {
     forwardForce = 0.f;
   }
+#if defined(TARGET_PC)
+  float strafeForce = 0.f;
+  if (UseModernMovement()) {
+    // Forward and strafe each chase their own retail top speed (a run forward, the orbit strafe
+    // sideways), so straight-ahead movement is exactly retail. Diagonals are capped to the unit
+    // circle and get no more push than a straight run.
+    float forwardAmount = forwardInput;
+    float strafeAmount = ModernStrafeInput(input);
+    const float inputLength =
+        CMath::SqrtF(forwardAmount * forwardAmount + strafeAmount * strafeAmount);
+    if (inputLength > 1.f) {
+      forwardAmount /= inputLength;
+      strafeAmount /= inputLength;
+    }
+    const CVector3f localVelocity = GetTransform().TransposeRotate(GetVelocityWR());
+    forwardForce = ModernTranslationForce(
+        forwardAmount, localVelocity.GetY(),
+        gpTweakPlayer->GetPlayerTranslationMaxSpeed(GetSurfaceRestraint()), dt);
+    strafeForce = ModernTranslationForce(strafeAmount, localVelocity.GetX(),
+                                         skStrafeDistances[GetSurfaceRestraint()], dt);
+    const float maxForce = gpTweakPlayer->GetMaxTranslationalAcceleration(GetSurfaceRestraint());
+    const float forceLength =
+        CMath::SqrtF(forwardForce * forwardForce + strafeForce * strafeForce);
+    if (forceLength > maxForce) {
+      forwardForce *= maxForce / forceLength;
+      strafeForce *= maxForce / forceLength;
+    }
+  }
+#endif
   if (mOrbitState != kOS_NoOrbit && gkFreeLookPreventsOrbitMovement && mLookButtonHeld) {
     forwardForce = 0.f;
   }
   if (mOrbitState == kOS_NoOrbit || mLookButtonHeld) {
+#if defined(TARGET_PC)
+    const CVector3f force =
+        CVector3f(strafeForce, forwardForce, 0.f) + CVector3f(0.f, 0.f, jumpInput);
+#else
     const CVector3f force = CVector3f(0.f, forwardForce, 0.f) + CVector3f(0.f, 0.f, jumpInput);
+#endif
     ApplyForceOR(force, CAxisAngle::Identity());
     if (turnInput != 0.f) {
       ApplyForceOR(CVector3f::Zero(),
@@ -455,6 +499,57 @@ float CPlayer::StrafeInput(const CFinalInput& input) const {
          ControlMapper::GetAnalogInput(ControlMapper::kC_StrafeLeft, input);
 }
 
+#if defined(TARGET_PC)
+bool CPlayer::UseModernMovement() const {
+  return mOrbitState == kOS_NoOrbit && metaforce::input::ModernControlsEnabled();
+}
+
+float CPlayer::ModernStrafeInput(const CFinalInput& input) const {
+  if (IsMorphBallTransitioning()) {
+    return 0.f;
+  }
+  // Same allowance ForwardInput gives the stick's other axis: full speed at 80% travel.
+  const float strafe = ControlMapper::GetAnalogInput(ControlMapper::kC_StrafeRight, input) -
+                       ControlMapper::GetAnalogInput(ControlMapper::kC_StrafeLeft, input);
+  if (CMath::AbsF(strafe) < 0.001f) {
+    return 0.f;
+  }
+  if (!gpTweakPlayer->GetMoveDuringFreeLook()) {
+    CVector3f flatVelocity = GetVelocityWR();
+    flatVelocity.SetZ(0.f);
+    if (mInFreeLook || mLookButtonHeld) {
+      if (mMovementState == NPlayer::kMS_OnGround ||
+          close_enough(flatVelocity.Magnitude(), 0.f)) {
+        return 0.f;
+      }
+    }
+  }
+  return CMath::Limit(strafe / 0.8f, 1.f);
+}
+
+// ComputeMovement's forward force for one local axis with its own top speed.
+float CPlayer::ModernTranslationForce(float input, float localSpeed, float maxSpeed,
+                                      float dt) const {
+  if (close_enough(0.f, input)) {
+    return 0.f;
+  }
+  const float friction = gpTweakPlayer->GetPlayerTranslationFriction(GetSurfaceRestraint());
+  const float acceleration = gpTweakPlayer->GetMaxTranslationalAcceleration(GetSurfaceRestraint());
+  float frictionSpeed = friction * GetMass() / (dt * acceleration);
+  frictionSpeed *= maxSpeed;
+  float desiredSpeed = input * (maxSpeed - frictionSpeed);
+  desiredSpeed += frictionSpeed * (input > 0.f ? 1.f : -1.f);
+  return CMath::Clamp(-1.f, (desiredSpeed - localSpeed) / maxSpeed, 1.f) * acceleration;
+}
+
+// Jumps trade height for distance by how far the stick is pushed. Modern controls count a strafe.
+static float ModernJumpTravel(const CFinalInput& input, float forward) {
+  return rstl::max_val(
+      forward, rstl::max_val(ControlMapper::GetAnalogInput(ControlMapper::kC_StrafeLeft, input),
+                             ControlMapper::GetAnalogInput(ControlMapper::kC_StrafeRight, input)));
+}
+#endif
+
 float CPlayer::TurnInput(const CFinalInput& input) const {
   if (mOrbitState == kOS_OrbitObject || mOrbitState == kOS_Grapple) {
     return 0.f;
@@ -464,7 +559,16 @@ float CPlayer::TurnInput(const CFinalInput& input) const {
   }
   float left = ControlMapper::GetAnalogInput(ControlMapper::kC_TurnLeft, input);
   float right = ControlMapper::GetAnalogInput(ControlMapper::kC_TurnRight, input);
+#if defined(TARGET_PC)
+  if (UseModernMovement()) {
+    // The left stick strafes, so turning moves to the right stick (freed of beams, see
+    // CControlMapper). Free look keeps the left stick and doesn't stop the turn.
+    left = input.ARALeft();
+    right = input.ARARight();
+  } else if (gpTweakPlayer->GetFreeLookTurnsPlayer()) {
+#else
   if (gpTweakPlayer->GetFreeLookTurnsPlayer()) {
+#endif
     if (!gpTweakPlayer->GetHoldButtonsForFreeLook() ||
         (gpTweakPlayer->GetHoldButtonsForFreeLook() && mLookButtonHeld)) {
       if (left < 0.01f && right < 0.01f) {
@@ -538,6 +642,11 @@ float CPlayer::JumpInput(const CFinalInput& input, CStateManager& mgr) {
       if (forward < backward) {
         forward = ControlMapper::GetAnalogInput(ControlMapper::kC_Backward, input);
       }
+#if defined(TARGET_PC)
+      if (UseModernMovement()) {
+        forward = ModernJumpTravel(input, forward);
+      }
+#endif
       return jumpFactor * ((verticalDoubleJumpAccel -
                             forward * (verticalDoubleJumpAccel - horizontalDoubleJumpAccel)) *
                            GetMass());
@@ -559,6 +668,11 @@ float CPlayer::JumpInput(const CFinalInput& input, CStateManager& mgr) {
     if (forward < backward) {
       forward = ControlMapper::GetAnalogInput(ControlMapper::kC_Backward, input);
     }
+#if defined(TARGET_PC)
+    if (UseModernMovement()) {
+      forward = ModernJumpTravel(input, forward);
+    }
+#endif
     return jumpFactor *
            ((verticalJumpAccel - forward * (verticalJumpAccel - horizontalJumpAccel)) * GetMass());
   }

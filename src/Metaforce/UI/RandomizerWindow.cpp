@@ -296,6 +296,18 @@ void RandomizerWindow::build_seeds_tab(Rml::Element* content) {
   SetHelp(leftPane, rightPane, disarm,
           "New games start vanilla. Saves that were started with a seed keep using it.");
 
+  leftPane.add_section("In Game");
+  auto& quickReload = leftPane.add_child< BoolButton >(BoolButton::Props{
+      .key = "Quick Reload",
+      .getValue = [] { return rando::GetQuickReload(); },
+      .setValue = [](bool v) { rando::SetQuickReload(v); },
+      .isModified = [] { return !rando::GetQuickReload(); },
+  });
+  SetHelp(leftPane, rightPane, quickReload,
+          "Hold <b>R</b> + <b>Z</b> + <b>D-pad Left</b> during a randomized game to reload your "
+          "last save at once, as if you had died and chosen Continue.<br/><br/>Without a save, "
+          "the seed starts over. While this is on, holding R stops Z from opening the map.");
+
   leftPane.add_section("Seeds");
   auto& seeds = leftPane.add_group_button({.text = "Generated Seeds"});
   leftPane.register_control(seeds, rightPane, [this](Pane& pane) {
