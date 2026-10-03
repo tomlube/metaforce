@@ -294,14 +294,22 @@ public:
     std::mt19937 rng(0x6d617073);
     Result best;
     int bestAttempt = 0;
+    int bestRoot = 0;
+    std::mt19937 bestRng;
     for (int attempt = 0; attempt < kAttempts; ++attempt) {
-      // The first layout grows from the first room, as sorted; the others from random ones.
-      const int root = attempt == 0 ? mRooms[0].group : static_cast< int >(rng() % mGroups.size());
+      // The first two layouts grow from the first room, as sorted; the others from random ones.
+      // Every other layout places the biggest groups that fit first, before small ones fill the
+      // space around their doors; the others go breadth first.
+      const int root = attempt < 2 ? mRooms[0].group : static_cast< int >(rng() % mGroups.size());
+      mBigFirst = attempt % 2 == 1;
+      const std::mt19937 attemptRng = rng;
       Result result = Attempt(root, rng);
       if (attempt == 0 || result.islands < best.islands ||
           (result.islands == best.islands && result.area < best.area)) {
         best = std::move(result);
         bestAttempt = attempt;
+        bestRoot = root;
+        bestRng = attemptRng;
       }
       if (best.islands == 0) {
         break;
@@ -332,10 +340,13 @@ public:
                         std::chrono::steady_clock::now() - start)
                         .count();
     Log.info("Laid out {} rooms in {} groups: {} of {} moved doors meet, {} islands (layout {} of "
-             "{}), in {} ms",
+             "{}, {}), in {} ms",
              mRooms.size(), mGroups.size(), met / 2, moved / 2, best.islands, bestAttempt + 1,
-             kAttempts, ms);
+             kAttempts, bestAttempt % 2 == 1 ? "biggest first" : "breadth first", ms);
     if (sLogEnabled) {
+      // Again, for the grid of placed rooms as the best layout left it.
+      mBigFirst = bestAttempt % 2 == 1;
+      Attempt(bestRoot, bestRng);
       LogLayout(best);
     }
     return true;
@@ -367,6 +378,46 @@ private:
                kKinds[result.kinds[room.group]], pose.yaw * 180.f / kPi, pose.t.GetX(),
                pose.t.GetY(), pose.t.GetZ(), room.cells.size(), room.tests.size(), tm.Get02(),
                tm.Get12(), tm.Get22(), tm.Get00(), tm.Get10(), tm.Get20());
+    }
+    // What kept each island from its doors.
+    for (const Link& link : mLinks) {
+      const int island = mRooms[link.to].group;
+      const int from = mRooms[link.from].group;
+      if (!link.moved || result.kinds[island] != kPL_Island || from == island ||
+          result.steps[from] > result.steps[island]) {
+        continue;
+      }
+      const Pose pose = Compose(result.poses[from], link.rel);
+      std::map< int, int > counts;
+      for (const int r : mGroups[island].rooms) {
+        for (const Column& column : mRooms[r].tests) {
+          const auto it = mGrid.find(
+              PackKey(CellOf(pose.X(column.x, column.y)), CellOf(pose.Y(column.x, column.y))));
+          if (it == mGrid.end()) {
+            continue;
+          }
+          std::vector< int > seen;
+          for (const Entry& entry : it->second) {
+            if (entry.step < result.steps[island] && entry.group != island &&
+                column.z0 + pose.t.GetZ() < entry.z1 - kZTolerance &&
+                entry.z0 < column.z1 + pose.t.GetZ() - kZTolerance &&
+                std::find(seen.begin(), seen.end(), entry.group) == seen.end()) {
+              seen.push_back(entry.group);
+              ++counts[entry.group];
+            }
+          }
+        }
+      }
+      std::vector< std::pair< int, int > > sorted(counts.begin(), counts.end());
+      std::sort(sorted.begin(), sorted.end(),
+                [](const auto& a, const auto& b) { return a.second > b.second; });
+      std::string blockers;
+      for (size_t i = 0; i < sorted.size() && i < 4; ++i) {
+        blockers += fmt::format("{}{} ({} cells)", i == 0 ? "" : ", ",
+                                RoomName(mGroups[sorted[i].first].rooms.front()), sorted[i].second);
+      }
+      Log.info("[layout] island {} by door from {}: limit {}, blocked by {}", RoomName(link.to),
+               RoomName(link.from), OverlapLimit(island), blockers.empty() ? "nothing" : blockers);
     }
     for (const Link& link : mLinks) {
       if (!link.moved) {
@@ -586,9 +637,9 @@ private:
     return CountOverlaps(group, pose, 0, limit) <= limit;
   }
 
-  // The free place nearest `start`, turned the same way.
-  Pose FindFreePose(int group, const Pose& start) const {
-    for (int ring = 0; ring <= kIslandRings; ++ring) {
+  // The free place nearest `start`, turned the same way, no further than `maxRing` rings out.
+  bool FindFreePose(int group, const Pose& start, int maxRing, Pose& out, int& ring) const {
+    for (ring = 0; ring <= maxRing; ++ring) {
       const int count = ring == 0 ? 1 : std::max(8, static_cast< int >(2.f * kPi * ring));
       for (int k = 0; k < count; ++k) {
         const float angle = 2.f * kPi * k / count;
@@ -596,11 +647,16 @@ private:
         const Pose pose(start.yaw, start.t + CVector3f(distance * std::cos(angle),
                                                        distance * std::sin(angle), 0.f));
         if (Fits(group, pose)) {
-          return pose;
+          out = pose;
+          return true;
         }
       }
     }
-    // Past everything placed so far.
+    return false;
+  }
+
+  // Past everything placed so far.
+  Pose FarPose(int group, const Pose& start) const {
     CAABox all = CAABox::MakeMaxInvertedBox();
     for (const CAABox& box : mPlacedBounds) {
       all.Include(box);
@@ -657,7 +713,10 @@ private:
     }
   }
 
-  static bool Before(const Candidate& a, const Candidate& b) {
+  bool Before(const Candidate& a, const Candidate& b) const {
+    if (mBigFirst && mGroups[a.group].tests != mGroups[b.group].tests) {
+      return mGroups[a.group].tests > mGroups[b.group].tests;
+    }
     return a.depth != b.depth ? a.depth < b.depth : a.order < b.order;
   }
 
@@ -698,9 +757,31 @@ private:
         Place(c.group, c.pose, c.depth, result, depths, frontier, rng);
         result.kinds[c.group] = kPL_Door;
       } else if (first >= 0) {
-        // Every door into what's placed is blocked.
-        const Candidate c = frontier[first];
-        Place(c.group, FindFreePose(c.group, c.pose), c.depth, result, depths, frontier, rng);
+        // Every door into what's placed is blocked. Of all those doors, the island goes by the
+        // one with free space nearest it, so at least that door's two sides end up close.
+        std::vector< int > order(frontier.size());
+        for (size_t i = 0; i < order.size(); ++i) {
+          order[i] = static_cast< int >(i);
+        }
+        std::sort(order.begin(), order.end(),
+                  [&](int a, int b) { return Before(frontier[a], frontier[b]); });
+        int chosen = first;
+        Pose pose = FarPose(frontier[first].group, frontier[first].pose);
+        int bestRing = kIslandRings + 1;
+        for (const int i : order) {
+          Pose free;
+          int ring = 0;
+          if (FindFreePose(frontier[i].group, frontier[i].pose, bestRing - 1, free, ring)) {
+            chosen = i;
+            pose = free;
+            bestRing = ring;
+            if (ring <= 1) {
+              break;
+            }
+          }
+        }
+        const Candidate c = frontier[chosen];
+        Place(c.group, pose, c.depth, result, depths, frontier, rng);
         result.kinds[c.group] = kPL_Island;
         ++result.islands;
       } else {
@@ -717,7 +798,10 @@ private:
           all.Include(box);
         }
         const Pose start(0.f, all.GetCenterPoint() - mGroups[group].bounds.GetCenterPoint());
-        Place(group, FindFreePose(group, start), 0, result, depths, frontier, rng);
+        Pose pose = FarPose(group, start);
+        int ring = 0;
+        FindFreePose(group, start, kIslandRings, pose, ring);
+        Place(group, pose, 0, result, depths, frontier, rng);
         result.kinds[group] = kPL_Separate;
         ++result.islands;
       }
@@ -746,6 +830,7 @@ private:
   // Cells of placed rooms in map space.
   std::unordered_map< std::int64_t, std::vector< Entry > > mGrid;
   std::vector< CAABox > mPlacedBounds; // by placement step
+  bool mBigFirst = false;
 };
 
 const CWorld* sOwner = nullptr;
