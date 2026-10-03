@@ -2,6 +2,8 @@
 
 #include "Metaforce/DockPortals.hpp"
 #include "Metaforce/MergedWorld.hpp"
+#include "Metaforce/Randomizer/Logic.hpp"
+#include "Metaforce/Randomizer/Randomizer.hpp"
 
 #include "Kyoto/CResFactory.hpp"
 #include "Kyoto/CResLoader.hpp"
@@ -16,6 +18,7 @@
 #include "MetroidPrime/CWorld.hpp"
 
 #include <borealis/log.hpp>
+#include <fmt/format.h>
 
 #include <algorithm>
 #include <cfloat>
@@ -26,6 +29,7 @@
 #include <map>
 #include <memory>
 #include <random>
+#include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -39,6 +43,8 @@ constexpr float kPi = 3.14159265f;
 
 // Set METAFORCE_NO_MAP_LAYOUT=1 to keep the vanilla map with the room randomizer.
 const bool sDisabled = std::getenv("METAFORCE_NO_MAP_LAYOUT") != nullptr;
+// Set METAFORCE_MAP_LAYOUT_LOG=1 to log how every room and moved door was laid out.
+const bool sLogEnabled = std::getenv("METAFORCE_MAP_LAYOUT_LOG") != nullptr;
 
 // Size of the grid cells rooms are rasterized into, in X and Y.
 constexpr float kCellSize = 2.5f;
@@ -239,6 +245,7 @@ struct Room {
 struct Link {
   int from;
   int to;
+  int dock;
   Pose rel;
   bool moved;
 };
@@ -261,8 +268,13 @@ struct Candidate {
   CAABox bounds;
 };
 
+// How a group was placed.
+enum EPlacement { kPL_Root, kPL_Door, kPL_Island, kPL_Separate };
+
 struct Result {
-  std::vector< Pose > poses; // by group
+  std::vector< Pose > poses;       // by group
+  std::vector< EPlacement > kinds; // by group
+  std::vector< int > steps;        // by group: when it was placed
   int islands = 0;
   float area = 0.f;
 };
@@ -323,10 +335,64 @@ public:
              "{}), in {} ms",
              mRooms.size(), mGroups.size(), met / 2, moved / 2, best.islands, bestAttempt + 1,
              kAttempts, ms);
+    if (sLogEnabled) {
+      LogLayout(best);
+    }
     return true;
   }
 
 private:
+  std::string RoomName(int r) const {
+    const CGameArea& area = mWorld.GetAreaAlways(mRooms[r].id);
+    if (const randomizer::Database* db = randomizer::GetDatabase()) {
+      for (const randomizer::Area& dbArea : db->Areas()) {
+        if (dbArea.assetId == area.GetAreaAssetId()) {
+          return fmt::format("{} / {}", db->Regions()[dbArea.region].name, dbArea.name);
+        }
+      }
+    }
+    return fmt::format("0x{:08X} area {}", mRooms[r].world, mRooms[r].sourceIndex);
+  }
+
+  void LogLayout(const Result& result) const {
+    static const char* const kKinds[] = {"root", "door", "island", "separate"};
+    for (int r = 0; r < static_cast< int >(mRooms.size()); ++r) {
+      const Room& room = mRooms[r];
+      const CTransform4f& tm = mWorld.GetAreaAlways(room.id).GetTM();
+      const Pose& pose = result.poses[room.group];
+      Log.info("[layout] room {} ({}): group {} placed {} by {}, yaw {:.1f} at ({:.1f}, {:.1f}, "
+               "{:.1f}); {} cells, {} tested; area up ({:.3f}, {:.3f}, {:.3f}) right ({:.3f}, "
+               "{:.3f}, {:.3f})",
+               room.id.Value(), RoomName(r), room.group, result.steps[room.group],
+               kKinds[result.kinds[room.group]], pose.yaw * 180.f / kPi, pose.t.GetX(),
+               pose.t.GetY(), pose.t.GetZ(), room.cells.size(), room.tests.size(), tm.Get02(),
+               tm.Get12(), tm.Get22(), tm.Get00(), tm.Get10(), tm.Get20());
+    }
+    for (const Link& link : mLinks) {
+      if (!link.moved) {
+        continue;
+      }
+      const Pose& from = result.poses[mRooms[link.from].group];
+      const Pose& to = result.poses[mRooms[link.to].group];
+      const Pose expected = Compose(from, link.rel);
+      const CGameArea& area = mWorld.GetAreaAlways(mRooms[link.from].id);
+      const rstl::reserved_vector< CVector3f, 4 >& verts =
+          area.GetDock(link.dock).GetPlaneVertices();
+      CVector3f normal = CVector3f::Zero();
+      if (verts.size() >= 3) {
+        normal = CVector3f::Cross(verts[1] - verts[0], verts[2] - verts[0]);
+        if (normal.CanBeNormalized()) {
+          normal = normal.AsNormalized();
+        }
+      }
+      Log.info("[layout] door {} dock {} -> {}: {} (off by {:.1f} units, {:.1f} deg); normal "
+               "({:.2f}, {:.2f}, {:.2f})",
+               RoomName(link.from), link.dock, RoomName(link.to),
+               SamePose(expected, to) ? "meets" : "apart", (expected.t - to.t).Magnitude(),
+               (expected.yaw - to.yaw) * 180.f / kPi, normal.GetX(), normal.GetY(), normal.GetZ());
+    }
+  }
+
   void ReadRooms() {
     const CMapWorld* map = mWorld.GetMapWorld();
     std::vector< CVector3f > verts;
@@ -411,6 +477,7 @@ private:
         Link link;
         link.from = r;
         link.to = mRoomOf[target.Value()];
+        link.dock = dock;
         CTransform4f xf = CTransform4f::Identity();
         link.moved = portals::GetDockTransform(mWorld, mRooms[r].id, dock, xf);
         if (link.moved) {
@@ -548,6 +615,7 @@ private:
              std::vector< Candidate >& frontier, std::mt19937& rng) {
     const int step = static_cast< int >(mPlacedBounds.size());
     depths[group] = depth;
+    result.steps[group] = step;
     result.poses[group] = pose;
     mPlacedBounds.push_back(TransformBounds(mGroups[group].bounds, pose));
 
@@ -598,6 +666,8 @@ private:
     mPlacedBounds.clear();
     Result result;
     result.poses.assign(mGroups.size(), Pose());
+    result.kinds.assign(mGroups.size(), kPL_Root);
+    result.steps.assign(mGroups.size(), 0);
     std::vector< int > depths(mGroups.size(), -1);
     std::vector< Candidate > frontier;
     Place(root, Pose(), 0, result, depths, frontier, rng);
@@ -626,10 +696,12 @@ private:
       if (best >= 0) {
         const Candidate c = frontier[best];
         Place(c.group, c.pose, c.depth, result, depths, frontier, rng);
+        result.kinds[c.group] = kPL_Door;
       } else if (first >= 0) {
         // Every door into what's placed is blocked.
         const Candidate c = frontier[first];
         Place(c.group, FindFreePose(c.group, c.pose), c.depth, result, depths, frontier, rng);
+        result.kinds[c.group] = kPL_Island;
         ++result.islands;
       } else {
         // No door leads from anything placed to what's left: start again next to it.
@@ -646,6 +718,7 @@ private:
         }
         const Pose start(0.f, all.GetCenterPoint() - mGroups[group].bounds.GetCenterPoint());
         Place(group, FindFreePose(group, start), 0, result, depths, frontier, rng);
+        result.kinds[group] = kPL_Separate;
         ++result.islands;
       }
     }
