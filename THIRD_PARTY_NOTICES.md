@@ -59,6 +59,13 @@ objects, door location tables and door and blast shield textures. They were gene
 - `src/Metaforce/Randomizer/DoorTables.cpp`
 - `res/randomizer/prime1/door_assets/` (texture files copied from randomprime's `extra_assets`)
 
+The following files were written for this fork but port randomprime's door types, blast shield
+types and blast shield placement. They are covered by randomprime's MIT License, not the CC0
+dedication.
+
+- `include/Metaforce/Randomizer/DoorStyles.hpp`, `src/Metaforce/Randomizer/DoorStyles.cpp`
+- `src/Metaforce/Randomizer/DoorLocks.cpp`
+
 ## Dusklight (CC0 1.0)
 
 [Dusklight](https://github.com/TwilitRealm/dusklight), dedicated to the public domain under CC0 1.0.

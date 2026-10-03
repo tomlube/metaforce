@@ -8,6 +8,7 @@
 #include "stdio.h"
 
 #if defined(TARGET_PC)
+#include "Metaforce/Randomizer/Hooks.hpp"
 #include "Metaforce/SaveAnywhere.hpp"
 #endif
 
@@ -845,6 +846,7 @@ void SGameFileSlot::InitializeFromGameState() {
   }
 #if defined(TARGET_PC)
   metaforce::save_anywhere::AfterGameSaved();
+  metaforce::randomizer::OnGameSaved();
 #endif
   mFileInfo = CGameState::LoadGameFileState(mSaveBuffer.data());
 }

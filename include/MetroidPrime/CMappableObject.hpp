@@ -64,6 +64,7 @@ public:
 #if defined(TARGET_PC)
   void SetObjId(TEditorId id) { mObjId = id; }
   void SetTraversed(bool traversed) { mTraversed = traversed; }
+  void SetType(EMappableObjectType type) { mType = type; }
 #endif
   const CTransform4f& GetTransform() const { return mTransform; }
 

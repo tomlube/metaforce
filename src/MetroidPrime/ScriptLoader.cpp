@@ -479,6 +479,20 @@ CEntity* ScriptLoader::LoadDamageableTrigger(CStateManager& mgr, CInputStream& i
                                                      : CScriptDamageableTrigger::kCO_NoOrbit;
   bool active = in.Get< bool >();
   CVisorParameters vParms = LoadVisorParameters(in);
+#if defined(TARGET_PC)
+  // Door lock randomizer: the door's new color.
+  metaforce::randomizer::DoorForceOverride doorForce;
+  if (metaforce::randomizer::GetDoorForceOverride(mgr.GetWorld()->GetWorldAssetId(),
+                                                  info.GetEditorId().Value(), doorForce)) {
+    CMemoryInStream vulnIn(doorForce.vulnerability, doorForce.vulnerabilitySize);
+    dVuln = CDamageVulnerability(vulnIn);
+    if (doorForce.texturesChanged) {
+      patternTex1 = doorForce.pattern0;
+      patternTex2 = doorForce.pattern1;
+      colorTex = doorForce.color;
+    }
+  }
+#endif
   return rs_new CScriptDamageableTrigger(mgr.AllocateUniqueId(), name, info, position, volume,
                                          hInfo, dVuln, triggerFlags, patternTex1, patternTex2,
                                          colorTex, canOrbit, active, vParms);
@@ -786,6 +800,11 @@ CEntity* ScriptLoader::LoadPointOfInterest(CStateManager& mgr, CInputStream& in,
   bool active = in.Get< bool >();
   CScannableParameters sParms = LoadScannableParameters(in);
   float pointSize = in.ReadFloat();
+#if defined(TARGET_PC)
+  // Door lock randomizer: the scan point of one of the game's own blast shields, replaced.
+  if (metaforce::randomizer::RemoveBlastShieldScan(sParms.GetScannableObject0()))
+    return nullptr;
+#endif
   return rs_new CScriptPointOfInterest(mgr.AllocateUniqueId(), aHead.mName, info,
                                        aHead.mTransform, active, sParms, pointSize);
 }
@@ -822,6 +841,18 @@ CEntity* ScriptLoader::LoadActor(CStateManager& mgr, CInputStream& in, int propC
   bool castsShadow = in.Get< bool >();
   bool scaleAdvancementDelta = in.Get< bool >();
   bool materialFlag54 = in.Get< bool >();
+
+#if defined(TARGET_PC)
+  // Door lock randomizer: the game's own blast shields are replaced, and restyled doors' shields
+  // get their new color.
+  if (metaforce::randomizer::RemoveBlastShieldActor(staticId))
+    return nullptr;
+  unsigned int doorShieldModel;
+  if (metaforce::randomizer::GetDoorShieldModel(mgr.GetWorld()->GetWorldAssetId(),
+                                                info.GetEditorId().Value(), doorShieldModel)) {
+    staticId = doorShieldModel;
+  }
+#endif
 
   FourCC staticType = gpResourceFactory->GetResourceTypeById(staticId);
   FourCC animType = gpResourceFactory->GetResourceTypeById(aParms.GetACSFile());

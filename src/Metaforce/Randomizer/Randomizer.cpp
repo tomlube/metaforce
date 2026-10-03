@@ -2,6 +2,7 @@
 
 #include "Metaforce/MergedWorld.hpp"
 #include "Metaforce/Randomizer/CrossWorldDoors.hpp"
+#include "Metaforce/Randomizer/DoorLocks.hpp"
 #include "Metaforce/Randomizer/Generator.hpp"
 #include "Metaforce/Randomizer/Hooks.hpp"
 #include "Metaforce/Randomizer/PickupTables.hpp"
@@ -133,6 +134,10 @@ struct Session {
   // Docks gone through, by DockKey(area MREA, dock), both sides of each.
   std::unordered_set< uint64_t > traversedDocks;
   std::string traversedSlot;
+  // Blast shields broken, by DockKey(area MREA, dock): in the game being played, and as of its
+  // last save. Only the saved ones go in TraversedFile(), so reloading brings back the others.
+  std::unordered_set< uint64_t > brokenShields;
+  std::unordered_set< uint64_t > savedBrokenShields;
 
   std::thread worker;
   std::atomic< bool > cancel{false};
@@ -204,6 +209,9 @@ void Deactivate() {
   s.traversedDoors.clear();
   s.traversedDocks.clear();
   s.traversedSlot.clear();
+  s.brokenShields.clear();
+  s.savedBrokenShields.clear();
+  door_locks::Deactivate();
 }
 
 void SaveTraversed() {
@@ -214,7 +222,9 @@ void SaveTraversed() {
   const json root{
       {"seed", s.active->hash},
       {"doors", std::vector< uint64_t >(s.traversedDoors.begin(), s.traversedDoors.end())},
-      {"docks", std::vector< uint64_t >(s.traversedDocks.begin(), s.traversedDocks.end())}};
+      {"docks", std::vector< uint64_t >(s.traversedDocks.begin(), s.traversedDocks.end())},
+      {"blast_shields",
+       std::vector< uint64_t >(s.savedBrokenShields.begin(), s.savedBrokenShields.end())}};
   std::error_code ec;
   fs::create_directories(TraversedFile(s.traversedSlot).parent_path(), ec);
   std::ofstream file(TraversedFile(s.traversedSlot), std::ios::binary | std::ios::trunc);
@@ -226,6 +236,8 @@ void LoadTraversed(const std::string& slot, bool newGame) {
   auto& s = S();
   s.traversedDoors.clear();
   s.traversedDocks.clear();
+  s.brokenShields.clear();
+  s.savedBrokenShields.clear();
   s.traversedSlot = slot;
   if (newGame) {
     std::error_code ec;
@@ -253,6 +265,14 @@ void LoadTraversed(const std::string& slot, bool newGame) {
       }
     }
   }
+  if (root.contains("blast_shields") && root["blast_shields"].is_array()) {
+    for (const json& shield : root["blast_shields"]) {
+      if (shield.is_number_unsigned()) {
+        s.savedBrokenShields.insert(shield.get< uint64_t >());
+      }
+    }
+  }
+  s.brokenShields = s.savedBrokenShields;
 }
 
 void Activate(Seed seed) {
@@ -284,6 +304,7 @@ void Activate(Seed seed) {
   for (int i = 0; i < static_cast< int >(seed.docks.size()); ++i) {
     s.dockByKey.emplace(DockKey(seed.docks[i].area, seed.docks[i].dock), i);
   }
+  door_locks::Activate(seed);
   Log.info("Activated seed {}", seed.hash);
   s.active = std::move(seed);
 }
@@ -662,6 +683,24 @@ bool IsDockTraversed(unsigned int areaAssetId, int dock) {
 int GetTraversedDockCount() {
   const auto& s = S();
   return s.active ? static_cast< int >(s.traversedDocks.size()) : 0;
+}
+
+bool IsBlastShieldDestroyed(uint32_t area, int dock) {
+  return S().brokenShields.count(DockKey(area, dock)) != 0;
+}
+
+void MarkBlastShieldDestroyed(uint32_t area, int dock) {
+  if (S().active) {
+    S().brokenShields.insert(DockKey(area, dock));
+  }
+}
+
+void OnGameSaved() {
+  auto& s = S();
+  if (s.active && s.savedBrokenShields != s.brokenShields) {
+    s.savedBrokenShields = s.brokenShields;
+    SaveTraversed();
+  }
 }
 
 bool IsDoorTraversed(unsigned int worldId, unsigned int editorId) {

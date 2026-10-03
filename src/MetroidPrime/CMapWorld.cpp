@@ -42,6 +42,12 @@ static CMappableObject GetLoadedMappableObject(const CMapWorld::CMapWorldDrawPar
   }
   object.SetTraversed(CMappableObject::IsDoorType(object.GetType()) &&
                       metaforce::randomizer::IsDoorTraversed(world, sourceId));
+  // Door lock randomizer: the door's new color. Green for a door gone through still wins.
+  int doorType = object.GetType();
+  if (CMappableObject::IsDoorType(object.GetType()) &&
+      metaforce::randomizer::GetDoorMapType(world, sourceId, doorType)) {
+    object.SetType(static_cast< CMappableObject::EMappableObjectType >(doorType));
+  }
   return object;
 }
 #endif

@@ -112,6 +112,40 @@ bool IsDoorTraversed(unsigned int worldId, unsigned int editorId);
 bool IsDockTraversed(unsigned int areaAssetId, int dock);
 int GetTraversedDockCount();
 
+// Door lock randomizer (see DoorLocks.hpp). Editor ids are without layer bits.
+
+// ScriptLoader::LoadActor: the shield model of a restyled door's shield actor.
+bool GetDoorShieldModel(unsigned int worldId, unsigned int editorId, unsigned int& model);
+
+// ScriptLoader::LoadActor and LoadPointOfInterest: true to leave out one of the game's own
+// missile blast shields (by model) or its scan point (by SCAN), which the randomizer replaces.
+bool RemoveBlastShieldActor(unsigned int model);
+bool RemoveBlastShieldScan(unsigned int scan);
+
+// ScriptLoader::LoadDamageableTrigger: a restyled door's damageable trigger. The vulnerability
+// is a serialized DamageVulnerability property. The textures are only to be used when
+// texturesChanged is set (they could all be loaded).
+struct DoorForceOverride {
+  const unsigned char* vulnerability;
+  unsigned int vulnerabilitySize;
+  bool texturesChanged;
+  unsigned int pattern0;
+  unsigned int pattern1;
+  unsigned int color;
+};
+bool GetDoorForceOverride(unsigned int worldId, unsigned int editorId, DoorForceOverride& out);
+
+// CStateManager::LoadScriptObjects, after a room's objects are loaded: puts up its blast shields.
+void SpawnDoorLocks(CStateManager& mgr, int area);
+
+// CMapWorld: `type` (a CMappableObject type) becomes the map icon of a restyled door. Takes the
+// region and editor id the door was read from, like IsDoorTraversed.
+bool GetDoorMapType(unsigned int worldId, unsigned int editorId, int& type);
+
+// SGameFileSlot::InitializeFromGameState: the game is being saved, so the blast shields broken
+// since the last save stay broken.
+void OnGameSaved();
+
 // CResLoader: assets the door lock randomizer adds to the game, served as if they were in a pak.
 // GetCustomAssetType is the asset's FourCC, 0 for ids that aren't custom assets. GetCustomAsset
 // builds the asset on first use and keeps it; false when it can't be built (a texture file or

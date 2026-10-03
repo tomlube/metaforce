@@ -751,7 +751,9 @@ set(GAME_FILES
       src/Metaforce/UI/UI.cpp
       src/Metaforce/UI/WarpWindow.cpp
       src/Metaforce/Randomizer/CrossWorldDoors.cpp
+      src/Metaforce/Randomizer/DoorLocks.cpp
       src/Metaforce/Randomizer/DoorStyles.cpp
+      src/Metaforce/Randomizer/DoorTables.cpp
       src/Metaforce/Randomizer/Generator.cpp
       src/Metaforce/Randomizer/Logic.cpp
       src/Metaforce/Randomizer/PickupTables.cpp

@@ -2038,6 +2038,9 @@ void CStateManager::LoadScriptObjects(TAreaId aid, CInputStream& in,
                                    CEntityInfo(aid, conns, eid), spawn.startTime, 0.f, false,
                                    spawn.autoStart, true));
   }
+  if (mWorld.get() != nullptr && aid != kInvalidAreaId) {
+    metaforce::randomizer::SpawnDoorLocks(*this, aid.Value());
+  }
 #endif
 }
 
