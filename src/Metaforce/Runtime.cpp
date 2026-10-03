@@ -94,6 +94,7 @@ constexpr borealis::AppInfo AppInfo{
 };
 
 std::optional< borealis::data::Manager > dataManager;
+borealis::io::PathAccess discAccess;
 bool shouldTerminate = false;
 int exitCode = 0;
 Limiter limiter;
@@ -292,6 +293,7 @@ void ShowConsole() {
     Log.warn("Failed to open console (Windows error {})", GetLastError());
     return;
   }
+  SetConsoleOutputCP(CP_UTF8);
   FILE* stream;
   if (_fileno(stdout) < 0 || _get_osfhandle(_fileno(stdout)) < 0) {
     freopen_s(&stream, "CONOUT$", "w", stdout);
@@ -326,16 +328,17 @@ void WriteLastDisc(const std::filesystem::path& userPath, const std::string& loc
 // Returns std::nullopt if the dialog was canceled or the window was closed.
 std::optional< std::string > PromptForDiscPath(SDL_Window* window,
                                                const std::string& defaultLocation) {
-  std::optional< borealis::file_select::Result > result;
+  // Shared so the callback stays safe if it fires after we bail out on AURORA_EXIT.
+  auto result = std::make_shared< std::optional< borealis::file_select::Result > >();
   borealis::file_select::open_file(
       {
           .parentWindow = window,
-          .filters = {{"GameCube disc images", "iso;gcm;rvz;wbfs;ciso;gcz;nfs"},
+          .filters = {{"GameCube disc images", "iso;gcm;ciso;gcz;rvz;wia;tgc;wbfs;nfs"},
                       {"All files", "*"}},
           .defaultLocation = defaultLocation,
       },
-      [&result](borealis::file_select::Result r) { result = std::move(r); });
-  while (!result) {
+      [result](borealis::file_select::Result r) { *result = std::move(r); });
+  while (!*result) {
     for (const AuroraEvent* event = aurora_update(); event && event->type != AURORA_NONE;
          ++event) {
       if (event->type == AURORA_EXIT) {
@@ -344,13 +347,27 @@ std::optional< std::string > PromptForDiscPath(SDL_Window* window,
     }
     SDL_Delay(16);
   }
-  if (result->status != borealis::file_select::Status::Selected || result->locations.empty()) {
-    if (result->status != borealis::file_select::Status::Canceled) {
-      Log.error("Disc selection failed: {}", result->message);
+  if ((*result)->status != borealis::file_select::Status::Selected ||
+      (*result)->locations.empty()) {
+    if ((*result)->status != borealis::file_select::Status::Canceled) {
+      Log.error("Disc selection failed: {}", (*result)->message);
     }
     return std::nullopt;
   }
-  return result->locations.front();
+  return (*result)->locations.front();
+}
+
+// Opens a disc location, which may be an opaque platform URI (e.g. an Android content:// or an
+// iOS security-scoped URL). The access grant is kept in discAccess for as long as the disc is open.
+bool OpenDisc(const std::string& location) {
+  discAccess = borealis::io::access_path(location);
+  const auto discPath =
+      discAccess ? borealis::io::fs_path_to_string(discAccess.path()) : location;
+  if (aurora_dvd_open(discPath.c_str())) {
+    return true;
+  }
+  discAccess = {};
+  return false;
 }
 
 void LoadDefaultKeyBindings() {
@@ -388,7 +405,7 @@ int Initialize(int argc, char** argv) {
   // clang-format off
   options.add_options()
       ("h,help", "Print usage")
-      ("dvd", "Path to game disc image", cxxopts::value< std::string >()->default_value("game.rvz"))
+      ("dvd", "Path to game disc image", cxxopts::value< std::string >())
       ("backend", "Graphics backend to use (auto, d3d11, d3d12, metal, vulkan, opengl, opengles)", cxxopts::value< AuroraBackend >()->default_value("auto"))
       ("lock-aspect", "Lock 4:3 aspect ratio")
       ("window-size", "Initial window size", cxxopts::value< std::vector< unsigned int > >()->default_value("1280,896"), "WIDTH,HEIGHT")
@@ -514,19 +531,24 @@ int Initialize(int argc, char** argv) {
       fmt::format("{} {}", AppInfo.appName, VersionAndBuildTimeText()).c_str());
 
   // Open the disc after the window exists so we can fall back to a file dialog.
-  auto discPath = args["dvd"].as< std::string >();
+  std::string discLocation = args.count("dvd") ? args["dvd"].as< std::string >() : std::string{};
   bool opened = false;
   // Without a disc on the command line, start with the one picked last time.
-  if (args.count("dvd") == 0) {
+  if (discLocation.empty()) {
     const std::string lastDisc = ReadLastDisc(paths.userPath);
-    if (!lastDisc.empty() && aurora_dvd_open(lastDisc.c_str())) {
-      discPath = lastDisc;
+    if (!lastDisc.empty() && OpenDisc(lastDisc)) {
+      discLocation = lastDisc;
       opened = true;
     }
   }
   bool picked = false;
-  while (!opened && !aurora_dvd_open(discPath.c_str())) {
-    Log.warn("Failed to open disc image '{}'", discPath);
+  while (!opened) {
+    if (!discLocation.empty()) {
+      if (OpenDisc(discLocation)) {
+        break;
+      }
+      Log.warn("Failed to open disc image '{}'", borealis::io::display_name(discLocation));
+    }
     auto selected = PromptForDiscPath(auroraInfo.window, ReadLastDisc(paths.userPath));
     if (!selected) {
       Log.error("No disc image selected");
@@ -534,12 +556,12 @@ int Initialize(int argc, char** argv) {
       borealis::log::shutdown();
       return 1;
     }
-    discPath = std::move(*selected);
+    discLocation = std::move(*selected);
     picked = true;
   }
-  Log.info("Opened disc image '{}'", discPath);
+  Log.info("Opened disc image '{}'", borealis::io::display_name(discLocation));
   if (picked) {
-    WriteLastDisc(paths.userPath, discPath);
+    WriteLastDisc(paths.userPath, discLocation);
   }
   // --lock-aspect applies to this launch only and isn't saved.
   ConfigureDisplay(auroraInfo.window, args.count("lock-aspect") != 0 ||
@@ -568,6 +590,7 @@ void Shutdown() {
   }
   sndPCStopAudio();
   aurora_dvd_close();
+  discAccess = {};
   input::ShutdownGameInput();
   ui::SaveRuntimeConfig();
   ui::Shutdown();
