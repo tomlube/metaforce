@@ -144,6 +144,38 @@ CMapWorld::~CMapWorld() {
 
 CMapArea* CMapWorld::GetMapArea(int aid) const { return mAreas[aid].GetMapArea(); }
 
+#if defined(TARGET_PC)
+void CMapWorld::SetAppendedMapAreas(int ownCount, const rstl::vector< CAssetId >& appended) {
+  if (ownCount > mAreas.size()) {
+    ownCount = mAreas.size();
+  }
+  rstl::vector< CAssetId > ids;
+  ids.reserve(ownCount + appended.size());
+  for (int i = 0; i < ownCount; ++i) {
+    ids.push_back(mAreas[i].GetAreaRes());
+  }
+  for (int i = 0; i < appended.size(); ++i) {
+    ids.push_back(appended[i]);
+  }
+  bool same = ids.size() == mAreas.size();
+  for (int i = 0; same && i < ids.size(); ++i) {
+    same = ids[i] == mAreas[i].GetAreaRes();
+  }
+  if (same || mListHeads[kMAL_Loaded] != nullptr || mListHeads[kMAL_Loading] != nullptr) {
+    return;
+  }
+  CMemoryDrawEnum::SubtractWorldMemory(mAreas.capacity() * sizeof(CMapAreaData) + sizeof(*this));
+  mAreas.clear();
+  mAreas.reserve(ids.size());
+  mTraversed = rstl::vector< bool >(ids.size(), false);
+  for (int i = 0; i < ids.size(); ++i) {
+    mAreas.push_back(CMapAreaData(ids[i], kMAL_Unloaded, i == 0 ? nullptr : &mAreas[i - 1]));
+  }
+  mListHeads[kMAL_Unloaded] = mAreas.empty() ? nullptr : &mAreas.back();
+  CMemoryDrawEnum::AddWorldMemory(mAreas.capacity() * sizeof(CMapAreaData) + sizeof(*this));
+}
+#endif
+
 bool CMapWorld::IsMapAreaInBFSInfoVector(const CMapAreaData* area,
                                          const rstl::vector< CMapAreaBFSInfo >& vec) const {
   for (AUTO(it, vec.begin()); it != vec.end(); ++it) {

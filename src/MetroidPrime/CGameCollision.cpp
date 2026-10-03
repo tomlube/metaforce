@@ -27,6 +27,10 @@
 #include <Collision/CRayCastResult.hpp>
 #include <WorldFormat/CCollidableOBBTreeGroup.hpp>
 
+#if defined(TARGET_PC)
+#include "Metaforce/MergedWorld.hpp"
+#endif
+
 static int gDebugPrintCount;
 
 void CGameCollision::InitCollision() {
@@ -75,6 +79,11 @@ void CGameCollision::BuildAreaCollisionCache(const CStateManager& mgr, CAreaColl
 
   for (CGameArea::CConstChainIterator it = mgr.GetWorld()->GetChainHead(CWorld::kC_Alive);
        it != CWorld::skGlobalEnd; ++it) {
+#if defined(TARGET_PC)
+    if (!metaforce::merged::SharesSpace(mgr, (*it).GetAreaId())) {
+      continue;
+    }
+#endif
     CMetroidAreaCollider::COctreeLeafCache leafCache(*(*it).GetPostConstructed()->mCollision);
     const CAreaOctTree& collision = *(*it).GetPostConstructed()->mCollision;
     CAreaOctTree::Node node(collision.GetTreeMemory(), collision.GetBoundingBox(), collision,
@@ -172,6 +181,11 @@ bool CGameCollision::DetectStaticCollisionBoolean(const CStateManager& mgr,
     CAABox aabb2 = aabb;
     for (CGameArea::CConstChainIterator it = world->GetChainHead(CWorld::kC_Alive);
          it != CWorld::skGlobalEnd; ++it) {
+#if defined(TARGET_PC)
+      if (!metaforce::merged::SharesSpace(mgr, (*it).GetAreaId())) {
+        continue;
+      }
+#endif
       if (CMetroidAreaCollider::AABoxCollisionCheckBoolean((*it).GetOctTree(), aabb2, filter)) {
         return true;
       }
@@ -183,6 +197,11 @@ bool CGameCollision::DetectStaticCollisionBoolean(const CStateManager& mgr,
     CSphere sphere2 = sphere;
     for (CGameArea::CConstChainIterator it = world->GetChainHead(CWorld::kC_Alive);
          it != CWorld::skGlobalEnd; ++it) {
+#if defined(TARGET_PC)
+      if (!metaforce::merged::SharesSpace(mgr, (*it).GetAreaId())) {
+        continue;
+      }
+#endif
       if (CMetroidAreaCollider::SphereCollisionCheckBoolean((*it).GetOctTree(), aabb2, sphere2,
                                                             filter)) {
         return true;
@@ -274,6 +293,11 @@ bool CGameCollision::DetectStaticCollision(const CStateManager& mgr,
     CAABox aabb2 = aabb;
     for (CGameArea::CConstChainIterator it = world->GetChainHead(CWorld::kC_Alive);
          it != CWorld::skGlobalEnd; ++it) {
+#if defined(TARGET_PC)
+      if (!metaforce::merged::SharesSpace(mgr, (*it).GetAreaId())) {
+        continue;
+      }
+#endif
       if (CMetroidAreaCollider::AABoxCollisionCheck((*it).GetOctTree(), aabb2, filter,
                                                     boxPrim.GetMaterial(), infoList)) {
         ret = true;
@@ -287,6 +311,11 @@ bool CGameCollision::DetectStaticCollision(const CStateManager& mgr,
     CSphere sphere2 = sphere;
     for (CGameArea::CConstChainIterator it = world->GetChainHead(CWorld::kC_Alive);
          it != CWorld::skGlobalEnd; ++it) {
+#if defined(TARGET_PC)
+      if (!metaforce::merged::SharesSpace(mgr, (*it).GetAreaId())) {
+        continue;
+      }
+#endif
       if (CMetroidAreaCollider::SphereCollisionCheck((*it).GetOctTree(), aabb2, sphere2,
                                                      spherePrim.GetMaterial(), filter, infoList)) {
         ret = true;
@@ -598,6 +627,11 @@ bool CGameCollision::RayStaticIntersectionBool(const CStateManager& mgr, const C
 
   for (CGameArea::CConstChainIterator it = world->GetChainHead(CWorld::kC_Alive);
        it != CWorld::skGlobalEnd; ++it) {
+#if defined(TARGET_PC)
+    if (!metaforce::merged::SharesSpace(mgr, (*it).GetAreaId())) {
+      continue;
+    }
+#endif
     const CAreaOctTree& collision = (*it).GetOctTree();
     CAreaOctTree::Node node(collision.GetTreeMemory(), collision.GetBoundingBox(), collision,
                             collision.GetTreeType());
@@ -635,6 +669,11 @@ CRayCastResult CGameCollision::RayStaticIntersection(const CStateManager& mgr, c
   float bestT = mag > 0.f ? mag : 100000.f;
   for (CGameArea::CConstChainIterator it = world->GetChainHead(CWorld::kC_Alive);
        it != CWorld::skGlobalEnd; ++it) {
+#if defined(TARGET_PC)
+    if (!metaforce::merged::SharesSpace(mgr, (*it).GetAreaId())) {
+      continue;
+    }
+#endif
     CAreaOctTree::SRayResult rayRes;
     const CAreaOctTree& collision = (*it).GetOctTree();
     CAreaOctTree::Node node(collision.GetTreeMemory(), collision.GetBoundingBox(), collision,
@@ -770,6 +809,9 @@ void CGameCollision::Move(CStateManager& mgr, CPhysicsActor& actor, float dt,
   if (!actor.GetMovable()) {
     return;
   }
+#if defined(TARGET_PC)
+  const metaforce::merged::QueryScope scope(metaforce::merged::GetQueryArea(mgr, actor));
+#endif
 
   if (actor.GetMaterialList().HasMaterial(kMT_GroundCollider) || actor.WillMove(mgr)) {
     if (actor.GetApplyRotationWhenInCollision()) {

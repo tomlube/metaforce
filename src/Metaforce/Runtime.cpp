@@ -10,6 +10,7 @@
 #include "Metaforce/Limiter.hpp"
 #include "Metaforce/ResourceNameDatabase.hpp"
 #include "Metaforce/Randomizer/Randomizer.hpp"
+#include "Metaforce/SaveAnywhere.hpp"
 #include "Metaforce/UI/RuntimeConfig.hpp"
 #include "Metaforce/UI/UI.hpp"
 #include "MetroidPrime/CArchitectureMessage.hpp"
@@ -21,6 +22,8 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -296,15 +299,37 @@ void ShowConsole() {
 }
 #endif
 
+// The disc image picked last time, which the file dialog starts at.
+std::filesystem::path LastDiscFile(const std::filesystem::path& userPath) {
+  return userPath / "last_disc.txt";
+}
+
+std::string ReadLastDisc(const std::filesystem::path& userPath) {
+  std::ifstream file(LastDiscFile(userPath), std::ios::binary);
+  std::string location;
+  std::getline(file, location);
+  return location;
+}
+
+void WriteLastDisc(const std::filesystem::path& userPath, const std::string& location) {
+  std::ofstream file(LastDiscFile(userPath), std::ios::binary | std::ios::trunc);
+  file << location;
+  if (!file) {
+    Log.warn("Could not remember disc image '{}'", location);
+  }
+}
+
 // Shows a native file dialog and pumps events until the user picks a file.
 // Returns std::nullopt if the dialog was canceled or the window was closed.
-std::optional< std::string > PromptForDiscPath(SDL_Window* window) {
+std::optional< std::string > PromptForDiscPath(SDL_Window* window,
+                                               const std::string& defaultLocation) {
   std::optional< borealis::file_select::Result > result;
   borealis::file_select::open_file(
       {
           .parentWindow = window,
           .filters = {{"GameCube disc images", "iso;gcm;rvz;wbfs;ciso;gcz;nfs"},
                       {"All files", "*"}},
+          .defaultLocation = defaultLocation,
       },
       [&result](borealis::file_select::Result r) { result = std::move(r); });
   while (!result) {
@@ -449,6 +474,7 @@ int Initialize(int argc, char** argv) {
   borealis::crash::install();
   randomizer::Initialize(paths.userPath);
   options::Initialize(paths.userPath);
+  save_anywhere::Initialize(paths.userPath);
 
   if (dataStatus.code == borealis::data::ErrorCode::MigrationIncomplete) {
     Log.warn("Data migration from '{}' is incomplete; will retry next launch",
@@ -479,9 +505,19 @@ int Initialize(int argc, char** argv) {
 
   // Open the disc after the window exists so we can fall back to a file dialog.
   auto discPath = args["dvd"].as< std::string >();
-  while (!aurora_dvd_open(discPath.c_str())) {
+  bool opened = false;
+  // Without a disc on the command line, start with the one picked last time.
+  if (args.count("dvd") == 0) {
+    const std::string lastDisc = ReadLastDisc(paths.userPath);
+    if (!lastDisc.empty() && aurora_dvd_open(lastDisc.c_str())) {
+      discPath = lastDisc;
+      opened = true;
+    }
+  }
+  bool picked = false;
+  while (!opened && !aurora_dvd_open(discPath.c_str())) {
     Log.warn("Failed to open disc image '{}'", discPath);
-    auto selected = PromptForDiscPath(auroraInfo.window);
+    auto selected = PromptForDiscPath(auroraInfo.window, ReadLastDisc(paths.userPath));
     if (!selected) {
       Log.error("No disc image selected");
       aurora_shutdown();
@@ -489,8 +525,12 @@ int Initialize(int argc, char** argv) {
       return 1;
     }
     discPath = std::move(*selected);
+    picked = true;
   }
   Log.info("Opened disc image '{}'", discPath);
+  if (picked) {
+    WriteLastDisc(paths.userPath, discPath);
+  }
   ConfigureDisplay(auroraInfo.window, args.count("lock-aspect") != 0);
   ui::GetRuntimeConfig().video.lockAspectRatio.setValue(args.count("lock-aspect") != 0);
   borealis::presentation::set_preferred_frame_rate(60.f);

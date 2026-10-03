@@ -7,6 +7,10 @@
 #include "dolphin/os.h"
 #include "stdio.h"
 
+#if defined(TARGET_PC)
+#include "Metaforce/SaveAnywhere.hpp"
+#endif
+
 static bool lbl_805A9118;
 static const char* const skSaveFileNames[2] = {"MetroidPrime A", "MetroidPrime B"};
 
@@ -832,10 +836,16 @@ void SGameFileSlot::PutTo(COutputStream& w) const {
 }
 
 void SGameFileSlot::InitializeFromGameState() {
+#if defined(TARGET_PC)
+  metaforce::save_anywhere::BeforeGameSaved();
+#endif
   {
     CMemoryStreamOut w(mSaveBuffer.data(), mSaveBuffer.capacity());
     gpGameState->PutTo(w);
   }
+#if defined(TARGET_PC)
+  metaforce::save_anywhere::AfterGameSaved();
+#endif
   mFileInfo = CGameState::LoadGameFileState(mSaveBuffer.data());
 }
 

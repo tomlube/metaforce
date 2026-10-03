@@ -41,6 +41,7 @@
 
 #if defined(TARGET_PC)
 #include "Metaforce/Display.hpp"
+#include "Metaforce/SaveAnywhere.hpp"
 #endif
 
 // Profiling labels retained in the retail string pool.
@@ -694,6 +695,9 @@ void CInGameGuiManager::BeginStateTransition(EInGameGuiState state, const CState
   if (state == kIGGS_InGame) {
     CSfxManager::SetChannel(CSfxManager::kSC_Game);
     mSaveUI = nullptr;
+#if defined(TARGET_PC)
+    metaforce::save_anywhere::OnSaveScreenClosed();
+#endif
     mAutoMapper->UnmuteAllLoopedSounds();
   } else if (state == kIGGS_PauseHUDMessage) {
     mMessageScreen = rs_new CMessageScreen(mPauseGameHudMessage, mPauseGameHudTime);

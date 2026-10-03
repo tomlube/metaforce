@@ -4,6 +4,10 @@
 #include "Kyoto/Streams/COutputStream.hpp"
 #include "rstl/string.hpp"
 
+#if defined(TARGET_PC)
+#include "Metaforce/MergedWorld.hpp"
+#endif
+
 static const rstl::string skEmptyString(rstl::string::literal_t(), "");
 
 CScriptLayerManager::CScriptLayerManager() {}
@@ -32,6 +36,16 @@ void CScriptLayerManager::PutTo(COutputStream& out, const CWorldSaveGameInfo&) c
 }
 
 void CScriptLayerManager::SetLayerActive(TAreaId areaIdx, TLayerId layerIdx, bool active) {
+#if defined(TARGET_PC)
+  // An area appended from another region keeps its layers in that region's state.
+  if (areaIdx.Value() >= mAreaLayers.size()) {
+    if (CScriptLayerManager* source = metaforce::merged::GetSourceLayerState(areaIdx)) {
+      source->SetLayerActive(TAreaId(metaforce::merged::GetSourceAreaIndex(areaIdx)), layerIdx,
+                             active);
+    }
+    return;
+  }
+#endif
   CWorldLayers::Area& area = mAreaLayers[areaIdx.Value()];
   int layerId = layerIdx.Value();
   if (active) {
@@ -50,6 +64,13 @@ void CScriptLayerManager::SetLayerActive(TAreaId areaIdx, TLayerId layerIdx, boo
 }
 
 bool CScriptLayerManager::IsLayerActive(TAreaId areaIdx, TLayerId layerIdx) const {
+#if defined(TARGET_PC)
+  if (areaIdx.Value() >= mAreaLayers.size()) {
+    const CScriptLayerManager* source = metaforce::merged::GetSourceLayerState(areaIdx);
+    return source != nullptr &&
+           source->IsLayerActive(TAreaId(metaforce::merged::GetSourceAreaIndex(areaIdx)), layerIdx);
+  }
+#endif
   const u64& layerBits = mAreaLayers[areaIdx.Value()].m_layerBits;
 #if NONMATCHING
   return (layerBits & (u64(1) << layerIdx.Value())) != 0;
@@ -84,6 +105,14 @@ void CScriptLayerManager::InitializeWorldLayers(
 }
 
 int CScriptLayerManager::GetAreaLayerCount(TAreaId areaId) const {
+#if defined(TARGET_PC)
+  if (areaId.Value() >= mAreaLayers.size()) {
+    const CScriptLayerManager* source = metaforce::merged::GetSourceLayerState(areaId);
+    return source != nullptr
+               ? source->GetAreaLayerCount(TAreaId(metaforce::merged::GetSourceAreaIndex(areaId)))
+               : 0;
+  }
+#endif
   return mAreaLayers[areaId.Value()].m_layerCount;
 }
 

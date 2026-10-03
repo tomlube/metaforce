@@ -20,6 +20,8 @@ GameOptionDefaults sDefaults;
 fs::path sFile;
 
 int PercentToAlpha(int percent) { return (std::clamp(percent, 0, 100) * 255 + 50) / 100; }
+// The Options menu's volume sliders run from 0 to 127.
+int PercentToVolume(int percent) { return (std::clamp(percent, 0, 100) * 127 + 50) / 100; }
 
 void Load() {
   std::ifstream file(sFile, std::ios::binary);
@@ -40,6 +42,8 @@ void Load() {
   sDefaults.invertY = root.value("invertY", def.invertY);
   sDefaults.rumble = root.value("rumble", def.rumble);
   sDefaults.swapBeamControls = root.value("swapBeamControls", def.swapBeamControls);
+  sDefaults.sfxVolume = std::clamp(root.value("sfxVolume", def.sfxVolume), 0, 100);
+  sDefaults.musicVolume = std::clamp(root.value("musicVolume", def.musicVolume), 0, 100);
 }
 
 void Save() {
@@ -55,6 +59,8 @@ void Save() {
       {"invertY", sDefaults.invertY},
       {"rumble", sDefaults.rumble},
       {"swapBeamControls", sDefaults.swapBeamControls},
+      {"sfxVolume", sDefaults.sfxVolume},
+      {"musicVolume", sDefaults.musicVolume},
   };
   std::error_code ec;
   fs::create_directories(sFile.parent_path(), ec);
@@ -92,6 +98,8 @@ void ApplyTo(CGameOptions& options) {
   options.SetInvertYAxis(sDefaults.invertY);
   options.SetIsRumbleEnabled(sDefaults.rumble);
   options.ToggleControls(sDefaults.swapBeamControls);
+  options.SetSfxVolume(PercentToVolume(sDefaults.sfxVolume), true);
+  options.SetMusicVolume(PercentToVolume(sDefaults.musicVolume), true);
 }
 
 } // namespace metaforce::options

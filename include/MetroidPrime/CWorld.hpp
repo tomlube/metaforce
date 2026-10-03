@@ -105,6 +105,10 @@ public:
   void CyclePauseState();
   void TouchSky() const;
   void DrawSky(const CTransform4f& xf) const;
+#if defined(TARGET_PC)
+  // DrawSky for a pass drawn from `area`, which may be in a region appended to this world.
+  void DrawSkyForArea(TAreaId area, const CTransform4f& xf) const;
+#endif
   void StopSounds();
   void UnloadSoundGroups();
   bool ScheduleAreaToLoad(CGameArea* area, CStateManager& mgr);

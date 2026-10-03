@@ -28,6 +28,13 @@ constexpr int kStandardShuffled = 0;
 constexpr int kStandardStarting = 1;
 constexpr int kStandardRemoved = 2;
 
+// Order of the room randomizer's region toggles. Regions not listed here go after these, in
+// database order.
+constexpr std::array kRegionOrder = {
+    "Tallon Overworld", "Chozo Ruins",     "Magmoor Caverns", "Phendrana Drifts",
+    "Phazon Mines",     "Frigate Orpheon", "Impact Crater",
+};
+
 void Save() { rando::SaveSettings(); }
 
 // A list shown in a pane that other controls clear and rebuild. Forgets itself in its owner when
@@ -478,7 +485,17 @@ void RandomizerWindow::build_rooms_tab(Rml::Element* content) {
           "Ball doors of the same size.");
 
   leftPane.add_section("Regions");
-  for (int region = 0; region < static_cast< int >(db.Regions().size()); ++region) {
+  std::vector< int > regions(db.Regions().size());
+  for (int i = 0; i < static_cast< int >(regions.size()); ++i) {
+    regions[i] = i;
+  }
+  const auto orderOf = [&db](int region) {
+    return std::find(kRegionOrder.begin(), kRegionOrder.end(), db.Regions()[region].name) -
+           kRegionOrder.begin();
+  };
+  std::stable_sort(regions.begin(), regions.end(),
+                   [&orderOf](int a, int b) { return orderOf(a) < orderOf(b); });
+  for (const int region : regions) {
     const int doors = rando::CountShuffleableDocks(db, region);
     if (doors == 0) {
       continue;
@@ -497,7 +514,11 @@ void RandomizerWindow::build_rooms_tab(Rml::Element* content) {
               Save();
             },
         .isDisabled = disabled,
-        .isModified = [&settings, name] { return settings.roomRandoExcludedRegions.contains(name); },
+        .isModified =
+            [&settings, name] {
+              return settings.roomRandoExcludedRegions.contains(name) !=
+                     rando::Settings::DefaultExcludedRegions().contains(name);
+            },
     });
     SetHelp(leftPane, rightPane, button,
             fmt::format("Whether the doors of {} are shuffled. {} of its doors can be shuffled; "

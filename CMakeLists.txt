@@ -725,6 +725,8 @@ set(GAME_FILES
       src/Metaforce/Display.cpp
       src/Metaforce/Cheats.cpp
       src/Metaforce/DockPortals.cpp
+      src/Metaforce/MergedWorld.cpp
+      src/Metaforce/SaveAnywhere.cpp
       src/Metaforce/GameOptionDefaults.cpp
       src/Metaforce/CModelSectionReader.cpp
       src/Metaforce/Input.cpp

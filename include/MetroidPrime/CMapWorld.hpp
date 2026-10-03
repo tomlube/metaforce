@@ -72,6 +72,9 @@ public:
     EMapAreaList GetContainingList() const { return mList; }
     void SetContainingList(EMapAreaList list) const { mList = list; }
     void SetNextMapArea(CMapAreaData* next) const { mNext = next; }
+#if defined(TARGET_PC)
+    CAssetId GetAreaRes() const { return mAreaRes; }
+#endif
   };
 
   class CMapWorldDrawParms {
@@ -131,6 +134,11 @@ public:
   bool IsMapAreaInBFSInfoVector(const CMapAreaData* area,
                                 const rstl::vector< CMapAreaBFSInfo >& vec) const;
   void SetWhichMapAreasLoaded(const IWorld& wld, int start, int count);
+#if defined(TARGET_PC)
+  // Keeps the first `ownCount` map areas and puts `appended` after them, for areas of other
+  // regions appended to the world. Only while no map area is loaded or loading.
+  void SetAppendedMapAreas(int ownCount, const rstl::vector< CAssetId >& appended);
+#endif
   void MoveMapAreaToList(CMapAreaData* data, EMapAreaList list);
   int GetCurrentMapAreaDepth(const IWorld& wld, int aid) const;
   rstl::vector< int > GetVisibleAreas(const IWorld& wld, const CMapWorldInfo& mwInfo) const;

@@ -78,8 +78,12 @@ struct Settings {
   // "Region|Area|Node", kRandomStartingLocation, or empty for the database default
   std::string startingLocation;
   int roomRando = 0; // index into kRoomRandoNames
-  // Regions whose doors the room randomizer leaves alone, by name.
-  std::set< std::string > roomRandoExcludedRegions;
+  // Regions whose doors the room randomizer leaves alone, by name. The Frigate and Impact Crater
+  // are excluded by default: one is only visited at the start and the other at the very end.
+  static std::set< std::string > DefaultExcludedRegions() {
+    return {"Frigate Orpheon", "Impact Crater"};
+  }
+  std::set< std::string > roomRandoExcludedRegions = DefaultExcludedRegions();
   bool roomRandoMorphBallDoors = true;
   std::map< std::string, StandardPickupState > standard;
   std::map< std::string, AmmoPickupState > ammo;

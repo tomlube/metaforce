@@ -133,7 +133,7 @@ bool Settings::FromJson(const json& root) {
     result.roomRando = std::clamp(root.value("room_rando", 0), 0,
                                   static_cast< int >(std::size(kRoomRandoNames)) - 1);
     result.roomRandoExcludedRegions =
-        root.value("room_rando_excluded_regions", std::set< std::string >{});
+        root.value("room_rando_excluded_regions", DefaultExcludedRegions());
     result.roomRandoMorphBallDoors = root.value("room_rando_morph_ball_doors", true);
     for (const auto& [name, state] : root.at("standard").items()) {
       result.standard[name] = {state.value("shuffled", 0), state.value("starting", 0),

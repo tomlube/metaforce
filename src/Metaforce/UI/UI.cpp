@@ -6,6 +6,7 @@
 #include "Kyoto/Audio/CSfxManager.hpp"
 #include "MetroidPrime/SFX/UI.h"
 
+#include <borealis/ui/input.hpp>
 #include <borealis/ui/ui.hpp>
 
 namespace metaforce::ui {
@@ -83,6 +84,10 @@ bool Initialize() {
     return false;
   }
   load_fonts();
+  // R + Start toggles the menu from a controller.
+  borealis::ui::input::Settings inputSettings = borealis::ui::input::settings();
+  inputSettings.menuChord = true;
+  borealis::ui::input::apply_settings(inputSettings);
   borealis::ui::set_nav_sound_handler(&play_nav_sound);
   borealis::ui::set_user_scale(GetRuntimeConfig().ui.scale);
   borealis::ui::push_document(std::make_unique< MenuBar >(), false);

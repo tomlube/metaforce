@@ -1,5 +1,6 @@
 #include "Metaforce/Randomizer/Randomizer.hpp"
 
+#include "Metaforce/MergedWorld.hpp"
 #include "Metaforce/Randomizer/CrossWorldDoors.hpp"
 #include "Metaforce/Randomizer/Generator.hpp"
 #include "Metaforce/Randomizer/Hooks.hpp"
@@ -481,8 +482,10 @@ bool GetDockOverride(unsigned int worldId, unsigned int areaAssetId, int dock,
     return false;
   }
   const DockConnection& conn = s.active->docks[it->second];
-  // Doors into another world can't be redirected within this one.
-  if (conn.world != worldId || conn.targetWorld != worldId) {
+  // Doors into another world can't be redirected within this one, unless that world was appended
+  // to this one.
+  if (conn.world != worldId ||
+      (conn.targetWorld != worldId && !merged::IsWorldLoaded(conn.targetWorld))) {
     return false;
   }
   targetAreaAssetId = conn.targetArea;
@@ -568,6 +571,7 @@ bool GetPickupOverride(unsigned int worldId, unsigned int editorId, PickupOverri
   if (!s.active) {
     return false;
   }
+  editorId = merged::ToSourceEditorId(editorId, worldId);
   const auto it = s.pickupByObject.find(ObjectKey(worldId, editorId));
   if (it == s.pickupByObject.end()) {
     return false;
@@ -603,6 +607,7 @@ const wchar_t* GetHudMemoOverride(unsigned int worldId, unsigned int editorId) {
   if (!s.active) {
     return nullptr;
   }
+  editorId = merged::ToSourceEditorId(editorId, worldId);
   const auto it = s.memoByObject.find(ObjectKey(worldId, editorId));
   return it == s.memoByObject.end() ? nullptr : s.memoText[it->second].c_str();
 }
@@ -667,6 +672,9 @@ bool AllowLayerChange(unsigned int areaSaveId, unsigned int layer) {
 
 bool AllowScriptMsg(unsigned int worldId, unsigned int senderEditorId,
                     unsigned int targetEditorId) {
+  unsigned int targetWorld = worldId;
+  senderEditorId = merged::ToSourceEditorId(senderEditorId, worldId);
+  targetEditorId = merged::ToSourceEditorId(targetEditorId, targetWorld);
   if (!S().active || worldId != kTallonWorld || (senderEditorId & 0x3FFFFFF) != kTruthRelay ||
       (targetEditorId & 0x3FFFFFF) != kTruthProgressRelay) {
     return true;

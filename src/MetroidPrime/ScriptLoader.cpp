@@ -147,6 +147,7 @@
 
 #if defined(TARGET_PC)
 #include "Kyoto/Streams/CMemoryInStream.hpp"
+#include "Metaforce/MergedWorld.hpp"
 #include "Metaforce/Randomizer/Hooks.hpp"
 #endif
 
@@ -697,6 +698,10 @@ CEntity* ScriptLoader::LoadDock(CStateManager& mgr, CInputStream& in, int propCo
   CVector3f scale(in);
   int dock = in.Get< int >();
   int area = in.Get< int >();
+#if defined(TARGET_PC)
+  // A dock of an area appended from another region names its area by its index there.
+  area = metaforce::merged::ToLoadedAreaIndex(info.GetAreaId(), area);
+#endif
   bool loadConnected = in.Get< bool >();
   return rs_new CScriptDock(mgr.AllocateUniqueId(), name, info, position, scale, dock, area, active,
                             0, loadConnected);

@@ -1,5 +1,6 @@
 #include "Metaforce/Randomizer/CrossWorldDoors.hpp"
 
+#include "Metaforce/MergedWorld.hpp"
 #include "Metaforce/Randomizer/Hooks.hpp"
 #include "Metaforce/Randomizer/Randomizer.hpp"
 #include "Metaforce/Warp.hpp"
@@ -138,6 +139,11 @@ const DockConnection* FindCrossWorldDoor(uint32_t world, uint32_t area, int dock
     return nullptr;
   }
   const DockConnection& door = seed->docks[it->second];
+  // Into a region that was loaded along with this one: the door was redirected like any other,
+  // and DockPortals takes the player through.
+  if (merged::IsWorldLoaded(door.targetWorld)) {
+    return nullptr;
+  }
   return door.world == world ? &door : nullptr;
 }
 

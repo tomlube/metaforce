@@ -36,6 +36,14 @@ public:
 
   CWorldState& StateForWorld(CAssetId mlvlId);
   CWorldState& CurrentWorldState();
+#if defined(TARGET_PC)
+  // Only changes which world counts as current, without SetCurrentWorldId's pak handling. For
+  // writing a save as if it were made in another world.
+  void OverrideCurrentWorldId(CAssetId worldId) {
+    StateForWorld(worldId);
+    mMlvlId = worldId;
+  }
+#endif
   const CWorldState& GetCurrentWorldState() const;
 
   void ImportPersistentOptions(const CSystemState&);

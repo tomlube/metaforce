@@ -32,6 +32,7 @@
 #include "rstl/vector.hpp"
 
 #if defined(TARGET_PC)
+#include "Metaforce/MergedWorld.hpp"
 #include "Metaforce/Randomizer/Hooks.hpp"
 #endif
 
@@ -147,6 +148,10 @@ bool CWorld::CheckWorldComplete(CStateManager* mgr, TAreaId aid, CAssetId mreaId
     for (int i = 0; i < areaCount; ++i) {
       mAreas.push_back(rs_new CGameArea(in, i, version));
     }
+#if defined(TARGET_PC)
+    metaforce::merged::AppendForeignAreas(this, mMlvlId, mAreas);
+    areaCount = mAreas.size();
+#endif
     mChainHeads.resize(5, nullptr);
     for (int i = 0; i < areaCount; ++i) {
       MoveToChain(mAreas[i].get(), kC_Deallocated);
@@ -154,10 +159,11 @@ bool CWorld::CheckWorldComplete(CStateManager* mgr, TAreaId aid, CAssetId mreaId
 #if defined(TARGET_PC)
     for (int i = 0; i < areaCount; ++i) {
       CGameArea* area = mAreas[i].get();
+      const CAssetId sourceWorld = metaforce::merged::GetSourceWorld(mMlvlId, TAreaId(i));
       for (int dock = 0; dock < area->GetDockCount(); ++dock) {
         unsigned int targetArea;
         int targetDock;
-        if (metaforce::randomizer::GetDockOverride(mMlvlId, area->GetAreaAssetId(), dock,
+        if (metaforce::randomizer::GetDockOverride(sourceWorld, area->GetAreaAssetId(), dock,
                                                    targetArea, targetDock)) {
           const TAreaId target = GetAreaId(targetArea);
           if (target != kInvalidAreaId) {
@@ -189,6 +195,20 @@ bool CWorld::CheckWorldComplete(CStateManager* mgr, TAreaId aid, CAssetId mreaId
         CAssetId agscId = in.Get< CAssetId >();
         mSoundGroupData.push_back(CSoundGroupData(groupId, agscId));
       }
+#if defined(TARGET_PC)
+      // The sounds of the regions appended to this world.
+      const rstl::vector< rstl::pair< int, CAssetId > > foreignGroups =
+          metaforce::merged::GetForeignSoundGroups();
+      for (int i = 0; i < foreignGroups.size(); ++i) {
+        bool loaded = false;
+        for (int j = 0; j < mSoundGroupData.size(); ++j) {
+          loaded = loaded || mSoundGroupData[j].mAgscId == foreignGroups[i].second;
+        }
+        if (!loaded) {
+          mSoundGroupData.push_back(CSoundGroupData(foreignGroups[i].first, foreignGroups[i].second));
+        }
+      }
+#endif
       CAudioSys::GetVerbose();
     }
     if (static_cast< uint >(version) > 12) {
@@ -203,6 +223,9 @@ bool CWorld::CheckWorldComplete(CStateManager* mgr, TAreaId aid, CAssetId mreaId
       if (!CScriptStreamedMusic::IsAudioTrackNameSoftware(mDefAudioTrack)) {
         CStreamAudioManager::SetDefaultAudio(mDefAudioTrack, 0.f, 0.f, volume);
       }
+#if defined(TARGET_PC)
+      metaforce::merged::SetHostDefaultAudio(mDefAudioTrack, static_cast< uchar >(volume));
+#endif
     }
     CWorldLayers::ReadWorldLayers(in, version, mMlvlId);
     mLoadToken = nullptr;
@@ -214,6 +237,9 @@ bool CWorld::CheckWorldComplete(CStateManager* mgr, TAreaId aid, CAssetId mreaId
     if (!mMapWorld->TryCache()) {
       return false;
     }
+#if defined(TARGET_PC)
+    metaforce::merged::AppendForeignMapAreas(*mMapWorld->GetObject());
+#endif
     if (mCurAreaId == kInvalidAreaId) {
       GetMapWorld()->SetWhichMapAreasLoaded(*this, 0, 9999);
     } else {
@@ -286,6 +312,9 @@ CWorld::~CWorld() {
   }
   UnloadSoundGroups();
   CScriptRoomAcoustics::DisableAuxCallbacks();
+#if defined(TARGET_PC)
+  metaforce::merged::ReleaseWorld(this);
+#endif
 }
 
 bool CWorld::ScheduleAreaToLoad(CGameArea* area, CStateManager& mgr) {
@@ -399,6 +428,17 @@ void CWorld::MoveToChain(CGameArea* area, EChain chain) {
 
 void CWorld::LoadSoundGroups() {
   rstl::vector< CAssetId > songAssets = gpTweakManager->GetSongAssetsInWorld(IGetWorldAssetId());
+#if defined(TARGET_PC)
+  // And the songs of the regions appended to this world.
+  const rstl::vector< CAssetId > foreignWorlds = metaforce::merged::GetForeignWorlds();
+  for (int i = 0; i < foreignWorlds.size(); ++i) {
+    const rstl::vector< CAssetId > foreignSongs =
+        gpTweakManager->GetSongAssetsInWorld(foreignWorlds[i]);
+    for (int j = 0; j < foreignSongs.size(); ++j) {
+      songAssets.push_back(foreignSongs[j]);
+    }
+  }
+#endif
   if (songAssets.size() > 0) {
     mSoundGroupData.reserve(mSoundGroupData.size() + songAssets.size());
     for (AUTO(it, songAssets.begin()); it != songAssets.end(); ++it) {
@@ -631,6 +671,13 @@ void CWorld::Update(float dt) {
     it->AliveUpdate(dt);
     if (it->DoesAreaNeedSkyNow()) {
       const CScriptAreaAttributes* attrs = it->GetPostConstructed()->mAreaAttributes;
+#if defined(TARGET_PC)
+      // Rooms of appended regions draw their own sky (merged::DrawForeignSky), so they don't pick
+      // the host's.
+      if (metaforce::merged::IsForeignArea(it->GetAreaId())) {
+        attrs = nullptr;
+      }
+#endif
       if (attrs && attrs->GetSkyModel() != kInvalidAssetId) {
         overrideSkyId = attrs->GetSkyModel();
       }
@@ -689,6 +736,15 @@ void CWorld::PreRender() {
     it->PreRender();
   }
 }
+
+#if defined(TARGET_PC)
+void CWorld::DrawSkyForArea(TAreaId area, const CTransform4f& xf) const {
+  if (mSkyboxVisible && metaforce::merged::DrawForeignSky(*this, area, xf)) {
+    return;
+  }
+  DrawSky(xf);
+}
+#endif
 
 void CWorld::DrawSky(const CTransform4f& xf) const {
   if ((mSkyboxWorldLoaded || mSkyboxOverride) && mSkyboxVisible) {

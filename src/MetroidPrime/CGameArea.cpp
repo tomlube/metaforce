@@ -1219,6 +1219,23 @@ void IGameArea::Dock::Redirect(TAreaId area, int dock) {
     mDockReferences[i].mDock = static_cast< s16 >(dock);
   }
 }
+
+void IGameArea::Dock::OffsetAreas(int offset) {
+  for (int i = 0; i < mDockReferences.size(); ++i) {
+    if (mDockReferences[i].mArea != kInvalidAreaId) {
+      mDockReferences[i].mArea = TAreaId(mDockReferences[i].mArea.Value() + offset);
+    }
+  }
+}
+
+void CGameArea::OffsetAreaReferences(int offset) {
+  for (int i = 0; i < mAttachedAreaIndices.size(); ++i) {
+    mAttachedAreaIndices[i] = static_cast< ushort >(mAttachedAreaIndices[i] + offset);
+  }
+  for (int i = 0; i < mDocks.size(); ++i) {
+    mDocks[i].OffsetAreas(offset);
+  }
+}
 #endif
 
 IGameArea::Dock::Dock(CInputStream& in, const CTransform4f& xf)

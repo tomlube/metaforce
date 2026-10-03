@@ -13,6 +13,10 @@
 
 #include "dolphin/os.h"
 
+#if defined(TARGET_PC)
+#include "Metaforce/GameOptionDefaults.hpp"
+#endif
+
 const bool CGameOptions::skDefaultHudLag = true;
 const bool CGameOptions::skDefaultInvertY = false;
 const bool CGameOptions::skDefaultRumble = true;
@@ -157,6 +161,10 @@ void CGameOptions::ResetToDefaults() {
 }
 
 void CGameOptions::EnsureOptions() {
+#if defined(TARGET_PC)
+  // The universal defaults win over whatever options were loaded, from boot on.
+  metaforce::options::ApplyTo(*this);
+#endif
   SetScreenBrightness(mScreenBrightness, true);
   SetScreenPositionX(mScreenXOffset, true);
   SetScreenPositionY(mScreenYOffset, true);

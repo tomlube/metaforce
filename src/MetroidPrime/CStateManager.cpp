@@ -88,8 +88,10 @@
 #if defined(TARGET_PC)
 #include "Metaforce/Cheats.hpp"
 #include "Metaforce/DockPortals.hpp"
+#include "Metaforce/MergedWorld.hpp"
 #include <dolphin/os.h>
 #include "Metaforce/Randomizer/Hooks.hpp"
+#include "Metaforce/SaveAnywhere.hpp"
 #include "MetroidPrime/ScriptObjects/CScriptTimer.hpp"
 #endif
 
@@ -653,23 +655,60 @@ void CStateManager::UpdateActorInSortedLists(CActor& actor) {
   }
 }
 
+#if defined(TARGET_PC)
+// Drops entities of other regions than the asking actor's when mixed regions are loaded as one
+// world, since their rooms can overlap in space.
+static void FilterNearListBySpace(const CStateManager& mgr, TEntityList& list,
+                                  const CActor* actor) {
+  if (!metaforce::merged::IsMerged()) {
+    return;
+  }
+  const TAreaId actorArea =
+      actor != nullptr ? metaforce::merged::GetQueryArea(mgr, *actor) : kInvalidAreaId;
+  int kept = 0;
+  for (int i = 0; i < list.size(); ++i) {
+    const CEntity* ent = mgr.GetObjectById(list[i]);
+    if (ent == nullptr ||
+        metaforce::merged::SharesSpace(mgr, actorArea,
+                                       metaforce::merged::GetQueryArea(mgr, *ent))) {
+      list[kept++] = list[i];
+    }
+  }
+  while (list.size() > kept) {
+    list.pop_back();
+  }
+}
+#endif
+
 void CStateManager::BuildNearList(TEntityList& nearList, const CAABox& aabb,
                                   const CMaterialFilter& filter, const CActor* actor) const {
   mSortedListManager->BuildNearList(nearList, aabb, filter, actor);
+#if defined(TARGET_PC)
+  FilterNearListBySpace(*this, nearList, actor);
+#endif
 }
 
 void CStateManager::BuildColliderList(TEntityList& out, const CActor& actor,
                                       const CAABox& aabb) const {
   mSortedListManager->BuildNearList(out, actor, aabb);
+#if defined(TARGET_PC)
+  FilterNearListBySpace(*this, out, &actor);
+#endif
 }
 
 void CStateManager::BuildNearList(TEntityList& nearList, const CVector3f& pos, const CVector3f& dir,
                                   float mag, const CMaterialFilter& filter,
                                   const CActor* actor) const {
   mSortedListManager->BuildNearList(nearList, pos, dir, mag, filter, actor);
+#if defined(TARGET_PC)
+  FilterNearListBySpace(*this, nearList, actor);
+#endif
 }
 
 void CStateManager::AreaLoaded(TAreaId aid) {
+#if defined(TARGET_PC)
+  if (!metaforce::merged::SendForeignRelayMsgs(aid, *this))
+#endif
   mMailbox->SendMsgs(aid, *this);
   mEnvFxManager->AreaLoaded();
 }
@@ -763,6 +802,9 @@ void CStateManager::SetCurrentAreaId(TAreaId aid) {
     mPrevAreaId = mNextAreaId;
     UpdateRoomAcoustics(aid);
     mNextAreaId = aid;
+#if defined(TARGET_PC)
+    metaforce::merged::OnPlayerAreaChanged(aid);
+#endif
   }
 
   const TAreaId& currentArea = aid;
@@ -939,6 +981,7 @@ void CStateManager::InitializeState(unsigned int mlvlId, TAreaId aid, unsigned i
 
 #if defined(TARGET_PC)
   metaforce::randomizer::OnWorldInitialized(*this);
+  metaforce::save_anywhere::OnWorldInitialized(*this);
 #endif
 
   mPlayer->AsyncLoadSuit(*this);
@@ -1106,6 +1149,9 @@ void CStateManager::Think(float dt) {
         }
 
         if (camList->GetObjectById(ent->GetUniqueId()) == nullptr) {
+#if defined(TARGET_PC)
+          const metaforce::merged::QueryScope scope(metaforce::merged::GetQueryArea(*this, *ent));
+#endif
           ent->Think(dt, *this);
         }
       }
@@ -1133,6 +1179,9 @@ void CStateManager::PreThinkObjects(float dt) {
     for (int i = allList->GetFirstObjectIndex(); i != -1; i = allList->GetNextObjectIndex(i)) {
       CEntity* ent = (*allList)[i];
       if (ent != nullptr && camList->GetObjectById(ent->GetUniqueId()) == nullptr) {
+#if defined(TARGET_PC)
+        const metaforce::merged::QueryScope scope(metaforce::merged::GetQueryArea(*this, *ent));
+#endif
         ent->PreThink(dt, *this);
       }
     }
@@ -1824,7 +1873,11 @@ rstl::pair< TEditorId, TUniqueId > CStateManager::LoadScriptObject(TAreaId aid,
                                                                    CInputStream& in) {
   uint bytesLeft = length;
   bool failed = false;
+#if defined(TARGET_PC)
+  TEditorId eid = in.ReadLong();
+#else
   const TEditorId eid = in.ReadLong();
+#endif
 
   rstl::vector< SConnection > conns;
   const int connCount = in.Get< int >();
@@ -1842,8 +1895,10 @@ rstl::pair< TEditorId, TUniqueId > CStateManager::LoadScriptObject(TAreaId aid,
 #if defined(TARGET_PC)
   metaforce::randomizer::ScriptObjectPatch scriptPatch;
   const bool patched =
-      mWorld.get() != nullptr && metaforce::randomizer::GetScriptObjectPatch(
-                                     mWorld->GetWorldAssetId(), eid.Value(), scriptPatch);
+      mWorld.get() != nullptr &&
+      metaforce::randomizer::GetScriptObjectPatch(
+          metaforce::merged::GetSourceWorld(mWorld->GetWorldAssetId(), aid), eid.Value(),
+          scriptPatch);
   if (patched) {
     rstl::vector< SConnection > kept;
     if (!scriptPatch.clearConnections) {
@@ -1860,6 +1915,16 @@ rstl::pair< TEditorId, TUniqueId > CStateManager::LoadScriptObject(TAreaId aid,
                                  TEditorId(add.target)));
     }
     conns = kept;
+  }
+  // Objects of an area appended from another region move into its place in the loaded world,
+  // along with the objects they talk to.
+  if (metaforce::merged::IsForeignArea(aid)) {
+    eid = TEditorId(metaforce::merged::ToLoadedEditorId(aid, eid.Value()));
+    for (int i = 0; i < static_cast< int >(conns.size()); ++i) {
+      conns[i] = SConnection(conns[i].mState, conns[i].mMsg,
+                             TEditorId(metaforce::merged::ToLoadedEditorId(
+                                 aid, conns[i].mObjId.Value())));
+    }
   }
 #endif
 
@@ -1953,7 +2018,8 @@ void CStateManager::LoadScriptObjects(TAreaId aid, CInputStream& in,
       mWorld.get() == nullptr || aid == kInvalidAreaId
           ? 0
           : metaforce::randomizer::GetScriptTimerSpawns(
-                mWorld->GetWorldAssetId(), mWorld->GetArea(aid)->GetAreaAssetId(), &timers);
+                metaforce::merged::GetSourceWorld(mWorld->GetWorldAssetId(), aid),
+                mWorld->GetArea(aid)->GetAreaAssetId(), &timers);
   for (int i = 0; i < timerCount; ++i) {
     const metaforce::randomizer::ScriptTimerSpawn& spawn = timers[i];
     const TEditorId eid(spawn.editorId | (static_cast< uint >(aid.Value()) << 16));
@@ -2472,8 +2538,10 @@ void CStateManager::DrawWorld() const {
   }
 #if defined(TARGET_PC)
   if (!metaforce::portals::SkipMainPassSky())
-#endif
+    mWorld->DrawSkyForArea(visAreaId, CTransform4f::Translate(backupViewMatrix.GetTranslation()));
+#else
   mWorld->DrawSky(CTransform4f::Translate(backupViewMatrix.GetTranslation()));
+#endif
   if (!areas.empty()) {
     SetupFogForArea(*areas.back());
   }

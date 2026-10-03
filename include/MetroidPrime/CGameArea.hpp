@@ -75,6 +75,8 @@ public:
 #if defined(TARGET_PC)
     // Points every reference of this dock at `dock` of `area` instead.
     void Redirect(TAreaId area, int dock);
+    // Moves every area this dock references by `offset`, for areas appended to another world.
+    void OffsetAreas(int offset);
 #endif
   };
 
@@ -236,6 +238,9 @@ public:
 #if defined(TARGET_PC)
   // Lists `area` as a neighbor, for doors that now lead there.
   void AddAttachedArea(TAreaId area);
+  // Moves every area index this area refers to by `offset`, for an area appended to another
+  // world after `offset` areas.
+  void OffsetAreaReferences(int offset);
 #endif
   TAreaId GetAttachedAreaId(int idx) const { return TAreaId(mAttachedAreaIndices[idx]); }
   int GetTokenCount() const { return mTokens.size(); }

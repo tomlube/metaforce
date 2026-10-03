@@ -211,6 +211,12 @@ void add_game_tab(Pane& leftPane, Pane& rightPane) {
   option_bool_select(leftPane, rightPane, &Defaults::hintSystem, "Hint System",
                      "Show hint messages and map markers that point toward your next goal.");
 
+  leftPane.add_section("Sound");
+  option_percent_select(leftPane, rightPane, &Defaults::sfxVolume, "Sound Effects Volume",
+                        "Volume of sound effects, the same as the Options menu's slider.");
+  option_percent_select(leftPane, rightPane, &Defaults::musicVolume, "Music Volume",
+                        "Volume of the music, the same as the Options menu's slider.");
+
   leftPane.add_section("Controller");
   option_bool_select(leftPane, rightPane, &Defaults::invertY, "Reverse Y-Axis",
                      "Invert vertical free-look and aiming.");
