@@ -5,6 +5,8 @@
 [Discord Badge]: https://dcbadge.limes.pink/api/server/AMBVFuf?style=flat
 [discord]: https://discord.gg/AMBVFuf
 
+**Disclaimer:** This fork of Metaforce is a proof of concept, as I am not a particularly strong programmer. Much of the code here is heavily based on existing projects ([Randovania](https://github.com/randovania/randovania), [randomprime](https://github.com/randovania/randomprime), [Dusklight](https://github.com/TwilitRealm/dusklight) and the [Dusklight Randomizer](https://github.com/TwilitRealm/dusklight-randomizer)), and a good amount of it was written with help of an AI agent. It isn't slop, but it's closer to a 'working prototype' than a 'final implementation'. For example, the mouse controls feel right, but the way they're wired into Borealis is probably the dumbest way it could have been done. What I can vouch for is the behaviour - nothing here is first pass guesswork. Everything has been repeatedly iterated on and checked against the vanilla game, backed by 23 years of knowing how Prime plays and how its engine works. I'm also genuinely proud of the room shuffle randomizer solution. If you find a bug, open an issue here or message me on Discord @tomlube.
+
 Metaforce is a reverse-engineered reimplementation of the engine from Metroid Prime, which started development in June of 2015 by Cirrus and Antidote. It is a labor of love, built with deep respect for the incredible work of the original developers at Retro Studios in the late 90s and early 2000s.
 
 We want to acknowledge the passing of two exceptionally talented developers, Mark Haigh-Hutchinson and Andy O'Neil, whose work helped shape this game. We'd also like to thank former Retro developers like Zoid Kirsch and Jack Matthews for their seemingly endless talent, friendliness, and encouragement.
@@ -130,3 +132,17 @@ cmake -G Xcode ../metaforce
 ```
 
 Then open `metaforce.xcodeproj`
+
+### Credits
+
+This fork builds on the work of:
+
+* [Metaforce](https://github.com/AxioDL/metaforce) and the [Metroid Prime decompilation](https://github.com/PrimeDecomp/prime)
+* [Randovania](https://github.com/randovania/randovania): Metroid Prime logic database, pickup database and Starter Preset used by the randomizer (GPL-3.0)
+* [randomprime](https://github.com/randovania/randomprime): pickup location tables and pickup models (MIT)
+* [Dusklight](https://github.com/TwilitRealm/dusklight) (CC0 1.0)
+* [Dusklight Randomizer](https://github.com/TwilitRealm/dusklight-randomizer) (CC0 1.0)
+
+### License
+
+This fork is distributed under the [GNU General Public License v3.0](LICENSE). Original code written for this fork is also dedicated to the public domain under [CC0 1.0](LICENSES/CC0-1.0.txt). See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for which files that covers and for the licenses of third-party code.
