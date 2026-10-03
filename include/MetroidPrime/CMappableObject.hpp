@@ -61,6 +61,9 @@ public:
 
   EMappableObjectType GetType() const { return mType; }
   TEditorId GetObjId() const { return mObjId; }
+#if defined(TARGET_PC)
+  void SetObjId(TEditorId id) { mObjId = id; }
+#endif
   const CTransform4f& GetTransform() const { return mTransform; }
 
   static bool IsDoorType(EMappableObjectType type) {

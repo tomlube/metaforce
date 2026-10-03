@@ -20,6 +20,20 @@
 #include <math.h>
 #include <stdlib.h>
 
+#if defined(TARGET_PC)
+#include "Metaforce/MergedWorld.hpp"
+
+// The map objects of a room appended from another region keep that region's editor ids, but its
+// doors and their visited state go by ids in the loaded world. The map area itself is left alone:
+// the same MAPA can be loaded again as a host map.
+static CMappableObject GetLoadedMappableObject(const CMapArea& area, int areaIdx, int idx) {
+  CMappableObject object = area.GetMappableObject(idx);
+  object.SetObjId(
+      TEditorId(metaforce::merged::ToLoadedEditorId(TAreaId(areaIdx), object.GetObjId().value)));
+  return object;
+}
+#endif
+
 struct CMapObjectSortInfoGreaterThan {
   CMapObjectSortInfoGreaterThan() {}
   bool operator()(const CMapWorld::CMapObjectSortInfo& a,
@@ -422,7 +436,11 @@ void CMapWorld::DrawAreas(const CMapWorldDrawParms& parms, int selArea,
     }
     int surfaceBase = 0;
     for (j = 0; j < area->GetNumMappableObjects(); surfaceBase += 6, ++j) {
+#if defined(TARGET_PC)
+      const CMappableObject object = GetLoadedMappableObject(*area, areaIdx, j);
+#else
       const CMappableObject& object = area->GetMappableObject(j);
+#endif
       if (!object.GetIsVisibleToAutoMapper(mwInfo.IsWorldVisible(areaIdx), mwInfo)) {
         continue;
       }
@@ -492,7 +510,11 @@ void CMapWorld::DrawAreas(const CMapWorldDrawParms& parms, int selArea,
         lastMode = kDM_Surface;
       } else if (type == CMapObjectSortInfo::kOC_Door || type == CMapObjectSortInfo::kOC_Object) {
         EDrawMode mode = type == CMapObjectSortInfo::kOC_Door ? kDM_Door : kDM_Object;
+#if defined(TARGET_PC)
+        const CMappableObject object = GetLoadedMappableObject(*area, areaIdx, idx);
+#else
         const CMappableObject& object = area->GetMappableObject(idx);
+#endif
         bool needsVertices = lastMode != mode;
         const CTransform4f objXf =
             CTransform4f::Translate(CMapArea::GetAreaPostTranslate(parms.GetWorld(), areaIdx)) *
@@ -507,7 +529,11 @@ void CMapWorld::DrawAreas(const CMapWorldDrawParms& parms, int selArea,
         object.Draw(selArea, mwInfo, parms.GetAlpha(), needsVertices);
         lastMode = mode;
       } else if (type == CMapObjectSortInfo::kOC_DoorSurface) {
+#if defined(TARGET_PC)
+        const CMappableObject object = GetLoadedMappableObject(*area, areaIdx, idx / 6);
+#else
         const CMappableObject& object = area->GetMappableObject(idx / 6);
+#endif
         gpRender->SetModelMatrix(
             modelXf *
             CTransform4f::Translate(CMapArea::GetAreaPostTranslate(parms.GetWorld(), areaIdx)) *
