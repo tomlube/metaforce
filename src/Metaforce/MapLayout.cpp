@@ -7,11 +7,15 @@
 
 #include "Kyoto/CResFactory.hpp"
 #include "Kyoto/CResLoader.hpp"
+#include "Kyoto/Graphics/CColor.hpp"
+#include "Kyoto/Graphics/CGX.hpp"
+#include "Kyoto/Graphics/CGraphics.hpp"
 #include "Kyoto/Math/CAABox.hpp"
 #include "Kyoto/Math/CRelAngle.hpp"
 #include "Kyoto/Math/CTransform4f.hpp"
 #include "Kyoto/Math/CVector3f.hpp"
 #include "Kyoto/Streams/CInputStream.hpp"
+#include "MetaRender/CCubeRenderer.hpp"
 #include "MetroidPrime/CGameArea.hpp"
 #include "MetroidPrime/CMapArea.hpp"
 #include "MetroidPrime/CMapWorld.hpp"
@@ -61,11 +65,22 @@ constexpr int kAttempts = 12;
 // group would have gone.
 constexpr float kIslandRingStep = 10.f;
 constexpr int kIslandRings = 60;
+// How strongly overlaps between rooms are shaded on the map.
+constexpr float kOverlapAlpha = 0.45f;
 // How close a door's two sides have to be on the map to count as meeting.
 constexpr float kMeetDistance = 0.5f;
 // Rooms placed through a door touch along it, and their map geometry often reaches a little past
 // the door's plane. Overlaps this close to the door they're joined by don't count.
 constexpr float kDoorClearance = 8.f;
+// Repair: passes over the islands, how many groups in the way of an island may be moved for it,
+// and how far a moved group may go looking for free space, in island rings.
+constexpr int kRepairPasses = 3;
+constexpr int kMaxBlockers = 3;
+constexpr int kRepairRings = 30;
+// Grid entries of groups being tried somewhere new, as opposed to where they are.
+constexpr int kTempStep = 0x7fffffff;
+// The yaw of a pose not worked out yet.
+constexpr float kNoPose = 1e30f;
 
 // A turn about Z, then a move.
 struct Pose {
@@ -265,6 +280,7 @@ struct Group {
 
 struct Candidate {
   int group;
+  int parent; // the group it's joined to
   Pose pose;
   CVector3f door; // the door it's joined by, in map space
   int depth;
@@ -281,46 +297,58 @@ struct Result {
   std::vector< Pose > poses;       // by group
   std::vector< EPlacement > kinds; // by group
   std::vector< int > steps;        // by group: when it was placed
+  std::vector< int > parents;      // by group: the group it's joined to by a door, or -1
   int islands = 0;
   float area = 0.f;
 };
+
+// Where two rooms overlap on the map: quads in map space, drawn when both rooms are. Each patch
+// fits one GX index array (256 vertices); every quad is there twice, once each way round, so
+// it shows from above and below.
+struct OverlapPatch {
+  int areaA;
+  int areaB;
+  std::vector< CVector3f > verts;
+};
+
+constexpr int kMaxPatchQuads = 32;
 
 class Builder {
 public:
   explicit Builder(const CWorld& world) : mWorld(world) {}
 
-  bool Run(std::vector< CTransform4f >& transforms, std::vector< float >& yaws) {
+  bool Run(std::vector< CTransform4f >& transforms, std::vector< float >& yaws,
+           std::vector< OverlapPatch >& overlaps) {
     const auto start = std::chrono::steady_clock::now();
     ReadRooms();
     if (!ReadLinks()) {
       return false;
     }
     MakeGroups();
+    ReadElevators();
 
     std::mt19937 rng(0x6d617073);
     Result best;
     int bestAttempt = 0;
-    int bestRoot = 0;
-    std::mt19937 bestRng;
     for (int attempt = 0; attempt < kAttempts; ++attempt) {
       // The first two layouts grow from the first room, as sorted; the others from random ones.
       // Every other layout places the biggest groups that fit first, before small ones fill the
       // space around their doors; the others go breadth first.
       const int root = attempt < 2 ? mRooms[0].group : static_cast< int >(rng() % mGroups.size());
       mBigFirst = attempt % 2 == 1;
-      const std::mt19937 attemptRng = rng;
       Result result = Attempt(root, rng);
       if (attempt == 0 || result.islands < best.islands ||
           (result.islands == best.islands && result.area < best.area)) {
         best = std::move(result);
         bestAttempt = attempt;
-        bestRoot = root;
-        bestRng = attemptRng;
       }
       if (best.islands == 0) {
         break;
       }
     }
+
+    const int greedyIslands = best.islands;
+    Repair(best);
 
     transforms.assign(mWorld.GetNumAreas(), CTransform4f::Identity());
     yaws.assign(mWorld.GetNumAreas(), 0.f);
@@ -345,14 +373,13 @@ public:
     const auto ms = std::chrono::duration_cast< std::chrono::milliseconds >(
                         std::chrono::steady_clock::now() - start)
                         .count();
-    Log.info("Laid out {} rooms in {} groups: {} of {} moved doors meet, {} islands (layout {} of "
-             "{}, {}), in {} ms",
-             mRooms.size(), mGroups.size(), met / 2, moved / 2, best.islands, bestAttempt + 1,
-             kAttempts, bestAttempt % 2 == 1 ? "biggest first" : "breadth first", ms);
+    Log.info("Laid out {} rooms in {} groups: {} of {} moved doors meet, {} islands ({} before "
+             "repair; layout {} of {}, {}), in {} ms",
+             mRooms.size(), mGroups.size(), met / 2, moved / 2, best.islands, greedyIslands,
+             bestAttempt + 1, kAttempts, bestAttempt % 2 == 1 ? "biggest first" : "breadth first",
+             ms);
+    FindOverlaps(best, overlaps);
     if (sLogEnabled) {
-      // Again, for the grid of placed rooms as the best layout left it.
-      mBigFirst = bestAttempt % 2 == 1;
-      Attempt(bestRoot, bestRng);
       LogLayout(best);
     }
     return true;
@@ -521,6 +548,28 @@ private:
     }
   }
 
+  // Rooms joined by elevators, from the logic database. Elevators aren't randomized.
+  void ReadElevators() {
+    const randomizer::Database* db = randomizer::GetDatabase();
+    if (db == nullptr) {
+      return;
+    }
+    std::unordered_map< std::uint32_t, int > roomOfAsset;
+    for (int r = 0; r < static_cast< int >(mRooms.size()); ++r) {
+      roomOfAsset[mWorld.GetAreaAlways(mRooms[r].id).GetAreaAssetId()] = r;
+    }
+    for (const randomizer::Node& node : db->Nodes()) {
+      if (!node.dock || node.dock->type != "teleporter" || node.dock->target < 0) {
+        continue;
+      }
+      const auto from = roomOfAsset.find(db->Areas()[node.area].assetId);
+      const auto to = roomOfAsset.find(db->Areas()[db->GetNode(node.dock->target).area].assetId);
+      if (from != roomOfAsset.end() && to != roomOfAsset.end() && from->second < to->second) {
+        mElevators.emplace_back(from->second, to->second);
+      }
+    }
+  }
+
   // False when no door was moved.
   bool ReadLinks() {
     bool anyMoved = false;
@@ -648,6 +697,47 @@ private:
     return hits;
   }
 
+  // Overlaps of `group` posed there with the grid, leaving out where the groups flagged in
+  // `moving` were (but not where they're being tried), and the cells by `door`. Adds up the cells
+  // each other group overlaps in `byGroup` if given. Stops counting past `limit`.
+  int CountOverlapsMoving(int group, const Pose& pose, const std::vector< char >& moving,
+                          const CVector3f* door, int limit, std::map< int, int >* byGroup) const {
+    int hits = 0;
+    std::vector< int > seen;
+    for (const int r : mGroups[group].rooms) {
+      for (const Column& column : mRooms[r].tests) {
+        const float x = pose.X(column.x, column.y);
+        const float y = pose.Y(column.x, column.y);
+        if (NearDoor(door, x, y)) {
+          continue;
+        }
+        const auto it = mGrid.find(PackKey(CellOf(x), CellOf(y)));
+        if (it == mGrid.end()) {
+          continue;
+        }
+        const float z0 = column.z0 + pose.t.GetZ();
+        const float z1 = column.z1 + pose.t.GetZ();
+        seen.clear();
+        for (const Entry& entry : it->second) {
+          if (entry.group == group || (moving[entry.group] && entry.step != kTempStep) ||
+              !(z0 < entry.z1 - kZTolerance && entry.z0 < z1 - kZTolerance) ||
+              std::find(seen.begin(), seen.end(), entry.group) != seen.end()) {
+            continue;
+          }
+          seen.push_back(entry.group);
+          if (byGroup != nullptr) {
+            ++(*byGroup)[entry.group];
+          }
+        }
+        hits += seen.empty() ? 0 : 1;
+        if (hits > limit && byGroup == nullptr) {
+          return hits;
+        }
+      }
+    }
+    return hits;
+  }
+
   bool OverlapsPlaced(const CAABox& bounds, int sinceStep) const {
     for (int s = sinceStep; s < static_cast< int >(mPlacedBounds.size()); ++s) {
       if (mPlacedBounds[s].DoBoundsOverlap(bounds)) {
@@ -695,14 +785,8 @@ private:
                                                0.f, 0.f));
   }
 
-  void Place(int group, const Pose& pose, int depth, Result& result, std::vector< int >& depths,
-             std::vector< Candidate >& frontier, std::mt19937& rng) {
-    const int step = static_cast< int >(mPlacedBounds.size());
-    depths[group] = depth;
-    result.steps[group] = step;
-    result.poses[group] = pose;
-    mPlacedBounds.push_back(TransformBounds(mGroups[group].bounds, pose));
-
+  // Puts the group's cells in the grid, recording the cells it went into in `inserted` if given.
+  void InsertGroup(int group, const Pose& pose, int step, std::vector< std::int64_t >* inserted) {
     // Spread each cell over the cells its corners land in, so that turned rooms leave no gaps.
     const float spread = 0.35f * kCellSize;
     for (const int r : mGroups[group].rooms) {
@@ -718,10 +802,39 @@ private:
           if (std::find(keys, keys + keyCount, key) == keys + keyCount) {
             keys[keyCount++] = key;
             mGrid[key].push_back(entry);
+            if (inserted != nullptr) {
+              inserted->push_back(key);
+            }
           }
         }
       }
     }
+  }
+
+  // Takes out what InsertGroup put in, the last insertions first.
+  void RemoveInserted(const std::vector< std::int64_t >& inserted) {
+    for (auto it = inserted.rbegin(); it != inserted.rend(); ++it) {
+      mGrid[*it].pop_back();
+    }
+  }
+
+  void RebuildGrid(const Result& result) {
+    mGrid.clear();
+    mPlacedBounds.clear();
+    for (int g = 0; g < static_cast< int >(mGroups.size()); ++g) {
+      mPlacedBounds.push_back(TransformBounds(mGroups[g].bounds, result.poses[g]));
+      InsertGroup(g, result.poses[g], result.steps[g], nullptr);
+    }
+  }
+
+  void Place(int group, const Pose& pose, int depth, Result& result, std::vector< int >& depths,
+             std::vector< Candidate >& frontier, std::mt19937& rng) {
+    const int step = static_cast< int >(mPlacedBounds.size());
+    depths[group] = depth;
+    result.steps[group] = step;
+    result.poses[group] = pose;
+    mPlacedBounds.push_back(TransformBounds(mGroups[group].bounds, pose));
+    InsertGroup(group, pose, step, nullptr);
 
     for (const int l : mGroups[group].links) {
       const Link& link = mLinks[l];
@@ -731,6 +844,7 @@ private:
       }
       Candidate candidate;
       candidate.group = to;
+      candidate.parent = group;
       candidate.pose = Compose(pose, link.rel);
       candidate.door = pose.Apply(link.center);
       candidate.depth = depth + 1;
@@ -739,6 +853,307 @@ private:
       candidate.checkedStep = 0;
       candidate.bounds = TransformBounds(mGroups[to].bounds, candidate.pose);
       frontier.push_back(candidate);
+    }
+  }
+
+  // The group and every group joined to it by a door, directly or not, that was placed after it.
+  std::vector< int > Subtree(const Result& result, int root) const {
+    std::vector< int > members{root};
+    for (size_t i = 0; i < members.size(); ++i) {
+      for (int g = 0; g < static_cast< int >(mGroups.size()); ++g) {
+        if (result.parents[g] == members[i]) {
+          members.push_back(g);
+        }
+      }
+    }
+    return members;
+  }
+
+  // Whether `members` fit with each of them moved by `delta`, `joined` by the door at `door`.
+  bool FitsMoved(const Result& result, const std::vector< int >& members, const Pose& delta,
+                 const std::vector< char >& moving, int joined, const CVector3f* door,
+                 std::map< int, int >* byGroup) const {
+    bool fits = true;
+    for (const int g : members) {
+      const int limit = OverlapLimit(g);
+      const int hits = CountOverlapsMoving(g, Compose(delta, result.poses[g]), moving,
+                                           g == joined ? door : nullptr, limit, byGroup);
+      if (hits > limit) {
+        fits = false;
+        if (byGroup == nullptr) {
+          return false;
+        }
+      }
+    }
+    return fits;
+  }
+
+  void InsertMoved(const Result& result, const std::vector< int >& members, const Pose& delta,
+                   std::vector< std::int64_t >& inserted) {
+    for (const int g : members) {
+      InsertGroup(g, Compose(delta, result.poses[g]), kTempStep, &inserted);
+    }
+  }
+
+  struct Move {
+    std::vector< int > members;
+    Pose delta;
+    EPlacement kind;
+    int parent;
+  };
+
+  // Somewhere for `members`, the group `head` and what hangs off it, to go out of the way: by
+  // another of the head's doors if one fits, otherwise in the nearest free space. Costs one door
+  // that met if the head was joined by a door and becomes an island.
+  bool PlanMove(const Result& result, const std::vector< int >& members,
+                const std::vector< Pose >& newPoses, const std::vector< char >& moving, Move& out,
+                int& cost) const {
+    const int head = members.front();
+    out.members = members;
+    for (const Link& link : mLinks) {
+      const int to = mRooms[link.to].group;
+      const int from = mRooms[link.from].group;
+      if (!link.moved || to != head || (moving[from] && newPoses[from].yaw == kNoPose)) {
+        continue;
+      }
+      const Pose& fromPose = moving[from] ? newPoses[from] : result.poses[from];
+      const Pose delta = Compose(Compose(fromPose, link.rel), Inverse(result.poses[head]));
+      const CVector3f door = fromPose.Apply(link.center);
+      if (FitsMoved(result, members, delta, moving, head, &door, nullptr)) {
+        out.delta = delta;
+        out.kind = kPL_Door;
+        out.parent = from;
+        cost = 0;
+        return true;
+      }
+    }
+    for (int ring = 1; ring <= kRepairRings; ++ring) {
+      const int count = std::max(8, static_cast< int >(2.f * kPi * ring));
+      for (int k = 0; k < count; ++k) {
+        const float angle = 2.f * kPi * k / count;
+        const float distance = ring * kIslandRingStep;
+        const Pose delta(0.f,
+                         CVector3f(distance * std::cos(angle), distance * std::sin(angle), 0.f));
+        if (FitsMoved(result, members, delta, moving, -1, nullptr, nullptr)) {
+          out.delta = delta;
+          out.kind = result.kinds[head] == kPL_Door ? kPL_Island : result.kinds[head];
+          out.parent = -1;
+          cost = result.kinds[head] == kPL_Door ? 1 : 0;
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  void Apply(Result& result, const Move& move) {
+    for (const int g : move.members) {
+      result.poses[g] = Compose(move.delta, result.poses[g]);
+    }
+    result.kinds[move.members.front()] = move.kind;
+    result.parents[move.members.front()] = move.parent;
+  }
+
+  // Tries to join island `island` to the layout by one of its doors, moving what's in the way.
+  // Only takes a change that makes more doors meet.
+  bool TryJoin(Result& result, int island) {
+    const std::vector< int > members = Subtree(result, island);
+    std::vector< char > inMembers(mGroups.size(), 0);
+    for (const int g : members) {
+      inMembers[g] = 1;
+    }
+    for (const Link& link : mLinks) {
+      const int from = mRooms[link.from].group;
+      if (!link.moved || mRooms[link.to].group != island || inMembers[from]) {
+        continue;
+      }
+      Move join;
+      join.members = members;
+      join.delta = Compose(Compose(result.poses[from], link.rel), Inverse(result.poses[island]));
+      join.kind = kPL_Door;
+      join.parent = from;
+      const CVector3f door = result.poses[from].Apply(link.center);
+      std::map< int, int > blockers;
+      if (FitsMoved(result, members, join.delta, inMembers, island, &door, &blockers)) {
+        Apply(result, join);
+        RebuildGrid(result);
+        return true;
+      }
+      if (blockers.size() > kMaxBlockers) {
+        continue;
+      }
+
+      // Move each group in the way, with what hangs off it, out of the way.
+      std::vector< char > moving = inMembers;
+      std::vector< std::vector< int > > blockerMembers;
+      bool valid = true;
+      for (const auto& [blocker, hits] : blockers) {
+        if (moving[blocker]) {
+          continue; // already moving with another group in the way
+        }
+        std::vector< int > sub = Subtree(result, blocker);
+        for (const int g : sub) {
+          valid = valid && !inMembers[g] && g != from;
+          moving[g] = 1;
+        }
+        blockerMembers.push_back(std::move(sub));
+      }
+      if (!valid) {
+        continue;
+      }
+      // Where everything on the move goes, kNoPose until planned.
+      std::vector< Pose > newPoses(mGroups.size(), Pose(kNoPose, CVector3f::Zero()));
+      for (const int g : members) {
+        newPoses[g] = Compose(join.delta, result.poses[g]);
+      }
+      std::vector< std::int64_t > inserted;
+      InsertMoved(result, members, join.delta, inserted);
+      std::vector< Move > moves;
+      int cost = 0;
+      for (const std::vector< int >& sub : blockerMembers) {
+        Move move;
+        int moveCost = 0;
+        if (!PlanMove(result, sub, newPoses, moving, move, moveCost)) {
+          valid = false;
+          break;
+        }
+        cost += moveCost;
+        for (const int g : sub) {
+          newPoses[g] = Compose(move.delta, result.poses[g]);
+        }
+        InsertMoved(result, sub, move.delta, inserted);
+        moves.push_back(std::move(move));
+      }
+      RemoveInserted(inserted);
+      // The island joining is one more door that meets.
+      if (!valid || cost >= 1) {
+        continue;
+      }
+      Apply(result, join);
+      for (const Move& move : moves) {
+        Apply(result, move);
+      }
+      RebuildGrid(result);
+      return true;
+    }
+    return false;
+  }
+
+  // Cells where the inner parts of two rooms in different groups overlap, merged into quads along
+  // rows. The rooms' edges are left out, so rooms that only meet don't show.
+  void FindOverlaps(const Result& result, std::vector< OverlapPatch >& overlaps) const {
+    struct Inner {
+      int room;
+      float z0;
+      float z1;
+    };
+    std::unordered_map< std::int64_t, std::vector< Inner > > inner;
+    const float spread = 0.25f * kCellSize;
+    for (int r = 0; r < static_cast< int >(mRooms.size()); ++r) {
+      const Pose& pose = result.poses[mRooms[r].group];
+      for (const Column& column : mRooms[r].tests) {
+        const float x = pose.X(column.x, column.y);
+        const float y = pose.Y(column.x, column.y);
+        const Inner cell = {r, column.z0 + pose.t.GetZ(), column.z1 + pose.t.GetZ()};
+        std::int64_t keys[4];
+        int keyCount = 0;
+        for (int corner = 0; corner < 4; ++corner) {
+          const std::int64_t key = PackKey(CellOf(x + ((corner & 1) ? spread : -spread)),
+                                           CellOf(y + ((corner & 2) ? spread : -spread)));
+          if (std::find(keys, keys + keyCount, key) == keys + keyCount) {
+            keys[keyCount++] = key;
+            inner[key].push_back(cell);
+          }
+        }
+      }
+    }
+
+    // By pair of rooms, by row: the cells and the top of the overlap there.
+    std::map< std::pair< int, int >, std::map< std::pair< int, int >, float > > pairs;
+    for (const auto& [key, cells] : inner) {
+      const int ix = static_cast< int >(key >> 32);
+      const int iy = static_cast< int >(static_cast< std::int32_t >(key & 0xffffffff));
+      for (size_t i = 0; i < cells.size(); ++i) {
+        for (size_t j = i + 1; j < cells.size(); ++j) {
+          const Inner& a = cells[i];
+          const Inner& b = cells[j];
+          if (mRooms[a.room].group == mRooms[b.room].group ||
+              !(a.z0 < b.z1 - kZTolerance && b.z0 < a.z1 - kZTolerance)) {
+            continue;
+          }
+          const std::pair< int, int > rooms(std::min(a.room, b.room), std::max(a.room, b.room));
+          float& top = pairs[rooms].try_emplace(std::make_pair(iy, ix), -FLT_MAX).first->second;
+          top = std::max(top, std::min(a.z1, b.z1));
+        }
+      }
+    }
+
+    overlaps.clear();
+    for (const auto& [rooms, cells] : pairs) {
+      OverlapPatch patch;
+      patch.areaA = mRooms[rooms.first].id.Value();
+      patch.areaB = mRooms[rooms.second].id.Value();
+      const auto addQuad = [&](int iy, int ix0, int ix1, float z) {
+        const float x0 = ix0 * kCellSize;
+        const float x1 = (ix1 + 1) * kCellSize;
+        const float y0 = iy * kCellSize;
+        const float y1 = (iy + 1) * kCellSize;
+        const CVector3f corners[4] = {CVector3f(x0, y0, z), CVector3f(x1, y0, z),
+                                      CVector3f(x1, y1, z), CVector3f(x0, y1, z)};
+        for (int v = 0; v < 4; ++v) {
+          patch.verts.push_back(corners[v]);
+        }
+        for (int v = 3; v >= 0; --v) {
+          patch.verts.push_back(corners[v]);
+        }
+        if (patch.verts.size() >= kMaxPatchQuads * 8) {
+          overlaps.push_back(patch);
+          patch.verts.clear();
+        }
+      };
+      // Runs of cells next to each other in a row, at about the same height.
+      int runRow = 0, runStart = 0, runEnd = 0;
+      float runTop = 0.f;
+      bool inRun = false;
+      for (const auto& [cell, top] : cells) {
+        const auto [iy, ix] = cell;
+        if (inRun && iy == runRow && ix == runEnd + 1 && std::fabs(top - runTop) < 1.5f) {
+          runEnd = ix;
+          continue;
+        }
+        if (inRun) {
+          addQuad(runRow, runStart, runEnd, runTop);
+        }
+        inRun = true;
+        runRow = iy;
+        runStart = runEnd = ix;
+        runTop = top;
+      }
+      if (inRun) {
+        addQuad(runRow, runStart, runEnd, runTop);
+      }
+      if (!patch.verts.empty()) {
+        overlaps.push_back(std::move(patch));
+      }
+    }
+  }
+
+  void Repair(Result& result) {
+    RebuildGrid(result);
+    for (int pass = 0; pass < kRepairPasses; ++pass) {
+      bool improved = false;
+      for (int g = 0; g < static_cast< int >(mGroups.size()); ++g) {
+        if (result.kinds[g] == kPL_Island && TryJoin(result, g)) {
+          improved = true;
+        }
+      }
+      if (!improved) {
+        break;
+      }
+    }
+    result.islands = 0;
+    for (const EPlacement kind : result.kinds) {
+      result.islands += kind == kPL_Island || kind == kPL_Separate ? 1 : 0;
     }
   }
 
@@ -756,6 +1171,7 @@ private:
     result.poses.assign(mGroups.size(), Pose());
     result.kinds.assign(mGroups.size(), kPL_Root);
     result.steps.assign(mGroups.size(), 0);
+    result.parents.assign(mGroups.size(), -1);
     std::vector< int > depths(mGroups.size(), -1);
     std::vector< Candidate > frontier;
     Place(root, Pose(), 0, result, depths, frontier, rng);
@@ -785,6 +1201,7 @@ private:
         const Candidate c = frontier[best];
         Place(c.group, c.pose, c.depth, result, depths, frontier, rng);
         result.kinds[c.group] = kPL_Door;
+        result.parents[c.group] = c.parent;
       } else if (first >= 0) {
         // Every door into what's placed is blocked. Of all those doors, the island goes by the
         // one with free space nearest it, so at least that door's two sides end up close.
@@ -814,19 +1231,39 @@ private:
         result.kinds[c.group] = kPL_Island;
         ++result.islands;
       } else {
-        // No door leads from anything placed to what's left: start again next to it.
+        // No door leads from anything placed to what's left. Start again by an elevator from
+        // something placed if there is one, so the elevator's two ends are drawn together;
+        // otherwise next to everything.
         int group = -1;
-        for (const Room& room : mRooms) {
-          if (depths[room.group] < 0) {
-            group = room.group;
+        Pose start;
+        for (const auto& [a, b] : mElevators) {
+          for (int side = 0; side < 2 && group < 0; ++side) {
+            const int here = side == 0 ? a : b;
+            const int there = side == 0 ? b : a;
+            if (depths[mRooms[here].group] < 0 && depths[mRooms[there].group] >= 0) {
+              group = mRooms[here].group;
+              const CVector3f target =
+                  result.poses[mRooms[there].group].Apply(mRooms[there].bounds.GetCenterPoint());
+              start = Pose(0.f, target - mRooms[here].bounds.GetCenterPoint());
+            }
+          }
+          if (group >= 0) {
             break;
           }
         }
-        CAABox all = CAABox::MakeMaxInvertedBox();
-        for (const CAABox& box : mPlacedBounds) {
-          all.Include(box);
+        if (group < 0) {
+          for (const Room& room : mRooms) {
+            if (depths[room.group] < 0) {
+              group = room.group;
+              break;
+            }
+          }
+          CAABox all = CAABox::MakeMaxInvertedBox();
+          for (const CAABox& box : mPlacedBounds) {
+            all.Include(box);
+          }
+          start = Pose(0.f, all.GetCenterPoint() - mGroups[group].bounds.GetCenterPoint());
         }
-        const Pose start(0.f, all.GetCenterPoint() - mGroups[group].bounds.GetCenterPoint());
         Pose pose = FarPose(group, start);
         int ring = 0;
         FindFreePose(group, start, kIslandRings, pose, ring);
@@ -860,11 +1297,13 @@ private:
   std::unordered_map< std::int64_t, std::vector< Entry > > mGrid;
   std::vector< CAABox > mPlacedBounds; // by placement step
   bool mBigFirst = false;
+  std::vector< std::pair< int, int > > mElevators; // rooms
 };
 
 const CWorld* sOwner = nullptr;
 std::vector< CTransform4f > sTransforms; // by area index
 std::vector< float > sYaws;
+std::vector< OverlapPatch > sOverlaps;
 
 } // namespace
 
@@ -872,15 +1311,17 @@ void Build(const CWorld& world) {
   sOwner = nullptr;
   sTransforms.clear();
   sYaws.clear();
+  sOverlaps.clear();
   if (sDisabled || world.GetNumAreas() == 0) {
     return;
   }
   Builder builder(world);
-  if (builder.Run(sTransforms, sYaws)) {
+  if (builder.Run(sTransforms, sYaws, sOverlaps)) {
     sOwner = &world;
   } else {
     sTransforms.clear();
     sYaws.clear();
+    sOverlaps.clear();
   }
 }
 
@@ -889,6 +1330,7 @@ void Release(const CWorld* world) {
     sOwner = nullptr;
     sTransforms.clear();
     sYaws.clear();
+    sOverlaps.clear();
   }
 }
 
@@ -908,6 +1350,35 @@ float GetAreaYaw(const IWorld& world, int area) {
     return 0.f;
   }
   return sYaws[area];
+}
+
+void DrawOverlaps(const IWorld& world, const std::vector< bool >& drawn,
+                  const CTransform4f& modelXf, float alpha) {
+  if (!IsActive(world) || sOverlaps.empty() || alpha <= 0.f) {
+    return;
+  }
+  bool setUp = false;
+  for (const OverlapPatch& patch : sOverlaps) {
+    if (patch.areaA >= static_cast< int >(drawn.size()) ||
+        patch.areaB >= static_cast< int >(drawn.size()) || !drawn[patch.areaA] ||
+        !drawn[patch.areaB]) {
+      continue;
+    }
+    if (!setUp) {
+      // The map's own surface material, in a colour of its own.
+      CMapArea::CMapAreaSurface::SetupGXMaterial();
+      gpRender->SetModelMatrix(modelXf);
+      CGX::SetTevKColor(GX_KCOLOR0, CColor(1.f, 1.f, 1.f, kOverlapAlpha * alpha).GetGXColor());
+      setUp = true;
+    }
+    CGX::SetArray(GX_VA_POS, patch.verts.data(), sizeof(CVector3f),
+                  patch.verts.size() * sizeof(CVector3f), TARGET_LITTLE_ENDIAN);
+    CGX::Begin(GX_QUADS, GX_VTXFMT0, static_cast< ushort >(patch.verts.size()));
+    for (size_t v = 0; v < patch.verts.size(); ++v) {
+      GXPosition1x8(static_cast< uchar >(v));
+    }
+    CGX::End();
+  }
 }
 
 } // namespace metaforce::maplayout
