@@ -1,5 +1,6 @@
 #include "Metaforce/DockPortals.hpp"
 
+#include "Metaforce/MapLayout.hpp"
 #include "Metaforce/Randomizer/Hooks.hpp"
 
 #include "Kyoto/Graphics/CGraphics.hpp"
@@ -186,6 +187,16 @@ bool GetDockTransform(const CWorld& world, TAreaId area, int dock, CTransform4f&
 
 void OnPlayerCrossedDock(CStateManager& mgr, TAreaId area, int dock) {
   randomizer::OnPlayerCrossedDock(mgr, area.Value(), dock);
+  if (const CWorld* world = mgr.GetWorld()) {
+    if (world->DoesAreaExist(area) && dock >= 0 &&
+        dock < world->GetAreaAlways(area).GetDockCount()) {
+      const IGameArea::Dock& gameDock = world->GetAreaAlways(area).GetDock(dock);
+      if (!gameDock.GetDockRefs().empty()) {
+        maplayout::OnDockCrossed(*world, area.Value(), dock,
+                                 gameDock.GetConnectedAreaId(gameDock.GetReferenceCount()).Value());
+      }
+    }
+  }
   CTransform4f xf = CTransform4f::Identity();
   if (!GetDockTransform(*mgr.GetWorld(), area, dock, xf)) {
     return;

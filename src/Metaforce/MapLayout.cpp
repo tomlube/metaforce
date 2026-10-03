@@ -2,6 +2,7 @@
 
 #include "Metaforce/DockPortals.hpp"
 #include "Metaforce/MergedWorld.hpp"
+#include "Metaforce/Randomizer/Hooks.hpp"
 #include "Metaforce/Randomizer/Logic.hpp"
 #include "Metaforce/Randomizer/Randomizer.hpp"
 
@@ -25,6 +26,7 @@
 #include <fmt/format.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cfloat>
 #include <chrono>
 #include <climits>
@@ -33,8 +35,11 @@
 #include <cstdlib>
 #include <map>
 #include <memory>
+#include <mutex>
+#include <optional>
 #include <random>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -276,6 +281,7 @@ struct Link {
   CVector3f center; // of the dock, in world space
   Pose rel;
   bool moved;
+  bool traversed; // the player went through it
 };
 
 // Rooms joined by vanilla doors, placed as one.
@@ -288,7 +294,8 @@ struct Group {
 
 struct Candidate {
   int group;
-  int parent; // the group it's joined to
+  int parent;     // the group it's joined to
+  bool traversed; // by a door the player went through
   Pose pose;
   CVector3f door; // the door it's joined by, in map space
   int depth;
@@ -332,28 +339,80 @@ constexpr size_t kMaxPatchVerts = 252;
 // Cell size of the fine grid overlaps between rooms are worked out on.
 constexpr float kFineCell = 0.5f;
 
+struct Output {
+  std::vector< CTransform4f > transforms; // by area index
+  std::vector< float > yaws;              // by area index
+  std::vector< OverlapPatch > overlaps;
+};
+
+// A room kept where it is when the layout is worked out again: the room the player is in, so the
+// map doesn't jump under them.
+struct Anchor {
+  int area;
+  Pose pose;
+};
+
 class Builder {
 public:
   explicit Builder(const CWorld& world) : mWorld(world) {}
 
-  bool Run(std::vector< CTransform4f >& transforms, std::vector< float >& yaws,
-           std::vector< OverlapPatch >& overlaps) {
-    const auto start = std::chrono::steady_clock::now();
+  // Reads the rooms, their map geometry and doors. False when no door was moved. Main thread.
+  bool Load() {
     ReadRooms();
     if (!ReadLinks()) {
       return false;
     }
     MakeGroups();
     ReadElevators();
+    mStartRoom = -1;
+    if (const randomizer::Seed* seed = randomizer::GetActiveSeed()) {
+      for (int r = 0; r < static_cast< int >(mRooms.size()); ++r) {
+        if (mWorld.GetAreaAlways(mRooms[r].id).GetAreaAssetId() == seed->startArea) {
+          mStartRoom = r;
+        }
+      }
+    }
+    return true;
+  }
 
+  // Which doors the player went through, from the randomizer. Main thread, while no layout is
+  // being worked out.
+  void ReadTraversed() {
+    for (Link& link : mLinks) {
+      link.traversed = randomizer::IsDockTraversed(
+          mWorld.GetAreaAlways(mRooms[link.from].id).GetAreaAssetId(), link.dock);
+    }
+  }
+
+  // Whether dock `dock` of `area` meets the dock it leads to in the layout given by `yaws` and
+  // `transforms`. Doors left alone always do.
+  bool DockMeets(int area, int dock, const std::vector< float >& yaws,
+                 const std::vector< CTransform4f >& transforms) const {
+    for (const Link& link : mLinks) {
+      if (mRooms[link.from].id.Value() != area || link.dock != dock) {
+        continue;
+      }
+      const int to = mRooms[link.to].id.Value();
+      const Pose from(yaws[area], transforms[area].GetTranslation());
+      return !link.moved ||
+             SamePose(Compose(from, link.rel), Pose(yaws[to], transforms[to].GetTranslation()));
+    }
+    return true;
+  }
+
+  // Works out the layout. Doors the player went through are joined first. Can run on a worker
+  // thread: it only touches what Load read, unless `log` is set.
+  Output Layout(const std::optional< Anchor >& anchor, bool log) {
+    const auto start = std::chrono::steady_clock::now();
+    const int firstRoot = mStartRoom >= 0 ? mRooms[mStartRoom].group : mRooms[0].group;
     std::mt19937 rng(0x6d617073);
     Result best;
     int bestAttempt = 0;
     for (int attempt = 0; attempt < kAttempts; ++attempt) {
-      // The first two layouts grow from the first room, as sorted; the others from random ones.
+      // The first two layouts grow from the start room; the others from random ones.
       // Every other layout places the biggest groups that fit first, before small ones fill the
       // space around their doors; the others go breadth first.
-      const int root = attempt < 2 ? mRooms[0].group : static_cast< int >(rng() % mGroups.size());
+      const int root = attempt < 2 ? firstRoot : static_cast< int >(rng() % mGroups.size());
       mBigFirst = attempt % 2 == 1;
       Result result = Attempt(root, rng);
       const bool better = result.islands != best.islands ? result.islands < best.islands
@@ -371,41 +430,61 @@ public:
 
     const int greedyIslands = best.islands;
     Repair(best);
+    if (log && sLogEnabled) {
+      // Before the anchor moves things: the grid is where Repair left it.
+      LogLayout(best);
+    }
 
-    transforms.assign(mWorld.GetNumAreas(), CTransform4f::Identity());
-    yaws.assign(mWorld.GetNumAreas(), 0.f);
+    if (anchor) {
+      for (const Room& room : mRooms) {
+        if (room.id.Value() == anchor->area) {
+          const Pose delta = Compose(anchor->pose, Inverse(best.poses[room.group]));
+          for (Pose& pose : best.poses) {
+            pose = Compose(delta, pose);
+          }
+          break;
+        }
+      }
+    }
+
+    Output out;
+    out.transforms.assign(mWorld.GetNumAreas(), CTransform4f::Identity());
+    out.yaws.assign(mWorld.GetNumAreas(), 0.f);
     for (const Room& room : mRooms) {
       const Pose& pose = best.poses[room.group];
-      transforms[room.id.Value()] =
+      out.transforms[room.id.Value()] =
           CTransform4f::Translate(pose.t) * CTransform4f::RotateZ(CRelAngle::FromRadians(pose.yaw));
-      yaws[room.id.Value()] = pose.yaw;
+      out.yaws[room.id.Value()] = pose.yaw;
     }
 
     int moved = 0;
     int met = 0;
+    int traversed = 0;
+    int traversedMet = 0;
     for (const Link& link : mLinks) {
       if (!link.moved) {
         continue;
       }
-      ++moved;
       const Pose& from = best.poses[mRooms[link.from].group];
       const Pose& to = best.poses[mRooms[link.to].group];
-      met += SamePose(Compose(from, link.rel), to) ? 1 : 0;
+      const bool meets = SamePose(Compose(from, link.rel), to);
+      ++moved;
+      met += meets ? 1 : 0;
+      traversed += link.traversed ? 1 : 0;
+      traversedMet += link.traversed && meets ? 1 : 0;
     }
     const auto ms = std::chrono::duration_cast< std::chrono::milliseconds >(
                         std::chrono::steady_clock::now() - start)
                         .count();
+    FindOverlaps(best, out.overlaps);
     Log.info(
-        "Laid out {} rooms in {} groups: {} of {} moved doors meet, {} islands ({} before "
-        "repair), {} cells overlapping where doors were forced (layout {} of {}, {}), in {} ms",
-        mRooms.size(), mGroups.size(), met / 2, moved / 2, best.islands, greedyIslands,
-        best.forcedOverlaps, bestAttempt + 1, kAttempts,
+        "Laid out {} rooms in {} groups: {} of {} moved doors meet, {} of the {} gone through, {} "
+        "islands ({} before repair), {} cells overlapping where doors were forced (layout {} of "
+        "{}, {}), in {} ms",
+        mRooms.size(), mGroups.size(), met / 2, moved / 2, traversedMet / 2, traversed / 2,
+        best.islands, greedyIslands, best.forcedOverlaps, bestAttempt + 1, kAttempts,
         bestAttempt % 2 == 1 ? "biggest first" : "breadth first", ms);
-    FindOverlaps(best, overlaps);
-    if (sLogEnabled) {
-      LogLayout(best);
-    }
-    return true;
+    return out;
   }
 
 private:
@@ -624,6 +703,7 @@ private:
         link.from = r;
         link.to = mRoomOf[target.Value()];
         link.dock = dock;
+        link.traversed = false;
         link.center = CVector3f::Zero();
         const rstl::reserved_vector< CVector3f, 4 >& verts = gameDock.GetPlaneVertices();
         for (int v = 0; v < verts.size(); ++v) {
@@ -881,6 +961,7 @@ private:
       Candidate candidate;
       candidate.group = to;
       candidate.parent = group;
+      candidate.traversed = link.traversed;
       candidate.pose = Compose(pose, link.rel);
       candidate.door = pose.Apply(link.center);
       candidate.depth = depth + 1;
@@ -1406,7 +1487,46 @@ private:
         }
       }
 
-      if (best >= 0) {
+      // Doors the player went through are joined before any other, so the rooms they've seen
+      // meet the way they walked: one that fits if there is one, else the least overlap.
+      int traversedFit = -1;
+      int traversedAny = -1;
+      for (int i = 0; i < static_cast< int >(frontier.size()); ++i) {
+        const Candidate& c = frontier[i];
+        if (!c.traversed) {
+          continue;
+        }
+        if (traversedAny < 0 || Before(c, frontier[traversedAny])) {
+          traversedAny = i;
+        }
+        if (c.hits <= OverlapLimit(c.group) &&
+            (traversedFit < 0 || Before(c, frontier[traversedFit]))) {
+          traversedFit = i;
+        }
+      }
+      if (traversedFit < 0 && traversedAny >= 0) {
+        int leastHits = INT_MAX;
+        for (int i = 0; i < static_cast< int >(frontier.size()); ++i) {
+          const Candidate& c = frontier[i];
+          if (!c.traversed) {
+            continue;
+          }
+          const int hits = CountOverlaps(c.group, c.pose, 0, leastHits, &c.door);
+          if (hits < leastHits) {
+            leastHits = hits;
+            traversedAny = i;
+          }
+        }
+        result.forcedOverlaps += leastHits;
+      }
+      const int traversedPick = traversedFit >= 0 ? traversedFit : traversedAny;
+
+      if (traversedPick >= 0) {
+        const Candidate c = frontier[traversedPick];
+        Place(c.group, c.pose, c.depth, result, depths, frontier, rng);
+        result.kinds[c.group] = kPL_Door;
+        result.parents[c.group] = c.parent;
+      } else if (best >= 0) {
         const Candidate c = frontier[best];
         Place(c.group, c.pose, c.depth, result, depths, frontier, rng);
         result.kinds[c.group] = kPL_Door;
@@ -1523,6 +1643,7 @@ private:
   std::unordered_map< std::int64_t, std::vector< Entry > > mGrid;
   std::vector< CAABox > mPlacedBounds; // by placement step
   bool mBigFirst = false;
+  int mStartRoom = -1;                             // the seed's start, where layouts grow from
   std::vector< std::pair< int, int > > mElevators; // rooms
 };
 
@@ -1531,32 +1652,126 @@ std::vector< CTransform4f > sTransforms; // by area index
 std::vector< float > sYaws;
 std::vector< OverlapPatch > sOverlaps;
 
+// The layout of the loaded world is worked out again on a worker thread when the player goes
+// through a door that doesn't meet on the map.
+std::unique_ptr< Builder > sBuilder;
+std::thread sWorker;
+std::atomic< bool > sBusy{false};
+std::mutex sReadyMutex;
+std::optional< Output > sReady;
+// A door that didn't meet was gone through while a layout was being worked out: the area to keep
+// in place when the next one starts.
+std::optional< int > sWantedAnchor;
+
+// Waits for the worker when the program ends, which a running std::thread can't be destroyed in.
+struct WorkerJoiner {
+  ~WorkerJoiner() {
+    if (sWorker.joinable()) {
+      sWorker.join();
+    }
+  }
+} sWorkerJoiner;
+
+void Publish(Output&& out) {
+  sTransforms = std::move(out.transforms);
+  sYaws = std::move(out.yaws);
+  sOverlaps = std::move(out.overlaps);
+}
+
+void StopWorker() {
+  if (sWorker.joinable()) {
+    sWorker.join();
+  }
+  sBusy = false;
+  std::lock_guard< std::mutex > lock(sReadyMutex);
+  sReady.reset();
+}
+
+void StartRebuild(int anchorArea) {
+  if (sWorker.joinable()) {
+    sWorker.join();
+  }
+  sBuilder->ReadTraversed();
+  std::optional< Anchor > anchor;
+  if (anchorArea >= 0 && anchorArea < static_cast< int >(sYaws.size())) {
+    anchor = Anchor{anchorArea, Pose(sYaws[anchorArea], sTransforms[anchorArea].GetTranslation())};
+  }
+  sBusy = true;
+  sWorker = std::thread([anchor] {
+    Output out = sBuilder->Layout(anchor, false);
+    {
+      std::lock_guard< std::mutex > lock(sReadyMutex);
+      sReady = std::move(out);
+    }
+    sBusy = false;
+  });
+}
+
 } // namespace
 
 void Build(const CWorld& world) {
+  StopWorker();
   sOwner = nullptr;
+  sBuilder.reset();
+  sWantedAnchor.reset();
   sTransforms.clear();
   sYaws.clear();
   sOverlaps.clear();
   if (sDisabled || world.GetNumAreas() == 0) {
     return;
   }
-  Builder builder(world);
-  if (builder.Run(sTransforms, sYaws, sOverlaps)) {
-    sOwner = &world;
-  } else {
+  sBuilder = std::make_unique< Builder >(world);
+  if (!sBuilder->Load()) {
+    sBuilder.reset();
+    return;
+  }
+  sBuilder->ReadTraversed();
+  Publish(sBuilder->Layout(std::nullopt, true));
+  sOwner = &world;
+}
+
+void Release(const CWorld* world) {
+  if (world == sOwner) {
+    StopWorker();
+    sOwner = nullptr;
+    sBuilder.reset();
+    sWantedAnchor.reset();
     sTransforms.clear();
     sYaws.clear();
     sOverlaps.clear();
   }
 }
 
-void Release(const CWorld* world) {
-  if (world == sOwner) {
-    sOwner = nullptr;
-    sTransforms.clear();
-    sYaws.clear();
-    sOverlaps.clear();
+void OnDockCrossed(const CWorld& world, int area, int dock, int enteredArea) {
+  if (!IsActive(world) || sBuilder == nullptr ||
+      sBuilder->DockMeets(area, dock, sYaws, sTransforms)) {
+    return;
+  }
+  if (sBusy) {
+    sWantedAnchor = enteredArea;
+  } else {
+    StartRebuild(enteredArea);
+  }
+}
+
+void Update() {
+  if (sOwner == nullptr || sBusy) {
+    return;
+  }
+  if (sWorker.joinable()) {
+    sWorker.join();
+  }
+  {
+    std::lock_guard< std::mutex > lock(sReadyMutex);
+    if (sReady) {
+      Publish(std::move(*sReady));
+      sReady.reset();
+    }
+  }
+  if (sWantedAnchor) {
+    const int anchor = *sWantedAnchor;
+    sWantedAnchor.reset();
+    StartRebuild(anchor);
   }
 }
 

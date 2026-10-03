@@ -35,6 +35,15 @@ void Build(const CWorld& world);
 // ~CWorld.
 void Release(const CWorld* world);
 
+// DockPortals::OnPlayerCrossedDock, after the randomizer noted the door: the player went through
+// dock `dock` of `area` into `enteredArea`. When its two sides don't meet on the map, the layout is
+// worked out again in the background, joining the doors the player went through first, with
+// `enteredArea` kept where it is.
+void OnDockCrossed(const CWorld& world, int area, int dock, int enteredArea);
+
+// Every frame, on the main thread: takes a layout worked out in the background into use.
+void Update();
+
 // Whether `world` is drawn with a layout of its own rather than the vanilla map.
 bool IsActive(const IWorld& world);
 

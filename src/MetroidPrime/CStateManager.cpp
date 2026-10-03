@@ -88,6 +88,7 @@
 #if defined(TARGET_PC)
 #include "Metaforce/Cheats.hpp"
 #include "Metaforce/DockPortals.hpp"
+#include "Metaforce/MapLayout.hpp"
 #include "Metaforce/MergedWorld.hpp"
 #include <dolphin/os.h>
 #include "Metaforce/Randomizer/Hooks.hpp"
@@ -1269,6 +1270,8 @@ void CStateManager::Update(float dt) {
   }
 
 #if defined(TARGET_PC)
+  // Paused too, so a map laid out again in the background shows on the map screen.
+  metaforce::maplayout::Update();
   if (mGameState == kGS_Running && !isDead) {
     metaforce::portals::UpdatePlayerCrossing(*this);
     metaforce::randomizer::UpdateCrossWorldDoors(*this, dt);
