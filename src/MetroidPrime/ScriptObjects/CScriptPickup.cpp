@@ -21,6 +21,7 @@
 
 #if defined(TARGET_PC)
 #include "Metaforce/Randomizer/Hooks.hpp"
+#include "MetroidPrime/ScriptObjects/CScriptPlayerHint.hpp"
 #endif
 #include "Kyoto/Math/CAbsAngle.hpp"
 #include "Kyoto/Math/CMath.hpp"
@@ -145,6 +146,34 @@ void CScriptPickup::Think(float dt, CStateManager& mgr) {
   }
 }
 
+#if defined(TARGET_PC)
+// Follows the pickup's messages through relays, timers and other non-actor logic objects and
+// takes the "disable input" flag off every player hint they reach. Relays and timers forward
+// their messages on a later frame, so this has to look at the connections up front.
+static void StripInputLocks(const CEntity& ent, EScriptObjectState state, CStateManager& mgr,
+                            int depth) {
+  const rstl::vector< SConnection >& conns = ent.GetConnectionList();
+  for (rstl::vector< SConnection >::const_iterator conn = conns.begin(); conn != conns.end();
+       ++conn) {
+    if (depth == 0 && conn->mState != state) {
+      continue;
+    }
+    CStateManager::TIdListResult ids = mgr.GetIdListForScript(conn->mObjId);
+    for (CStateManager::TIdList::const_iterator it = ids.first; it != ids.second; ++it) {
+      CEntity* target = mgr.ObjectById(it->second);
+      if (target == nullptr || target == &ent) {
+        continue;
+      }
+      if (CScriptPlayerHint* hint = TCastToPtr< CScriptPlayerHint >(target)) {
+        hint->ClearOverrideFlags(0x80);
+      } else if (depth < 3 && !TCastToPtr< CActor >(target)) {
+        StripInputLocks(*target, state, mgr, depth + 1);
+      }
+    }
+  }
+}
+#endif
+
 void CScriptPickup::Touch(CActor& act, CStateManager& mgr) {
   if (GetActive() && !(mDelayTimer >= 0) && TCastToPtr< CPlayer >(act)) {
     CPlayerState::EItemType itemType = mItemType;
@@ -171,6 +200,11 @@ void CScriptPickup::Touch(CActor& act, CStateManager& mgr) {
     metaforce::randomizer::OnPickupCollected(mgr, itemType);
 #endif
     mgr.DeleteObjectRequest(GetUniqueId());
+#if defined(TARGET_PC)
+    if (metaforce::randomizer::StripPickupInputLocks()) {
+      StripInputLocks(*this, kSS_Arrived, mgr, 0);
+    }
+#endif
     SendScriptMsgs(kSS_Arrived, mgr, kSM_None);
 
     if (mCapacity > 0) {

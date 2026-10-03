@@ -662,6 +662,8 @@ void OnPickupCollected(CStateManager&, int itemType) {
   }
 }
 
+bool StripPickupInputLocks() { return S().active.has_value(); }
+
 bool AllowSpawnPointInventoryReset() { return !S().active; }
 
 bool AllowLayerChange(unsigned int areaSaveId, unsigned int layer) {

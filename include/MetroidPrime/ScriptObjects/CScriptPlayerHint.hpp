@@ -13,6 +13,9 @@ public:
   void AcceptScriptMsg(EScriptObjectMessage, TUniqueId, CStateManager&) override;
   int GetPriority() const { return mPriority; }
   int GetOverrideFlags() const { return mOverrideFlags; }
+#if defined(TARGET_PC)
+  void ClearOverrideFlags(int flags) { mOverrideFlags &= ~flags; }
+#endif
   TUniqueId GetActorId() const { return mMpId; }
   void ClearObjectList();
   uint GetObjectCount() const { return mObjectList.size(); }

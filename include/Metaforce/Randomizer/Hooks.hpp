@@ -86,6 +86,11 @@ bool AllowSpawnPointInventoryReset();
 // CScriptPickup::Touch, after the item was given.
 void OnPickupCollected(CStateManager& mgr, int itemType);
 
+// CScriptPickup::Touch: true to take the "disable input" flag off the player hints the pickup's
+// acquisition sequence turns on. With the message box skipped, those hints only drop the
+// player's held inputs for a moment.
+bool StripPickupInputLocks();
+
 // CScriptSpecialFunction layer controller. False blocks the layer change.
 bool AllowLayerChange(unsigned int areaSaveId, unsigned int layer);
 
