@@ -1039,8 +1039,9 @@ private:
     return false;
   }
 
-  // Cells where the inner parts of two rooms in different groups overlap, merged into quads along
-  // rows. The rooms' edges are left out, so rooms that only meet don't show.
+  // Cells where the inner parts of two rooms in different groups overlap as seen from above, at
+  // any height, merged into quads along rows and laid on top of the higher room, where the map
+  // shows them over each other. The rooms' edges are left out, so rooms that only meet don't show.
   void FindOverlaps(const Result& result, std::vector< OverlapPatch >& overlaps) const {
     struct Inner {
       int room;
@@ -1048,7 +1049,8 @@ private:
       float z1;
     };
     std::unordered_map< std::int64_t, std::vector< Inner > > inner;
-    const float spread = 0.25f * kCellSize;
+    // Half a cell each way, so that turned rooms leave no gaps between cells.
+    const float spread = 0.5f * kCellSize;
     for (int r = 0; r < static_cast< int >(mRooms.size()); ++r) {
       const Pose& pose = result.poses[mRooms[r].group];
       for (const Column& column : mRooms[r].tests) {
@@ -1077,13 +1079,12 @@ private:
         for (size_t j = i + 1; j < cells.size(); ++j) {
           const Inner& a = cells[i];
           const Inner& b = cells[j];
-          if (mRooms[a.room].group == mRooms[b.room].group ||
-              !(a.z0 < b.z1 - kZTolerance && b.z0 < a.z1 - kZTolerance)) {
+          if (mRooms[a.room].group == mRooms[b.room].group) {
             continue;
           }
           const std::pair< int, int > rooms(std::min(a.room, b.room), std::max(a.room, b.room));
           float& top = pairs[rooms].try_emplace(std::make_pair(iy, ix), -FLT_MAX).first->second;
-          top = std::max(top, std::min(a.z1, b.z1));
+          top = std::max(top, std::max(a.z1, b.z1));
         }
       }
     }
@@ -1093,7 +1094,9 @@ private:
       OverlapPatch patch;
       patch.areaA = mRooms[rooms.first].id.Value();
       patch.areaB = mRooms[rooms.second].id.Value();
-      const auto addQuad = [&](int iy, int ix0, int ix1, float z) {
+      const auto addQuad = [&](int iy, int ix0, int ix1, float top) {
+        // A little above the ceiling it lies on, so the two don't fight over depth.
+        const float z = top + 0.5f;
         const float x0 = ix0 * kCellSize;
         const float x1 = (ix1 + 1) * kCellSize;
         const float y0 = iy * kCellSize;
