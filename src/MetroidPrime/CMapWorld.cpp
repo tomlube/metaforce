@@ -21,6 +21,7 @@
 #include <stdlib.h>
 
 #if defined(TARGET_PC)
+#include "Metaforce/MapLayout.hpp"
 #include "Metaforce/MergedWorld.hpp"
 #include "Metaforce/Randomizer/Hooks.hpp"
 
@@ -388,6 +389,9 @@ void CMapWorld::DrawAreas(const CMapWorldDrawParms& parms, int selArea,
   const CStateManager& mgr = parms.GetStateManager();
   const CMapWorldInfo& mwInfo = parms.GetMapWorldInfo();
   int playerArea = mgr.GetNextAreaId().Value();
+#if defined(TARGET_PC)
+  std::vector< bool > drawn(mAreas.size(), false);
+#endif
   for (int i = 0; i < bfsInfos.size(); ++i) {
     const CMapAreaBFSInfo& bfsInfo = bfsInfos[i];
     int areaIdx = bfsInfo.GetAreaIndex();
@@ -396,6 +400,9 @@ void CMapWorld::DrawAreas(const CMapWorldDrawParms& parms, int selArea,
                                         mwInfo.IsAreaVisible(areaIdx))) {
       continue;
     }
+#if defined(TARGET_PC)
+    drawn[areaIdx] = true;
+#endif
     const float surfaceDepth = bfsInfo.GetSurfaceDrawDepth();
     const float outlineDepth = bfsInfo.GetOutlineDrawDepth();
     float alphaSurfVisited = parms.GetAlphaSurfaceVisited();
@@ -585,6 +592,10 @@ void CMapWorld::DrawAreas(const CMapWorldDrawParms& parms, int selArea,
       lastArea = areaIdx;
     }
   }
+#if defined(TARGET_PC)
+  // Room randomizer: where rooms the map had to lay over each other overlap.
+  metaforce::maplayout::DrawOverlaps(parms.GetWorld(), drawn, modelXf, parms.GetAlpha());
+#endif
 }
 
 void CMapWorld::RecalculateWorldSphere(const CMapWorldInfo& mwInfo, const IWorld& wld) const {

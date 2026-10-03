@@ -20,6 +20,8 @@
 
 #include "MetroidPrime/TGameTypes.hpp"
 
+#include <vector>
+
 class CTransform4f;
 class CWorld;
 class IWorld;
@@ -41,5 +43,10 @@ CTransform4f GetAreaTransform(const IWorld& world, int area);
 
 // The turn about Z in GetAreaTransform, in radians. Zero while not IsActive.
 float GetAreaYaw(const IWorld& world, int area);
+
+// CMapWorld::DrawAreas, after the map is drawn: shades where two rooms drawn on the map overlap.
+// `drawn` holds, by area, whether the area was drawn; `modelXf` takes map space to the screen.
+void DrawOverlaps(const IWorld& world, const std::vector< bool >& drawn,
+                  const CTransform4f& modelXf, float alpha);
 
 } // namespace metaforce::maplayout
