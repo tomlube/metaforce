@@ -62,6 +62,9 @@ constexpr float kIslandRingStep = 10.f;
 constexpr int kIslandRings = 60;
 // How close a door's two sides have to be on the map to count as meeting.
 constexpr float kMeetDistance = 0.5f;
+// Rooms placed through a door touch along it, and their map geometry often reaches a little past
+// the door's plane. Overlaps this close to the door they're joined by don't count.
+constexpr float kDoorClearance = 8.f;
 
 // A turn about Z, then a move.
 struct Pose {
@@ -246,6 +249,7 @@ struct Link {
   int from;
   int to;
   int dock;
+  CVector3f center; // of the dock, in world space
   Pose rel;
   bool moved;
 };
@@ -261,6 +265,7 @@ struct Group {
 struct Candidate {
   int group;
   Pose pose;
+  CVector3f door; // the door it's joined by, in map space
   int depth;
   std::uint32_t order;
   int hits;
@@ -388,9 +393,13 @@ private:
         continue;
       }
       const Pose pose = Compose(result.poses[from], link.rel);
+      const CVector3f door = result.poses[from].Apply(link.center);
       std::map< int, int > counts;
       for (const int r : mGroups[island].rooms) {
         for (const Column& column : mRooms[r].tests) {
+          if (NearDoor(&door, pose.X(column.x, column.y), pose.Y(column.x, column.y))) {
+            continue;
+          }
           const auto it = mGrid.find(
               PackKey(CellOf(pose.X(column.x, column.y)), CellOf(pose.Y(column.x, column.y))));
           if (it == mGrid.end()) {
@@ -529,6 +538,11 @@ private:
         link.from = r;
         link.to = mRoomOf[target.Value()];
         link.dock = dock;
+        link.center = CVector3f::Zero();
+        const rstl::reserved_vector< CVector3f, 4 >& verts = gameDock.GetPlaneVertices();
+        for (int v = 0; v < verts.size(); ++v) {
+          link.center += verts[v] * (1.f / static_cast< float >(verts.size()));
+        }
         CTransform4f xf = CTransform4f::Identity();
         link.moved = portals::GetDockTransform(mWorld, mRooms[r].id, dock, xf);
         if (link.moved) {
@@ -591,14 +605,27 @@ private:
     return std::max(kMinOverlaps, mGroups[group].tests / kOverlapsPerCell);
   }
 
-  // How many of the group's cells, posed there, land on rooms placed at `sinceStep` or later.
-  // Stops counting past `limit`.
-  int CountOverlaps(int group, const Pose& pose, int sinceStep, int limit) const {
+  static bool NearDoor(const CVector3f* door, float x, float y) {
+    if (door == nullptr) {
+      return false;
+    }
+    const float dx = x - door->GetX();
+    const float dy = y - door->GetY();
+    return dx * dx + dy * dy < kDoorClearance * kDoorClearance;
+  }
+
+  // How many of the group's cells, posed there, land on rooms placed at `sinceStep` or later,
+  // leaving out those by `door`, the door it's joined by if any. Stops counting past `limit`.
+  int CountOverlaps(int group, const Pose& pose, int sinceStep, int limit,
+                    const CVector3f* door = nullptr) const {
     int hits = 0;
     for (const int r : mGroups[group].rooms) {
       for (const Column& column : mRooms[r].tests) {
         const float x = pose.X(column.x, column.y);
         const float y = pose.Y(column.x, column.y);
+        if (NearDoor(door, x, y)) {
+          continue;
+        }
         const auto it = mGrid.find(PackKey(CellOf(x), CellOf(y)));
         if (it == mGrid.end()) {
           continue;
@@ -704,6 +731,7 @@ private:
       Candidate candidate;
       candidate.group = to;
       candidate.pose = Compose(pose, link.rel);
+      candidate.door = pose.Apply(link.center);
       candidate.depth = depth + 1;
       candidate.order = rng();
       candidate.hits = 0;
@@ -744,7 +772,7 @@ private:
         const int limit = OverlapLimit(c.group);
         // Hits add up over the groups placed since the candidate was last checked.
         if (c.hits <= limit && c.checkedStep < step && OverlapsPlaced(c.bounds, c.checkedStep)) {
-          c.hits += CountOverlaps(c.group, c.pose, c.checkedStep, limit - c.hits);
+          c.hits += CountOverlaps(c.group, c.pose, c.checkedStep, limit - c.hits, &c.door);
         }
         c.checkedStep = step;
         if (c.hits <= limit && (best < 0 || Before(c, frontier[best]))) {
