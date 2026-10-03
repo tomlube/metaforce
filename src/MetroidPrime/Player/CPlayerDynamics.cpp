@@ -995,12 +995,16 @@ void CPlayer::TransformThroughDock(const CTransform4f& xf, CStateManager& mgr) {
   SetLastNonCollidingState(GetMotionState());
 
   // Strafing around a point (L held without a target) carries through with the player. A target
-  // or grapple point is left behind in the other room, so those break.
+  // or grapple point is left behind in the other room, so those break. BreakGrapple only when
+  // grappling: it sends the grapple arm into its out-of-grapple animation, which an idle arm never
+  // finishes, leaving it flagged as grappling and the suit arm undrawn.
   if (mOrbitState == kOS_OrbitPoint) {
     mOrbitPoint = xf * mOrbitPoint;
     mOrbitVector = rotation.Rotate(mOrbitVector);
   } else {
-    BreakGrapple(kOB_Respawn, mgr);
+    if (mGrappleState != kGS_None || mOrbitState == kOS_Grapple) {
+      BreakGrapple(kOB_Respawn, mgr);
+    }
     BreakOrbit(kOB_Respawn, mgr);
   }
 
