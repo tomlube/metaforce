@@ -31,10 +31,20 @@ COBBTree::COBBTree(CInputStream& in)
 : mMagic(verify_deaf_babe(in))
 , mVersion(verify_version(in))
 , mMemsize(in.Get< uint >())
+#if defined(TARGET_PC)
+// The file's pool size fits the GameCube's 32-bit nodes. With 64-bit pointers the nodes are larger
+// and would run past the pool, so allocate each one on its own instead.
+, mAllocator(0)
+#else
 , mAllocator(mMemsize)
+#endif
 , mIndexData(in)
 , mRoot(nullptr) {
+#if defined(TARGET_PC)
+  CNode::SetAllocator(nullptr);
+#else
   CNode::SetAllocator(&mAllocator);
+#endif
 
   mRoot = rs_new CNode(in);
 }
