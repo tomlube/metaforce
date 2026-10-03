@@ -42,18 +42,19 @@ constexpr borealis::Log Log{"DockPortals"};
 constexpr float kCoincidentDistance = 0.5f;
 // How far from a moved doorway a trailing camera still counts as having gone through it.
 constexpr float kCameraThroughDistance = 8.f;
-// How close to a moved doorway, on the near side, the camera switches to drawing from the far
-// room. Closer than this the near clip plane cuts into the doorway's depth seal, and the near
-// room's own geometry past its doorway (floors often run on under the door) shows over the
-// portal. Three times the first person near clip distance covers the near plane's corners.
-constexpr float kCameraEarlyThroughDistance = 0.6f;
-// How far outside a doorway's outline the camera may be and still switch early.
+// How far outside a doorway's outline the player may be and still be carried through it.
 constexpr float kDoorwayMargin = 0.5f;
 // How far past a moved doorway's plane the player may be and still be carried through it.
 constexpr float kPlayerCrossingDepth = 3.f;
 // How far past a doorway's plane a shot may start and still be carried through it, for shots
 // fired with the gun already through the doorway.
 constexpr float kProjectileCrossingDepth = 2.f;
+// Parts of a doorway nearer than the near plane are sealed this far past it, as a multiple of the
+// near clip distance, so the seal itself isn't clipped.
+constexpr float kSealNearScale = 1.05f;
+// Parts of a doorway nearer than this, as a multiple of the near clip distance, are left out of
+// the seal; projected onto the near plane they would land far outside the view anyway.
+constexpr float kSealMinDepthScale = 0.001f;
 
 struct Portal {
   TAreaId area;
@@ -66,11 +67,6 @@ struct Frame {
   TAreaId root = kInvalidAreaId;
   CTransform4f rootXf = CTransform4f::Identity(); // camera -> camera in root space
   bool shifted = false; // the root isn't the player's area
-  bool skipMainSky = false;
-  // In a frame whose main pass leaves out the sky: the area whose sky the portal passes draw
-  // instead, and the camera transform it's drawn from (rootXf or a portal's cameraXf).
-  TAreaId skyArea = kInvalidAreaId;
-  CTransform4f skyXf = CTransform4f::Identity();
   std::vector< Portal > portals;
   std::vector< std::pair< TAreaId, CTransform4f > > areaXfs;
   int pass = -1; // portal being drawn, -1 for the main pass
@@ -80,8 +76,6 @@ Frame sFrame;
 
 // Set METAFORCE_PORTAL_LOG=1 to log the portal state of each frame spent near a moved door.
 const bool sLogEnabled = std::getenv("METAFORCE_PORTAL_LOG") != nullptr;
-// Diagnostics: METAFORCE_PORTAL_NOSKIPSKY=1 always draws the main pass sky.
-const bool sNeverSkipSky = std::getenv("METAFORCE_PORTAL_NOSKIPSKY") != nullptr;
 int sLogFramesLeft = 0;
 bool sLogThisFrame = false;
 
@@ -446,8 +440,6 @@ void PrepareFrame(const CStateManager& mgr) {
   Frame& frame = sFrame;
   frame.valid = false;
   frame.pass = -1;
-  frame.skipMainSky = false;
-  frame.skyArea = kInvalidAreaId;
   frame.portals.clear();
   frame.areaXfs.clear();
   const CWorld* world = mgr.GetWorld();
@@ -474,12 +466,13 @@ void PrepareFrame(const CStateManager& mgr) {
   frame.shifted = false;
 
   // A camera trailing the player can still be on the other side of a moved door the player just
-  // went through. Draw from the room the camera is really in. A camera right at a moved doorway
-  // also draws from the far room, see kCameraEarlyThroughDistance.
+  // went through. Draw from the room the camera is really in. A camera still on the near side,
+  // however close to the doorway, draws from the near room: the doorway's seal holds right up to
+  // its plane (see ResetDepthForMainPass), whereas drawing from the far room would leave the near
+  // room only in the portal pass, where the far room's sky covers it.
   const CGameArea& currentArea = world->GetAreaAlways(current);
   const CTransform4f camXf = mgr.GetCameraManager()->GetCurrentCameraTransform(mgr);
   const CVector3f camPos = camXf.GetTranslation();
-  const CVector3f camForward = camXf.GetForward();
   for (int dock = 0; dock < currentArea.GetDockCount(); ++dock) {
     CTransform4f xf = CTransform4f::Identity();
     DockFrame dockFrame;
@@ -491,13 +484,7 @@ void PrepareFrame(const CStateManager& mgr) {
     const TAreaId through = gameDock.GetConnectedAreaId(gameDock.GetReferenceCount());
     const float planeDist = CVector3f::Dot(offset, dockFrame.normal);
     const bool crossed = planeDist > 0.f && offset.Magnitude() < kCameraThroughDistance;
-    // Only when looking toward the doorway: just after coming through a door the camera is as
-    // close to it, but faces into the room it's in, and that room is what it should draw.
-    const bool atDoorway = planeDist > -kCameraEarlyThroughDistance && planeDist <= 0.f &&
-                           CVector3f::Dot(camForward, dockFrame.normal) > 0.f &&
-                           (offset - dockFrame.normal * planeDist).Magnitude() <
-                               dockFrame.radius + kDoorwayMargin;
-    if ((crossed || atDoorway) &&
+    if (crossed &&
         world->GetAreaAlways(through).GetOcclusionState() == CGameArea::kOS_Visible) {
       frame.root = through;
       frame.rootXf = xf;
@@ -586,70 +573,10 @@ const CTransform4f* GetAreaCameraTransform(TAreaId area) {
   return nullptr;
 }
 
-// Whether the camera is close enough to a portal's doorway for the near plane to clip its depth
-// seal. The main pass then leaves out the sky (see SkipMainPassSky).
-bool IsEyeInDoorway(const CStateManager& mgr) {
-  // The main pass's eye: the camera, moved into the root's frame.
-  const CVector3f eye =
-      sFrame.rootXf * mgr.GetCameraManager()->GetCurrentCameraTransform(mgr).GetTranslation();
-  // The near plane's corners reach about three times its distance from the eye at the game's
-  // fields of view; any doorway closer than that may be clipped out of the seal.
-  const float nearReach = 3.f * mgr.GetCameraManager()->GetCurrentCamera(mgr).GetNearClipDistance();
-  for (const Portal& portal : sFrame.portals) {
-    if (portal.doorway.size() < 3) {
-      continue;
-    }
-    CVector3f center = CVector3f::Zero();
-    float radius = 0.f;
-    for (int i = 0; i < portal.doorway.size(); ++i) {
-      center += portal.doorway[i];
-    }
-    center = center * (1.f / static_cast< float >(portal.doorway.size()));
-    for (int i = 0; i < portal.doorway.size(); ++i) {
-      radius = std::max(radius, (portal.doorway[i] - center).Magnitude());
-    }
-    const CVector3f normal =
-        CVector3f::Cross(portal.doorway[1] - portal.doorway[0], portal.doorway[2] - portal.doorway[0]);
-    if (!normal.CanBeNormalized()) {
-      continue;
-    }
-    const float planeDist = std::fabs(CVector3f::Dot(eye - center, normal.AsNormalized()));
-    if (planeDist < nearReach && (eye - center).Magnitude() < radius + nearReach) {
-      return true;
-    }
-  }
-  return false;
-}
-
 bool DrawPortalPasses(const CStateManager& mgr) {
   if (!sFrame.valid || sFrame.pass >= 0 || sFrame.portals.empty() ||
       mgr.GetPlayerState()->GetActiveVisor(mgr) == CPlayerState::kPV_Thermal) {
     return false;
-  }
-  // Decided before the portals are drawn, since in such a frame their sky is what shows behind the
-  // whole view. That sky has to be one a room on screen needs: the room the camera is in if it's
-  // open to the sky, or else a room through a doorway that is (looking out of a tunnel). An
-  // enclosed room on either side would otherwise put its region's sky where the other room's
-  // should be.
-  sFrame.skipMainSky = IsEyeInDoorway(mgr) && !sNeverSkipSky;
-  if (sFrame.skipMainSky) {
-    const CWorld& world = *mgr.GetWorld();
-    if (world.GetAreaAlways(sFrame.root).DoesAreaNeedSkyNow()) {
-      sFrame.skyArea = sFrame.root;
-      sFrame.skyXf = sFrame.rootXf;
-    } else {
-      for (const Portal& portal : sFrame.portals) {
-        if (world.GetAreaAlways(portal.area).DoesAreaNeedSkyNow()) {
-          sFrame.skyArea = portal.area;
-          sFrame.skyXf = portal.cameraXf;
-          break;
-        }
-      }
-    }
-    if (sLogThisFrame) {
-      Log.info("[portal]   eye in doorway: portal passes draw the sky of area {}",
-               sFrame.skyArea.Value());
-    }
   }
   for (int i = 0; i < static_cast< int >(sFrame.portals.size()); ++i) {
     sFrame.pass = i;
@@ -699,33 +626,54 @@ void LogPassArea(TAreaId area, int visState) {
   }
 }
 
-bool SkipMainPassSky() { return sFrame.valid && sFrame.pass < 0 && sFrame.skipMainSky; }
-
 namespace {
-// Whether the current pass is a portal pass drawing the frame's chosen sky (see Frame::skyArea).
-bool DrawsChosenSky() { return sFrame.valid && sFrame.pass >= 0 && sFrame.skipMainSky; }
-} // namespace
 
-TAreaId GetPassSkyArea(TAreaId vanilla) {
-  return DrawsChosenSky() ? sFrame.skyArea : GetPassVisArea(vanilla);
-}
+// A convex polygon, cut down by ClipToDepth.
+struct ClipPolygon {
+  CVector3f verts[8];
+  int count;
+};
 
-CTransform4f GetPassSkyTransform(const CVector3f& eye) {
-  if (!DrawsChosenSky() || sFrame.skyArea == kInvalidAreaId) {
-    return CTransform4f::Translate(eye);
+// The part of `in` at least `depth` in front of `eye` along `forward` (`keepNear` false), or at
+// most `depth` in front of it (`keepNear` true).
+void ClipToDepth(const ClipPolygon& in, const CVector3f& eye, const CVector3f& forward,
+                 float depth, bool keepNear, ClipPolygon& out) {
+  const float sign = keepNear ? -1.f : 1.f;
+  out.count = 0;
+  for (int i = 0; i < in.count; ++i) {
+    const CVector3f& a = in.verts[i];
+    const CVector3f& b = in.verts[(i + 1) % in.count];
+    const float da = sign * (CVector3f::Dot(a - eye, forward) - depth);
+    const float db = sign * (CVector3f::Dot(b - eye, forward) - depth);
+    if (da >= 0.f && out.count < 8) {
+      out.verts[out.count++] = a;
+    }
+    if ((da >= 0.f) != (db >= 0.f) && out.count < 8) {
+      out.verts[out.count++] = a + (b - a) * (da / (da - db));
+    }
   }
-  // A point drawn at p from the sky area's camera is drawn at (this pass's camera * sky area's
-  // camera^-1) p from this one, so every portal pass puts the sky in the same place on screen.
-  const CTransform4f toPass = sFrame.portals[sFrame.pass].cameraXf * sFrame.skyXf.GetInverse();
-  return CTransform4f::Translate(eye) * toPass.GetRotation();
 }
+
+void StreamPolygon(const ClipPolygon& polygon) {
+  if (polygon.count < 3) {
+    return;
+  }
+  CGraphics::StreamBegin(kP_TriangleFan);
+  CGraphics::StreamColor(CColor::White());
+  for (int i = 0; i < polygon.count; ++i) {
+    CGraphics::StreamVertex(polygon.verts[i]);
+  }
+  CGraphics::StreamEnd();
+}
+
+} // namespace
 
 void ResetDepthForMainPass(const CStateManager& mgr) {
   const CTransform4f& view = CGraphics::GetViewMatrix();
   const CVector3f eye = view.GetTranslation();
   if (sLogThisFrame) {
-    Log.info("[portal]   main pass: {} portal(s) drawn, sky {}, eye {}", sFrame.portals.size(),
-             sFrame.skipMainSky ? "skipped" : "drawn", FormatVec(eye));
+    Log.info("[portal]   main pass: {} portal(s) drawn, eye {}", sFrame.portals.size(),
+             FormatVec(eye));
   }
   const CVector3f forward = view.Rotate(CVector3f(0.f, 1.f, 0.f));
   const CVector3f right = view.Rotate(CVector3f(1.f, 0.f, 0.f));
@@ -755,25 +703,42 @@ void ResetDepthForMainPass(const CStateManager& mgr) {
   CGraphics::SetDepthRange(0.125f, 1.f);
 
   // Seal each doorway at its real depth. The main pass then draws everything in front of the
-  // doorway as usual, while the sky and anything behind the doorway stay out of it.
+  // doorway as usual, while the sky and anything behind the doorway stay out of it. With the
+  // camera standing in a doorway, part of it is nearer than the near plane and would be clipped
+  // out of the seal, letting the sky cover the portal there; that part is moved out along the
+  // camera's rays to just past the near plane, which seals the same pixels.
+  const float nearDist = mgr.GetCameraManager()->GetCurrentCamera(mgr).GetNearClipDistance();
+  const float sealNear = nearDist * kSealNearScale;
   CGraphics::SetDepthWriteMode(true, kE_LEqual, true);
   for (const Portal& portal : sFrame.portals) {
     if (portal.doorway.size() < 3) {
       continue;
     }
-    // From outside the doorway (just switched early to drawing from this room), the room is what
-    // lies past the doorway and sealing it would hide the room.
+    // From behind the doorway's plane, the room is what lies past the doorway and sealing it would
+    // hide the room.
     const CVector3f outward = CVector3f::Cross(portal.doorway[1] - portal.doorway[0],
                                                portal.doorway[2] - portal.doorway[0]);
     if (CVector3f::Dot(eye - portal.doorway[0], outward) > 0.f) {
       continue;
     }
-    CGraphics::StreamBegin(kP_TriangleFan);
-    CGraphics::StreamColor(CColor::White());
-    for (int i = 0; i < portal.doorway.size(); ++i) {
-      CGraphics::StreamVertex(portal.doorway[i]);
+    ClipPolygon doorway;
+    doorway.count = portal.doorway.size();
+    for (int i = 0; i < doorway.count; ++i) {
+      doorway.verts[i] = portal.doorway[i];
     }
-    CGraphics::StreamEnd();
+    ClipPolygon beyond;
+    ClipToDepth(doorway, eye, forward, sealNear, false, beyond);
+    StreamPolygon(beyond);
+
+    ClipPolygon nearer;
+    ClipToDepth(doorway, eye, forward, sealNear, true, nearer);
+    ClipPolygon pushed;
+    ClipToDepth(nearer, eye, forward, nearDist * kSealMinDepthScale, false, pushed);
+    for (int i = 0; i < pushed.count; ++i) {
+      const CVector3f ray = pushed.verts[i] - eye;
+      pushed.verts[i] = eye + ray * (sealNear / CVector3f::Dot(ray, forward));
+    }
+    StreamPolygon(pushed);
   }
 
   GXSetColorUpdate(GX_TRUE);
