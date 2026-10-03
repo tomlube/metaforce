@@ -27,6 +27,7 @@
 #include <algorithm>
 #include <cfloat>
 #include <chrono>
+#include <climits>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
@@ -256,7 +257,9 @@ struct Room {
   int group;
   std::vector< Column > cells; // world space
   std::vector< Column > tests; // the cells checked for overlaps: those away from the room's edges
-  CAABox bounds;               // world space
+  // The room's map triangles seen from above, in world space: x0 y0 x1 y1 x2 y2 for each.
+  std::vector< float > footprint;
+  CAABox bounds; // world space
 };
 
 // A dock and where it leads. The pose of the room it leads to is the pose of the room it's in,
@@ -303,15 +306,18 @@ struct Result {
 };
 
 // Where two rooms overlap on the map: quads in map space, drawn when both rooms are. Each patch
-// fits one GX index array (256 vertices); every quad is there twice, once each way round, so
-// it shows from above and below.
+// fits one GX index array, as triangles, drawn without culling so they show from above and
+// below.
 struct OverlapPatch {
   int areaA;
   int areaB;
   std::vector< CVector3f > verts;
 };
 
-constexpr int kMaxPatchQuads = 32;
+// Vertices in one GX index array, as whole triangles.
+constexpr size_t kMaxPatchVerts = 255;
+// Cell size of the fine grid overlaps between rooms are worked out on.
+constexpr float kFineCell = 0.5f;
 
 class Builder {
 public:
@@ -499,10 +505,23 @@ private:
                                 : kInvalidAssetId;
       if (ReadMapTriangles(mapa, area.GetTM(), verts, tris)) {
         for (size_t t = 0; t + 2 < tris.size(); t += 3) {
-          RasterizeTriangle(verts[tris[t]], verts[tris[t + 1]], verts[tris[t + 2]], cells);
+          const CVector3f& a = verts[tris[t]];
+          const CVector3f& b = verts[tris[t + 1]];
+          const CVector3f& c = verts[tris[t + 2]];
+          RasterizeTriangle(a, b, c, cells);
+          // Walls are lines seen from above.
+          const float area2 = (b.GetX() - a.GetX()) * (c.GetY() - a.GetY()) -
+                              (c.GetX() - a.GetX()) * (b.GetY() - a.GetY());
+          if (std::fabs(area2) > 0.02f) {
+            room.footprint.insert(room.footprint.end(),
+                                  {a.GetX(), a.GetY(), b.GetX(), b.GetY(), c.GetX(), c.GetY()});
+          }
         }
       } else {
         const CAABox& box = area.GetAABB();
+        const float x0 = box.GetMinPoint().GetX(), y0 = box.GetMinPoint().GetY();
+        const float x1 = box.GetMaxPoint().GetX(), y1 = box.GetMaxPoint().GetY();
+        room.footprint = {x0, y0, x1, y0, x1, y1, x0, y0, x1, y1, x0, y1};
         for (int ix = CellOf(box.GetMinPoint().GetX()); ix <= CellOf(box.GetMaxPoint().GetX());
              ++ix) {
           for (int iy = CellOf(box.GetMinPoint().GetY()); iy <= CellOf(box.GetMaxPoint().GetY());
@@ -1091,69 +1110,171 @@ private:
 
     overlaps.clear();
     for (const auto& [rooms, cells] : pairs) {
-      OverlapPatch patch;
-      patch.areaA = mRooms[rooms.first].id.Value();
-      patch.areaB = mRooms[rooms.second].id.Value();
-      // One flat sheet per pair of rooms, a little above the higher ceiling, so the two don't
-      // fight over depth and the sheet doesn't step with the ceilings under it.
-      float top = -FLT_MAX;
-      for (const auto& [cell, cellTop] : cells) {
-        top = std::max(top, cellTop);
+      AddSmoothOverlap(result, rooms.first, rooms.second, cells, overlaps);
+    }
+  }
+
+  // Marks the fine cells whose centers the room covers, seen from above, posed on the map.
+  void RasterizeFootprint(int room, const Pose& pose, float originX, float originY, int width,
+                          int height, std::vector< char >& covered) const {
+    const std::vector< float >& tris = mRooms[room].footprint;
+    for (size_t t = 0; t + 5 < tris.size(); t += 6) {
+      float x[3], y[3];
+      for (int v = 0; v < 3; ++v) {
+        x[v] = pose.X(tris[t + 2 * v], tris[t + 2 * v + 1]);
+        y[v] = pose.Y(tris[t + 2 * v], tris[t + 2 * v + 1]);
       }
-      const float z = top + 0.5f;
-      const auto addQuad = [&](int iy0, int iy1, int ix0, int ix1) {
-        const float x0 = ix0 * kCellSize;
-        const float x1 = (ix1 + 1) * kCellSize;
-        const float y0 = iy0 * kCellSize;
-        const float y1 = (iy1 + 1) * kCellSize;
-        const CVector3f corners[4] = {CVector3f(x0, y0, z), CVector3f(x1, y0, z),
-                                      CVector3f(x1, y1, z), CVector3f(x0, y1, z)};
-        for (int v = 0; v < 4; ++v) {
-          patch.verts.push_back(corners[v]);
-        }
-        for (int v = 3; v >= 0; --v) {
-          patch.verts.push_back(corners[v]);
-        }
-        if (patch.verts.size() >= kMaxPatchQuads * 8) {
-          overlaps.push_back(patch);
-          patch.verts.clear();
-        }
-      };
-      // Runs of cells next to each other in each row, then runs spanning the same cells in rows
-      // next to each other, as rectangles.
-      struct Run {
-        int row;
-        int start;
-        int end;
-      };
-      std::vector< Run > runs;
-      for (const auto& [cell, cellTop] : cells) {
-        const auto [iy, ix] = cell;
-        if (!runs.empty() && runs.back().row == iy && runs.back().end + 1 == ix) {
-          runs.back().end = ix;
-        } else {
-          runs.push_back({iy, ix, ix});
-        }
-      }
-      std::vector< char > used(runs.size(), 0);
-      for (size_t i = 0; i < runs.size(); ++i) {
-        if (used[i]) {
-          continue;
-        }
-        int lastRow = runs[i].row;
-        for (size_t j = i + 1; j < runs.size() && runs[j].row <= lastRow + 1; ++j) {
-          if (!used[j] && runs[j].row == lastRow + 1 && runs[j].start == runs[i].start &&
-              runs[j].end == runs[i].end) {
-            used[j] = 1;
-            lastRow = runs[j].row;
+      const float area2 = (x[1] - x[0]) * (y[2] - y[0]) - (x[2] - x[0]) * (y[1] - y[0]);
+      const float sign = area2 < 0.f ? -1.f : 1.f;
+      const int i0 = std::max(
+          0, static_cast< int >(std::floor((std::min({x[0], x[1], x[2]}) - originX) / kFineCell)));
+      const int i1 = std::min(
+          width - 1,
+          static_cast< int >(std::floor((std::max({x[0], x[1], x[2]}) - originX) / kFineCell)));
+      const int j0 = std::max(
+          0, static_cast< int >(std::floor((std::min({y[0], y[1], y[2]}) - originY) / kFineCell)));
+      const int j1 = std::min(
+          height - 1,
+          static_cast< int >(std::floor((std::max({y[0], y[1], y[2]}) - originY) / kFineCell)));
+      for (int j = j0; j <= j1; ++j) {
+        const float py = originY + (j + 0.5f) * kFineCell;
+        for (int i = i0; i <= i1; ++i) {
+          const float px = originX + (i + 0.5f) * kFineCell;
+          bool inside = true;
+          for (int e = 0; e < 3 && inside; ++e) {
+            const int n = (e + 1) % 3;
+            const float edge = (x[n] - x[e]) * (py - y[e]) - (y[n] - y[e]) * (px - x[e]);
+            inside = edge * sign >= 0.f;
+          }
+          if (inside) {
+            covered[j * width + i] = 1;
           }
         }
-        addQuad(runs[i].row, lastRow, runs[i].start, runs[i].end);
-      }
-      if (!patch.verts.empty()) {
-        overlaps.push_back(std::move(patch));
       }
     }
+  }
+
+  // The overlap of two rooms as seen from above, from their map triangles on a fine grid, with
+  // smooth edges by marching squares, as one flat sheet a little above the higher ceiling.
+  void AddSmoothOverlap(const Result& result, int roomA, int roomB,
+                        const std::map< std::pair< int, int >, float >& cells,
+                        std::vector< OverlapPatch >& overlaps) const {
+    float top = -FLT_MAX;
+    int minX = INT_MAX, maxX = INT_MIN, minY = INT_MAX, maxY = INT_MIN;
+    for (const auto& [cell, cellTop] : cells) {
+      top = std::max(top, cellTop);
+      minY = std::min(minY, cell.first);
+      maxY = std::max(maxY, cell.first);
+      minX = std::min(minX, cell.second);
+      maxX = std::max(maxX, cell.second);
+    }
+    // The coarse cells are the rooms' inner parts; the overlap reaches past them.
+    const float originX = (minX - 2) * kCellSize;
+    const float originY = (minY - 2) * kCellSize;
+    const int width = static_cast< int >((maxX - minX + 5) * kCellSize / kFineCell);
+    const int height = static_cast< int >((maxY - minY + 5) * kCellSize / kFineCell);
+    std::vector< char > coveredA(width * height, 0);
+    std::vector< char > coveredB(width * height, 0);
+    RasterizeFootprint(roomA, result.poses[mRooms[roomA].group], originX, originY, width, height,
+                       coveredA);
+    RasterizeFootprint(roomB, result.poses[mRooms[roomB].group], originX, originY, width, height,
+                       coveredB);
+    // Covered by both, one fine cell in from the edges: rooms that meet along a wall or at a door
+    // touch, and slivers where their geometry pokes past it aren't worth shading.
+    std::vector< char > both(width * height, 0);
+    for (int j = 1; j + 1 < height; ++j) {
+      for (int i = 1; i + 1 < width; ++i) {
+        bool all = true;
+        for (int dj = -1; dj <= 1 && all; ++dj) {
+          for (int di = -1; di <= 1 && all; ++di) {
+            const int k = (j + dj) * width + (i + di);
+            all = coveredA[k] && coveredB[k];
+          }
+        }
+        both[j * width + i] = all ? 1 : 0;
+      }
+    }
+
+    OverlapPatch patch;
+    patch.areaA = mRooms[roomA].id.Value();
+    patch.areaB = mRooms[roomB].id.Value();
+    const float z = top + 0.5f;
+    const auto flush = [&]() {
+      if (!patch.verts.empty()) {
+        overlaps.push_back(patch);
+        patch.verts.clear();
+      }
+    };
+    // A convex polygon in sample coordinates, as a fan of triangles.
+    const auto addPolygon = [&](const float (*points)[2], int count) {
+      if (patch.verts.size() + (count - 2) * 3 > kMaxPatchVerts) {
+        flush();
+      }
+      for (int k = 1; k + 1 < count; ++k) {
+        const int fan[3] = {0, k, k + 1};
+        for (const int v : fan) {
+          patch.verts.push_back(CVector3f(originX + (points[v][0] + 0.5f) * kFineCell,
+                                          originY + (points[v][1] + 0.5f) * kFineCell, z));
+        }
+      }
+    };
+    // Corners 0 (0,0) 1 (1,0) 2 (1,1) 3 (0,1), then edge midpoints 4 bottom 5 right 6 top 7 left.
+    static const float kPoints[8][2] = {{0, 0},    {1, 0},    {1, 1},    {0, 1},
+                                        {0.5f, 0}, {1, 0.5f}, {0.5f, 1}, {0, 0.5f}};
+    // The covered part of a square for each case (bit k set when corner k is covered).
+    static const int kCases[16][7] = {
+        {0},
+        {3, 0, 4, 7},
+        {3, 4, 1, 5},
+        {4, 0, 1, 5, 7},
+        {3, 5, 2, 6},
+        {6, 0, 4, 5, 2, 6, 7},
+        {4, 4, 1, 2, 6},
+        {5, 0, 1, 2, 6, 7},
+        {3, 7, 6, 3},
+        {4, 0, 4, 6, 3},
+        {6, 4, 1, 5, 6, 3, 7},
+        {5, 0, 1, 5, 6, 3},
+        {4, 7, 5, 2, 3},
+        {5, 0, 4, 5, 2, 3},
+        {5, 4, 1, 2, 3, 7},
+        {0},
+    };
+    for (int j = 0; j + 1 < height; ++j) {
+      int fullStart = -1;
+      for (int i = 0; i + 1 <= width; ++i) {
+        int which = 0;
+        if (i + 1 < width) {
+          which = (both[j * width + i] ? 1 : 0) | (both[j * width + i + 1] ? 2 : 0) |
+                  (both[(j + 1) * width + i + 1] ? 4 : 0) | (both[(j + 1) * width + i] ? 8 : 0);
+        }
+        // Full squares next to each other in a row become one rectangle.
+        if (which == 15) {
+          if (fullStart < 0) {
+            fullStart = i;
+          }
+          continue;
+        }
+        if (fullStart >= 0) {
+          const float rect[4][2] = {{static_cast< float >(fullStart), static_cast< float >(j)},
+                                    {static_cast< float >(i), static_cast< float >(j)},
+                                    {static_cast< float >(i), static_cast< float >(j + 1)},
+                                    {static_cast< float >(fullStart), static_cast< float >(j + 1)}};
+          addPolygon(rect, 4);
+          fullStart = -1;
+        }
+        const int count = kCases[which][0];
+        if (count >= 3) {
+          float points[6][2];
+          for (int k = 0; k < count; ++k) {
+            points[k][0] = i + kPoints[kCases[which][k + 1]][0];
+            points[k][1] = j + kPoints[kCases[which][k + 1]][1];
+          }
+          addPolygon(points, count);
+        }
+      }
+    }
+    flush();
   }
 
   void Repair(Result& result) {
@@ -1387,15 +1508,20 @@ void DrawOverlaps(const IWorld& world, const std::vector< bool >& drawn,
       CMapArea::CMapAreaSurface::SetupGXMaterial();
       gpRender->SetModelMatrix(modelXf);
       CGX::SetTevKColor(GX_KCOLOR0, CColor(1.f, 1.f, 1.f, kOverlapAlpha * alpha).GetGXColor());
+      CGraphics::SetCullMode(kCM_None);
       setUp = true;
     }
     CGX::SetArray(GX_VA_POS, patch.verts.data(), sizeof(CVector3f),
                   patch.verts.size() * sizeof(CVector3f), TARGET_LITTLE_ENDIAN);
-    CGX::Begin(GX_QUADS, GX_VTXFMT0, static_cast< ushort >(patch.verts.size()));
+    CGX::Begin(GX_TRIANGLES, GX_VTXFMT0, static_cast< ushort >(patch.verts.size()));
     for (size_t v = 0; v < patch.verts.size(); ++v) {
       GXPosition1x8(static_cast< uchar >(v));
     }
     CGX::End();
+  }
+  if (setUp) {
+    // As CAutoMapper::Draw left it.
+    CGraphics::SetCullMode(kCM_Front);
   }
 }
 
