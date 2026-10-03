@@ -48,6 +48,24 @@
 
 #if defined(TARGET_PC)
 #include "Metaforce/MapLayout.hpp"
+#include "Metaforce/Randomizer/Hooks.hpp"
+
+// Randomizer: the map screen's A button warps to the seed's start instead of opening the world
+// map, whose maps of the other regions don't follow the room randomizer. The first press arms it
+// for this many seconds; a second press warps.
+static const float skWarpConfirmSeconds = 3.f;
+static float sWarpArmedAt = -1.f;
+
+static bool IsWarpArmed() {
+  if (sWarpArmedAt < 0.f) {
+    return false;
+  }
+  float elapsed = CGraphics::GetSecondsMod900() - sWarpArmedAt;
+  if (elapsed < 0.f) {
+    elapsed += 900.f;
+  }
+  return elapsed < skWarpConfirmSeconds;
+}
 #endif
 
 static const char* const skFRME_MapScreen = "FRME_MapScreen";
@@ -704,7 +722,21 @@ void CAutoMapper::ProcessControllerInput(const CFinalInput& input, const CStateM
 void CAutoMapper::ProcessMapScreenInput(const CFinalInput& input, const CStateManager& mgr) {
   CMatrix3f camRot(mRenderState0.mCamOrientation.BuildTransform());
   if (mState == kAMS_MapScreen) {
-    if (input.PA() && x328_ == 0) {
+#if defined(TARGET_PC)
+    if (metaforce::randomizer::CanWarpToStart()) {
+      if (input.PA() && x328_ == 0) {
+        if (IsWarpArmed()) {
+          sWarpArmedAt = -1.f;
+          metaforce::randomizer::WarpToStart();
+        } else {
+          sWarpArmedAt = CGraphics::GetSecondsMod900();
+        }
+        CSfxManager::SfxStart(0x5a6, 127, 64, false, CSfxManager::kMedPriority, false,
+                              CSfxManager::kAllAreas);
+      }
+    } else
+#endif
+        if (input.PA() && x328_ == 0) {
       if (HasCurrentMapUniverseWorld(mgr)) {
         BeginMapperStateTransition(kAMS_MapScreenUniverse, mgr);
       }
@@ -1376,8 +1408,12 @@ void CAutoMapper::Update(float dt, const CStateManager& mgr) {
       const wchar_t imageSuffix[] = L";";
       rstl::wstring string;
 
-      if (mState == kAMS_MapScreenUniverse ||
-          (mState == kAMS_MapScreen && HasCurrentMapUniverseWorld(mgr))) {
+      bool showA = mState == kAMS_MapScreenUniverse ||
+                   (mState == kAMS_MapScreen && HasCurrentMapUniverseWorld(mgr));
+#if defined(TARGET_PC)
+      showA = showA || (mState == kAMS_MapScreen && metaforce::randomizer::CanWarpToStart());
+#endif
+      if (showA) {
         string.reserve(0x100);
         string.append(imagePrefix, -1);
         string.append(CStringExtras::ConvertToUNICODE(rstl::string(
@@ -1392,6 +1428,11 @@ void CAutoMapper::Update(float dt, const CStateManager& mgr) {
     CGuiTextPane* right =
         static_cast< CGuiTextPane* >(mFrmeInitialized->FindWidget("textpane_right"));
     rstl::wstring rightString;
+#if defined(TARGET_PC)
+    if (mState == kAMS_MapScreen && metaforce::randomizer::CanWarpToStart()) {
+      rightString = rstl::wstring_l(IsWarpArmed() ? L"Confirm Warp" : L"Warp to Start");
+    } else
+#endif
     if (mState == kAMS_MapScreenUniverse) {
       rightString = rstl::wstring_l(gpStringTable->GetString(0x2d));
     } else if (mState == kAMS_MapScreen && HasCurrentMapUniverseWorld(mgr)) {

@@ -6,6 +6,7 @@
 #include "Metaforce/Randomizer/Hooks.hpp"
 #include "Metaforce/Randomizer/PickupTables.hpp"
 #include "Metaforce/SaveAnywhere.hpp"
+#include "Metaforce/Warp.hpp"
 
 #include "Kyoto/Audio/CSfxManager.hpp"
 #include "Kyoto/Math/CRelAngle.hpp"
@@ -123,6 +124,8 @@ struct Session {
   std::vector< std::wstring > memoText;
   int templeLocation = -1;
   bool pendingNewGame = false;
+  // Warp to Start: put the player on the start position once the start area has loaded.
+  bool pendingStartTeleport = false;
   // Doors gone through in the game being played, by ObjectKey, and the save slot they belong to.
   // Written to TraversedFile() as they're added.
   std::unordered_set< uint64_t > traversedDoors;
@@ -662,9 +665,55 @@ void OnGameLoad() {
   }
 }
 
+namespace {
+// Puts the player on the seed's start position, facing its start direction.
+void TeleportToStart(CStateManager& mgr) {
+  const auto& s = S();
+  if (!s.active || !s.active->startPosition || mgr.Player() == nullptr) {
+    return;
+  }
+  const auto& pos = *s.active->startPosition;
+  CPlayer* samus = mgr.Player();
+  const CMatrix3f facing =
+      s.active->startYaw
+          ? CTransform4f::RotateZ(CRelAngle::FromRadians(*s.active->startYaw)).BuildMatrix3f()
+          : samus->GetTransform().BuildMatrix3f();
+  const CTransform4f xf(facing, CVector3f(pos[0], pos[1], pos[2]));
+  samus->Teleport(xf, mgr, true);
+}
+} // namespace
+
+bool CanWarpToStart() { return S().active.has_value() && warp::CanWarp(); }
+
+void WarpToStart() {
+  auto& s = S();
+  if (!CanWarpToStart()) {
+    return;
+  }
+  for (const warp::World& world : warp::GetWorlds()) {
+    if (world.mlvl != s.active->startWorld) {
+      continue;
+    }
+    for (const warp::Area& area : world.areas) {
+      if (area.mrea == s.active->startArea) {
+        Log.info("Warping to the start: {}", s.active->startName);
+        s.pendingStartTeleport = true;
+        warp::RequestWarp(world.mlvl, area.index, std::nullopt);
+        return;
+      }
+    }
+  }
+  Log.error("The start area 0x{:08X} of world 0x{:08X} wasn't found", s.active->startArea,
+            s.active->startWorld);
+}
+
 void OnWorldInitialized(CStateManager& mgr) {
   ApplyCrossWorldArrival(mgr);
   auto& s = S();
+  if (s.active && s.pendingStartTeleport) {
+    s.pendingStartTeleport = false;
+    TeleportToStart(mgr);
+  }
   if (!s.active || !s.pendingNewGame) {
     return;
   }
@@ -686,16 +735,7 @@ void OnWorldInitialized(CStateManager& mgr) {
   }
   player.HealthInfo()->SetHP(player.CalculateHealth());
 
-  if (s.active->startPosition) {
-    const auto& pos = *s.active->startPosition;
-    CPlayer* samus = mgr.Player();
-    const CMatrix3f facing =
-        s.active->startYaw
-            ? CTransform4f::RotateZ(CRelAngle::FromRadians(*s.active->startYaw)).BuildMatrix3f()
-            : samus->GetTransform().BuildMatrix3f();
-    const CTransform4f xf(facing, CVector3f(pos[0], pos[1], pos[2]));
-    samus->Teleport(xf, mgr, true);
-  }
+  TeleportToStart(mgr);
   SyncArtifactLayers();
 }
 

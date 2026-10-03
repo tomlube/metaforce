@@ -47,6 +47,12 @@ void OnGameLoad();
 // End of CStateManager::InitializeState: gives a new game its starting items.
 void OnWorldInitialized(CStateManager& mgr);
 
+// CAutoMapper: whether the map screen offers to warp to the seed's starting location in place of
+// the world map, and the warp itself. The game is left and reloaded at the start, keeping the
+// player's progress.
+bool CanWarpToStart();
+void WarpToStart();
+
 // ScriptLoader::LoadPickup. editorId is the object's editor id without layer bits.
 bool GetPickupOverride(unsigned int worldId, unsigned int editorId, PickupOverride& out);
 
