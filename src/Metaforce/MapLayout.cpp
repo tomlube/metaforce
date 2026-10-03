@@ -66,8 +66,9 @@ constexpr int kAttempts = 12;
 // group would have gone.
 constexpr float kIslandRingStep = 10.f;
 constexpr int kIslandRings = 60;
-// How strongly overlaps between rooms are shaded on the map.
-constexpr float kOverlapAlpha = 0.45f;
+// How strongly overlaps between rooms are shaded on the map, faces and edges.
+constexpr float kOverlapAlpha = 0.3f;
+constexpr float kOverlapEdgeAlpha = 0.85f;
 // How close a door's two sides have to be on the map to count as meeting.
 constexpr float kMeetDistance = 0.5f;
 // Rooms placed through a door touch along it, and their map geometry often reaches a little past
@@ -311,11 +312,12 @@ struct Result {
 struct OverlapPatch {
   int areaA;
   int areaB;
+  bool lines; // edges drawn as lines, rather than faces as triangles
   std::vector< CVector3f > verts;
 };
 
-// Vertices in one GX index array, as whole triangles.
-constexpr size_t kMaxPatchVerts = 255;
+// Vertices in one GX index array, as whole triangles or lines.
+constexpr size_t kMaxPatchVerts = 252;
 // Cell size of the fine grid overlaps between rooms are worked out on.
 constexpr float kFineCell = 0.5f;
 
@@ -1089,8 +1091,9 @@ private:
       }
     }
 
-    // By pair of rooms, by row: the cells and the top of the overlap there.
-    std::map< std::pair< int, int >, std::map< std::pair< int, int >, float > > pairs;
+    // By pair of rooms, by row: the cells and the range of Z the two rooms cover there.
+    std::map< std::pair< int, int >, std::map< std::pair< int, int >, std::pair< float, float > > >
+        pairs;
     for (const auto& [key, cells] : inner) {
       const int ix = static_cast< int >(key >> 32);
       const int iy = static_cast< int >(static_cast< std::int32_t >(key & 0xffffffff));
@@ -1102,8 +1105,12 @@ private:
             continue;
           }
           const std::pair< int, int > rooms(std::min(a.room, b.room), std::max(a.room, b.room));
-          float& top = pairs[rooms].try_emplace(std::make_pair(iy, ix), -FLT_MAX).first->second;
-          top = std::max(top, std::max(a.z1, b.z1));
+          std::pair< float, float >& range =
+              pairs[rooms]
+                  .try_emplace(std::make_pair(iy, ix), std::make_pair(FLT_MAX, -FLT_MAX))
+                  .first->second;
+          range.first = std::min(range.first, std::min(a.z0, b.z0));
+          range.second = std::max(range.second, std::max(a.z1, b.z1));
         }
       }
     }
@@ -1157,12 +1164,14 @@ private:
   // The overlap of two rooms as seen from above, from their map triangles on a fine grid, with
   // smooth edges by marching squares, as one flat sheet a little above the higher ceiling.
   void AddSmoothOverlap(const Result& result, int roomA, int roomB,
-                        const std::map< std::pair< int, int >, float >& cells,
+                        const std::map< std::pair< int, int >, std::pair< float, float > >& cells,
                         std::vector< OverlapPatch >& overlaps) const {
+    float bottom = FLT_MAX;
     float top = -FLT_MAX;
     int minX = INT_MAX, maxX = INT_MIN, minY = INT_MAX, maxY = INT_MIN;
-    for (const auto& [cell, cellTop] : cells) {
-      top = std::max(top, cellTop);
+    for (const auto& [cell, range] : cells) {
+      bottom = std::min(bottom, range.first);
+      top = std::max(top, range.second);
       minY = std::min(minY, cell.first);
       maxY = std::max(maxY, cell.first);
       minX = std::min(minX, cell.second);
@@ -1195,28 +1204,46 @@ private:
       }
     }
 
-    OverlapPatch patch;
-    patch.areaA = mRooms[roomA].id.Value();
-    patch.areaB = mRooms[roomB].id.Value();
-    const float z = top + 0.5f;
-    const auto flush = [&]() {
-      if (!patch.verts.empty()) {
+    // A shell around the overlap: its outline as a floor a little below the lower room's floor
+    // and a ceiling a little above the higher room's ceiling, walls between them along the
+    // outline, and the outline drawn as lines at both heights.
+    const float zTop = top + 0.5f;
+    const float zBottom = bottom - 0.5f;
+    OverlapPatch faces;
+    faces.areaA = mRooms[roomA].id.Value();
+    faces.areaB = mRooms[roomB].id.Value();
+    faces.lines = false;
+    OverlapPatch edges = faces;
+    edges.lines = true;
+    const auto add = [&](OverlapPatch& patch, const CVector3f* verts, size_t count) {
+      if (patch.verts.size() + count > kMaxPatchVerts) {
         overlaps.push_back(patch);
         patch.verts.clear();
       }
+      patch.verts.insert(patch.verts.end(), verts, verts + count);
     };
-    // A convex polygon in sample coordinates, as a fan of triangles.
+    const auto toMap = [&](float x, float y, float z) {
+      return CVector3f(originX + (x + 0.5f) * kFineCell, originY + (y + 0.5f) * kFineCell, z);
+    };
+    // A convex polygon in sample coordinates, as a fan of triangles at both heights.
     const auto addPolygon = [&](const float (*points)[2], int count) {
-      if (patch.verts.size() + (count - 2) * 3 > kMaxPatchVerts) {
-        flush();
-      }
-      for (int k = 1; k + 1 < count; ++k) {
-        const int fan[3] = {0, k, k + 1};
-        for (const int v : fan) {
-          patch.verts.push_back(CVector3f(originX + (points[v][0] + 0.5f) * kFineCell,
-                                          originY + (points[v][1] + 0.5f) * kFineCell, z));
+      for (const float z : {zTop, zBottom}) {
+        for (int k = 1; k + 1 < count; ++k) {
+          const CVector3f tri[3] = {toMap(points[0][0], points[0][1], z),
+                                    toMap(points[k][0], points[k][1], z),
+                                    toMap(points[k + 1][0], points[k + 1][1], z)};
+          add(faces, tri, 3);
         }
       }
+    };
+    // A piece of the outline, in sample coordinates: a wall and its two edges.
+    const auto addSegment = [&](float x0, float y0, float x1, float y1) {
+      const CVector3f a0 = toMap(x0, y0, zBottom), a1 = toMap(x0, y0, zTop);
+      const CVector3f b0 = toMap(x1, y1, zBottom), b1 = toMap(x1, y1, zTop);
+      const CVector3f wall[6] = {a0, b0, b1, a0, b1, a1};
+      add(faces, wall, 6);
+      const CVector3f lines[4] = {a0, b0, a1, b1};
+      add(edges, lines, 4);
     };
     // Corners 0 (0,0) 1 (1,0) 2 (1,1) 3 (0,1), then edge midpoints 4 bottom 5 right 6 top 7 left.
     static const float kPoints[8][2] = {{0, 0},    {1, 0},    {1, 1},    {0, 1},
@@ -1239,6 +1266,12 @@ private:
         {5, 0, 4, 5, 2, 3},
         {5, 4, 1, 2, 3, 7},
         {0},
+    };
+    // The outline through each case, as pairs of edge midpoints.
+    static const int kSegments[16][5] = {
+        {0},       {1, 4, 7}, {1, 4, 5}, {1, 5, 7}, {1, 5, 6},       {2, 4, 5, 6, 7},
+        {1, 4, 6}, {1, 6, 7}, {1, 6, 7}, {1, 4, 6}, {2, 5, 6, 7, 4}, {1, 5, 6},
+        {1, 7, 5}, {1, 4, 5}, {1, 7, 4}, {0},
     };
     for (int j = 0; j + 1 < height; ++j) {
       int fullStart = -1;
@@ -1272,9 +1305,18 @@ private:
           }
           addPolygon(points, count);
         }
+        for (int k = 0; k < kSegments[which][0]; ++k) {
+          const float* from = kPoints[kSegments[which][1 + 2 * k]];
+          const float* to = kPoints[kSegments[which][2 + 2 * k]];
+          addSegment(i + from[0], j + from[1], i + to[0], j + to[1]);
+        }
       }
     }
-    flush();
+    for (OverlapPatch* patch : {&faces, &edges}) {
+      if (!patch->verts.empty()) {
+        overlaps.push_back(std::move(*patch));
+      }
+    }
   }
 
   void Repair(Result& result) {
@@ -1497,27 +1539,39 @@ void DrawOverlaps(const IWorld& world, const std::vector< bool >& drawn,
     return;
   }
   bool setUp = false;
-  for (const OverlapPatch& patch : sOverlaps) {
-    if (patch.areaA >= static_cast< int >(drawn.size()) ||
-        patch.areaB >= static_cast< int >(drawn.size()) || !drawn[patch.areaA] ||
-        !drawn[patch.areaB]) {
-      continue;
+  // Faces first, then the edges over them.
+  for (int pass = 0; pass < 2; ++pass) {
+    const bool lines = pass == 1;
+    bool colorSet = false;
+    for (const OverlapPatch& patch : sOverlaps) {
+      if (patch.lines != lines || patch.areaA >= static_cast< int >(drawn.size()) ||
+          patch.areaB >= static_cast< int >(drawn.size()) || !drawn[patch.areaA] ||
+          !drawn[patch.areaB]) {
+        continue;
+      }
+      if (!setUp) {
+        // The map's own surface material, in colours of its own.
+        CMapArea::CMapAreaSurface::SetupGXMaterial();
+        gpRender->SetModelMatrix(modelXf);
+        CGraphics::SetCullMode(kCM_None);
+        CGraphics::SetLineWidth(1.f, kTO_One);
+        setUp = true;
+      }
+      if (!colorSet) {
+        CGX::SetTevKColor(GX_KCOLOR0,
+                          CColor(1.f, 1.f, 1.f, (lines ? kOverlapEdgeAlpha : kOverlapAlpha) * alpha)
+                              .GetGXColor());
+        colorSet = true;
+      }
+      CGX::SetArray(GX_VA_POS, patch.verts.data(), sizeof(CVector3f),
+                    patch.verts.size() * sizeof(CVector3f), TARGET_LITTLE_ENDIAN);
+      CGX::Begin(lines ? GX_LINES : GX_TRIANGLES, GX_VTXFMT0,
+                 static_cast< ushort >(patch.verts.size()));
+      for (size_t v = 0; v < patch.verts.size(); ++v) {
+        GXPosition1x8(static_cast< uchar >(v));
+      }
+      CGX::End();
     }
-    if (!setUp) {
-      // The map's own surface material, in a colour of its own.
-      CMapArea::CMapAreaSurface::SetupGXMaterial();
-      gpRender->SetModelMatrix(modelXf);
-      CGX::SetTevKColor(GX_KCOLOR0, CColor(1.f, 1.f, 1.f, kOverlapAlpha * alpha).GetGXColor());
-      CGraphics::SetCullMode(kCM_None);
-      setUp = true;
-    }
-    CGX::SetArray(GX_VA_POS, patch.verts.data(), sizeof(CVector3f),
-                  patch.verts.size() * sizeof(CVector3f), TARGET_LITTLE_ENDIAN);
-    CGX::Begin(GX_TRIANGLES, GX_VTXFMT0, static_cast< ushort >(patch.verts.size()));
-    for (size_t v = 0; v < patch.verts.size(); ++v) {
-      GXPosition1x8(static_cast< uchar >(v));
-    }
-    CGX::End();
   }
   if (setUp) {
     // As CAutoMapper::Draw left it.
