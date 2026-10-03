@@ -1,3 +1,5 @@
+** THIS BUILD IS AN UNOFFICIAL PROOF OF CONCEPT. IT CURRENTLY USES GPL3.0 LICENSING BUT AS A PERSONAL FORK DOES NOT REPRESENT THE OFFICIAL METAFORCE REPO**
+
 ## Metaforce [![Build Status]][actions] [![Discord Badge]][discord]
 
 [Build Status]: https://github.com/AxioDL/metaforce/actions/workflows/build.yml/badge.svg
