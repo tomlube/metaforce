@@ -57,6 +57,10 @@ void MarkDoorTraversed(unsigned int world, unsigned int editorId);
 bool GetQuickReload();
 void SetQuickReload(bool enabled);
 
+// Whether R + Z + D-pad Right opens the save screen in a randomized game. On by default.
+bool GetQuickSave();
+void SetQuickSave(bool enabled);
+
 enum class GenerationState {
   Idle,
   Running,

@@ -30,14 +30,15 @@ bool OnCrossWorldDoorOpen(CStateManager& mgr, int area, int dock);
 // CStateManager::Update, after actors think: takes the player through cross-world doors.
 void UpdateCrossWorldDoors(CStateManager& mgr, float dt);
 
-// CMFGame, for every input on port 0 while gameplay runs: watches for the quick reload chord
-// (R + Z + D-pad Left, in any order). On the input that completes it, leaves the game and reloads
-// the last save, like choosing Continue after dying, and returns true.
-bool OnQuickReloadInput(bool r, bool z, bool dpadLeft);
+// CMFGame, for every input on port 0 while gameplay runs: watches for the shortcut chords, held in
+// any order. R + Z + D-pad Right opens the save screen (Save Anywhere); R + Z + D-pad Left leaves
+// the game and reloads the last save, like choosing Continue after dying. True when a shortcut
+// was taken and the input should go no further.
+bool OnShortcutInput(bool r, bool z, bool dpadLeft, bool dpadRight);
 
-// True while R is held and the quick reload chord is on, so that Z doesn't open the map before
-// D-pad Left is pressed.
-bool QuickReloadHoldsMap(bool r);
+// True while R is held and a shortcut is on, so that Z doesn't open the map before the D-pad
+// direction is pressed.
+bool ShortcutsHoldMap(bool r);
 
 // CMFGameLoader construction: picks the seed for the game being loaded, and moves a new game
 // to the seed's starting location.

@@ -193,18 +193,20 @@ CIOWin::EMessageReturn CMFGame::OnMessage(const CArchitectureMessage& message,
             mStateManager->GetCameraManager()->GetCurrentCamera(*mStateManager);
         const CCinematicCamera* const cineCam = TCastToConstPtr< CCinematicCamera >(camera);
 #if defined(TARGET_PC)
-        // R + Z + D-pad Left reloads the last save in randomized games. R cancels a Z press like a
-        // beam chord does, so the map stays shut while the chord is put together.
+        // In randomized games, R + Z + D-pad Right saves and R + Z + D-pad Left reloads the last
+        // save. R cancels a Z press like a beam chord does, so the map stays shut while a chord is
+        // put together.
         const bool rHeld = input.DR() || input.DRTrigger();
-        const bool reloadHoldsMap = metaforce::randomizer::QuickReloadHoldsMap(rHeld);
+        const bool shortcutsHoldMap = metaforce::randomizer::ShortcutsHoldMap(rHeld);
         const bool mapPressed =
             metaforce::input::FilterMapButton(
                 input.PZ(), input.DZ(),
                 input.PDPUp() || input.PDPDown() || input.PDPLeft() || input.PDPRight() ||
-                    reloadHoldsMap,
+                    shortcutsHoldMap,
                 input.PStart()) &&
-            !reloadHoldsMap;
-        if (metaforce::randomizer::OnQuickReloadInput(rHeld, input.DZ(), input.DDPLeft())) {
+            !shortcutsHoldMap;
+        if (metaforce::randomizer::OnShortcutInput(rHeld, input.DZ(), input.DDPLeft(),
+                                                   input.DDPRight())) {
           break;
         }
 #endif

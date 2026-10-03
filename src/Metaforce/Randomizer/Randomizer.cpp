@@ -5,7 +5,9 @@
 #include "Metaforce/Randomizer/Generator.hpp"
 #include "Metaforce/Randomizer/Hooks.hpp"
 #include "Metaforce/Randomizer/PickupTables.hpp"
+#include "Metaforce/SaveAnywhere.hpp"
 
+#include "Kyoto/Audio/CSfxManager.hpp"
 #include "Kyoto/Math/CRelAngle.hpp"
 #include "Kyoto/Math/CTransform4f.hpp"
 #include "MetroidPrime/CEntityInfo.hpp"
@@ -18,6 +20,7 @@
 #include "MetroidPrime/Player/CPlayerState.hpp"
 #include "MetroidPrime/Player/CWorldState.hpp"
 #include "MetroidPrime/Player/CWorldTransManager.hpp"
+#include "MetroidPrime/SFX/UI.h"
 
 #include <SDL3/SDL_filesystem.h>
 #include <borealis/log.hpp>
@@ -107,8 +110,10 @@ struct Session {
   std::string armedSeed;
   std::map< std::string, std::string > slots; // save slot key -> seed hash
   bool quickReload = true;
-  // Whether the quick reload chord was held on the last input seen, so holding it reloads once.
+  bool quickSave = true;
+  // Whether each shortcut chord was held on the last input seen, so holding one acts once.
   bool quickReloadHeld = false;
+  bool quickSaveHeld = false;
 
   std::optional< Seed > active;
   std::unordered_map< uint64_t, int > pickupByObject;
@@ -141,7 +146,11 @@ fs::path TraversedFile(const std::string& slot) { return S().root / "traversed" 
 
 void SaveSession() {
   const json root{
-      {"armed", S().armedSeed}, {"slots", S().slots}, {"quick_reload", S().quickReload}};
+      {"armed", S().armedSeed},
+      {"slots", S().slots},
+      {"quick_reload", S().quickReload},
+      {"quick_save", S().quickSave},
+  };
   std::error_code ec;
   fs::create_directories(S().root, ec);
   std::ofstream file(SessionFile(), std::ios::binary | std::ios::trunc);
@@ -159,6 +168,7 @@ void LoadSession() {
   }
   S().armedSeed = root.value("armed", "");
   S().quickReload = root.value("quick_reload", true);
+  S().quickSave = root.value("quick_save", true);
   if (root.contains("slots") && root["slots"].is_object()) {
     S().slots = root["slots"].get< std::map< std::string, std::string > >();
   }
@@ -467,6 +477,13 @@ void SetQuickReload(bool enabled) {
   SaveSession();
 }
 
+bool GetQuickSave() { return S().quickSave; }
+
+void SetQuickSave(bool enabled) {
+  S().quickSave = enabled;
+  SaveSession();
+}
+
 bool StartGeneration() {
   auto& s = S();
   if (GetGenerationStatus().state == GenerationState::Running) {
@@ -555,21 +572,40 @@ bool GetDockOverride(unsigned int worldId, unsigned int areaAssetId, int dock,
   return true;
 }
 
-bool OnQuickReloadInput(bool r, bool z, bool dpadLeft) {
+bool OnShortcutInput(bool r, bool z, bool dpadLeft, bool dpadRight) {
   auto& s = S();
-  const bool held = r && z && dpadLeft;
-  const bool completed = held && !s.quickReloadHeld;
-  s.quickReloadHeld = held;
-  if (!completed || !s.active || !s.quickReload || gpStateManager == nullptr) {
+  const bool reloadHeld = r && z && dpadLeft;
+  const bool saveHeld = r && z && dpadRight;
+  const bool reloadCompleted = reloadHeld && !s.quickReloadHeld;
+  const bool saveCompleted = saveHeld && !s.quickSaveHeld;
+  s.quickReloadHeld = reloadHeld;
+  s.quickSaveHeld = saveHeld;
+  if (!s.active || gpStateManager == nullptr) {
     return false;
   }
-  // The game over screen's Continue: kRM_StateSetter rebuilds the game state from the backup the
-  // last save left behind (CMain::RefreshGameState), then loads it.
-  Log.info("Quick reload: reloading the last save");
-  gpGameState->WorldTransitionManager()->DisableTransition();
-  gpMain->SetRestartMode(CMain::kRM_StateSetter);
-  gpStateManager->QuitGame();
-  return true;
+
+  if (reloadCompleted && s.quickReload) {
+    // The game over screen's Continue: kRM_StateSetter rebuilds the game state from the backup
+    // the last save left behind (CMain::RefreshGameState), then loads it.
+    Log.info("Quick reload: reloading the last save");
+    gpGameState->WorldTransitionManager()->DisableTransition();
+    gpMain->SetRestartMode(CMain::kRM_StateSetter);
+    gpStateManager->QuitGame();
+    return true;
+  }
+
+  if (saveCompleted && s.quickSave) {
+    const std::string reason = save_anywhere::WhyCantSave();
+    if (!reason.empty()) {
+      Log.info("Quick save: can't save now: {}", reason);
+      CSfxManager::SfxStart(SFXui_x_warning_00, 0x7f, 0x40, false, CSfxManager::kMedPriority,
+                            false, CSfxManager::kAllAreas);
+      return false;
+    }
+    save_anywhere::RequestSave();
+    return true;
+  }
+  return false;
 }
 
 void MarkDoorTraversed(unsigned int world, unsigned int editorId) {
@@ -585,7 +621,9 @@ bool IsDoorTraversed(unsigned int worldId, unsigned int editorId) {
   return s.active && s.traversedDoors.count(ObjectKey(worldId, editorId)) != 0;
 }
 
-bool QuickReloadHoldsMap(bool r) { return r && S().active && S().quickReload; }
+bool ShortcutsHoldMap(bool r) {
+  return r && S().active && (S().quickReload || S().quickSave);
+}
 
 void OnGameLoad() {
   if (gpGameState == nullptr) {

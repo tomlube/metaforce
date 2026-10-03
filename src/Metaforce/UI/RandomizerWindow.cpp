@@ -297,6 +297,19 @@ void RandomizerWindow::build_seeds_tab(Rml::Element* content) {
           "New games start vanilla. Saves that were started with a seed keep using it.");
 
   leftPane.add_section("In Game");
+  auto& quickSave = leftPane.add_child< BoolButton >(BoolButton::Props{
+      .key = "Quick Save",
+      .getValue = [] { return rando::GetQuickSave(); },
+      .setValue = [](bool v) { rando::SetQuickSave(v); },
+      .isModified = [] { return !rando::GetQuickSave(); },
+  });
+  SetHelp(leftPane, rightPane, quickSave,
+          "Hold <b>R</b> + <b>Z</b> + <b>D-pad Right</b> during a randomized game to open the save "
+          "screen wherever you are. Loading the save puts you back on that spot.<br/><br/>You "
+          "can't save while paused, in a cutscene, mid-morph, during the escape, or while dead; "
+          "a warning sound plays instead.<br/><br/>While this is on, holding R stops Z from "
+          "opening the map.");
+
   auto& quickReload = leftPane.add_child< BoolButton >(BoolButton::Props{
       .key = "Quick Reload",
       .getValue = [] { return rando::GetQuickReload(); },
