@@ -1917,13 +1917,14 @@ rstl::pair< TEditorId, TUniqueId > CStateManager::LoadScriptObject(TAreaId aid,
     conns = kept;
   }
   // Objects of an area appended from another region move into its place in the loaded world,
-  // along with the objects they talk to.
+  // along with the objects they talk to. The raw value keeps the layer bits that Value() masks
+  // off: GenerateObject reads the object's layer from them.
   if (metaforce::merged::IsForeignArea(aid)) {
-    eid = TEditorId(metaforce::merged::ToLoadedEditorId(aid, eid.Value()));
+    eid = TEditorId(metaforce::merged::ToLoadedEditorId(aid, eid.value));
     for (int i = 0; i < static_cast< int >(conns.size()); ++i) {
       conns[i] = SConnection(conns[i].mState, conns[i].mMsg,
                              TEditorId(metaforce::merged::ToLoadedEditorId(
-                                 aid, conns[i].mObjId.Value())));
+                                 aid, conns[i].mObjId.value)));
     }
   }
 #endif
