@@ -51,9 +51,10 @@ constexpr float kCellSize = 2.5f;
 // How far two rooms may overlap in Z and still not count as overlapping.
 constexpr float kZTolerance = 1.f;
 // How many of a group's cells may land on other rooms before it no longer fits: at least
-// kMinOverlaps, more for big groups. Rooms that meet at a door touch along it.
+// kMinOverlaps, and one in kOverlapsPerCell for big groups. A little overlap at the edges of two
+// rooms is a better map than a door whose two sides are drawn apart.
 constexpr int kMinOverlaps = 3;
-constexpr int kOverlapsPerCell = 50;
+constexpr int kOverlapsPerCell = 20;
 // Layouts tried, each grown from a different first group. The one with the fewest islands is kept.
 constexpr int kAttempts = 12;
 // Islands go into the nearest free space, searched for in rings this far apart around where the
