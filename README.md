@@ -2,8 +2,6 @@
 
 ## Metaforce [![Build Status]][actions] [![Discord Badge]][discord]
 
-[Build Status]: https://github.com/AxioDL/metaforce/actions/workflows/build.yml/badge.svg
-[actions]: https://github.com/AxioDL/metaforce/actions
 [Discord Badge]: https://dcbadge.limes.pink/api/server/AMBVFuf?style=flat
 [discord]: https://discord.gg/AMBVFuf
 
