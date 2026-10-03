@@ -436,6 +436,11 @@ void CMapWorld::DrawAreas(const CMapWorldDrawParms& parms, int selArea,
     }
     const CTransform4f modelView =
         cameraXf.GetQuickInverse() * area->GetAreaPostTransform(parms.GetWorld(), areaIdx);
+#if defined(TARGET_PC)
+    // Map objects are in world space, not the area's own.
+    const CTransform4f objectView =
+        cameraXf.GetQuickInverse() * CMapArea::GetAreaMapTransform(parms.GetWorld(), areaIdx);
+#endif
     int j;
     int count = area->GetNumSurfaces();
     for (j = 0; j < count; ++j) {
@@ -464,9 +469,13 @@ void CMapWorld::DrawAreas(const CMapWorldDrawParms& parms, int selArea,
           int objectFace, face;
           for (face = 0, objectFace = surfaceBase; face < 6; ++face, ++objectFace) {
             const CVector3f& center = object.BuildSurfaceCenterPoint(face);
+#if defined(TARGET_PC)
+            const CVector3f pos = objectView * center;
+#else
             const CVector3f translated =
                 CMapArea::GetAreaPostTranslate(parms.GetWorld(), areaIdx) + center;
             const CVector3f pos = modelView * translated;
+#endif
             sortInfos.push_back(CMapObjectSortInfo(pos.GetY(), areaIdx,
                                                    CMapObjectSortInfo::kOC_DoorSurface, objectFace,
                                                    CColor(), CColor()));
@@ -475,9 +484,13 @@ void CMapWorld::DrawAreas(const CMapWorldDrawParms& parms, int selArea,
         }
       }
       const CVector3f origin = object.GetTransform().GetTranslation();
+#if defined(TARGET_PC)
+      const CVector3f pos = objectView * origin;
+#else
       const CVector3f translated =
           CMapArea::GetAreaPostTranslate(parms.GetWorld(), areaIdx) + origin;
       const CVector3f pos = modelView * translated;
+#endif
       CMapObjectSortInfo::EObjectCode code =
           door ? CMapObjectSortInfo::kOC_Door : CMapObjectSortInfo::kOC_Object;
       sortInfos.push_back(CMapObjectSortInfo(pos.GetY(), areaIdx, code, j, CColor(), CColor()));
@@ -527,9 +540,19 @@ void CMapWorld::DrawAreas(const CMapWorldDrawParms& parms, int selArea,
         const CMappableObject& object = area->GetMappableObject(idx);
 #endif
         bool needsVertices = lastMode != mode;
+#if defined(TARGET_PC)
+        // Doors turn with their room; icons only move with it, and face the camera.
+        const CTransform4f mapXf = CMapArea::GetAreaMapTransform(parms.GetWorld(), areaIdx);
+        const CTransform4f objXf =
+            type == CMapObjectSortInfo::kOC_Door
+                ? mapXf * object.GetTransform()
+                : CTransform4f::Translate(mapXf * object.GetTransform().GetTranslation()) *
+                      object.GetTransform().GetRotation();
+#else
         const CTransform4f objXf =
             CTransform4f::Translate(CMapArea::GetAreaPostTranslate(parms.GetWorld(), areaIdx)) *
             object.GetTransform();
+#endif
         gpRender->SetModelMatrix(
             type == CMapObjectSortInfo::kOC_Door
                 ? modelXf * objXf
@@ -545,10 +568,16 @@ void CMapWorld::DrawAreas(const CMapWorldDrawParms& parms, int selArea,
 #else
         const CMappableObject& object = area->GetMappableObject(idx / 6);
 #endif
+#if defined(TARGET_PC)
+        gpRender->SetModelMatrix(modelXf *
+                                 CMapArea::GetAreaMapTransform(parms.GetWorld(), areaIdx) *
+                                 object.GetTransform());
+#else
         gpRender->SetModelMatrix(
             modelXf *
             CTransform4f::Translate(CMapArea::GetAreaPostTranslate(parms.GetWorld(), areaIdx)) *
             object.GetTransform());
+#endif
         object.DrawDoorSurface(selArea, mwInfo, parms.GetAlpha(), idx % 6,
                                lastMode != kDM_DoorSurface);
         lastMode = kDM_DoorSurface;

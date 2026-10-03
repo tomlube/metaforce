@@ -733,6 +733,7 @@ set(GAME_FILES
       src/Metaforce/CModelSectionReader.cpp
       src/Metaforce/Input.cpp
       src/Metaforce/MapData.cpp
+      src/Metaforce/MapLayout.cpp
       src/Metaforce/MenuPointer.cpp
       src/Metaforce/PathData.cpp
       src/Metaforce/Runtime.cpp

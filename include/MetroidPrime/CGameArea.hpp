@@ -238,6 +238,8 @@ public:
 #if defined(TARGET_PC)
   // Lists `area` as a neighbor, for doors that now lead there.
   void AddAttachedArea(TAreaId area);
+  // No longer lists `area` as a neighbor, for an area no door leads to any more.
+  void RemoveAttachedArea(TAreaId area);
   // Moves every area index this area refers to by `offset`, for an area appended to another
   // world after `offset` areas.
   void OffsetAreaReferences(int offset);

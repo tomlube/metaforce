@@ -5,6 +5,9 @@
 #include "Kyoto/Basics/CBasics.hpp"
 #include "MetroidPrime/CMappableObject.hpp"
 #include "MetroidPrime/CWorld.hpp"
+#if defined(TARGET_PC)
+#include "Metaforce/MapLayout.hpp"
+#endif
 #include "MetroidPrime/Tweaks/CTweakAutoMapper.hpp"
 
 #include "Kyoto/Alloc/CMemory.hpp"
@@ -261,6 +264,9 @@ static const uchar MinesPostTransformIndices[42] = {
 };
 
 CTransform4f CMapArea::GetAreaPostTransform(const IWorld& world, int aid) {
+#if defined(TARGET_PC)
+  return GetAreaMapTransform(world, aid) * world.IGetAreaAlways(aid)->IGetTM();
+#else
   if (world.IGetWorldAssetId() == 0xB1AC4D65) // Phazon Mines
   {
     return CTransform4f::Translate(MinesPostTransforms[MinesPostTransformIndices[aid]]) *
@@ -268,9 +274,25 @@ CTransform4f CMapArea::GetAreaPostTransform(const IWorld& world, int aid) {
   } else {
     return world.IGetAreaAlways(aid)->IGetTM();
   }
+#endif
 }
 
+#if defined(TARGET_PC)
+CTransform4f CMapArea::GetAreaMapTransform(const IWorld& world, int aid) {
+  if (metaforce::maplayout::IsActive(world)) {
+    return metaforce::maplayout::GetAreaTransform(world, aid);
+  }
+  return CTransform4f::Translate(GetAreaPostTranslate(world, aid));
+}
+#endif
+
 const CVector3f& CMapArea::GetAreaPostTranslate(const IWorld& world, int aid) {
+#if defined(TARGET_PC)
+  // Areas appended from other regions come after the Mines' own.
+  if (aid < 0 || aid >= static_cast< int >(ARRAY_SIZE(MinesPostTransformIndices))) {
+    return CVector3f::Zero();
+  }
+#endif
   if (world.IGetWorldAssetId() == 0xB1AC4D65) // Phazon Mines
   {
     return MinesPostTransforms[MinesPostTransformIndices[aid]];

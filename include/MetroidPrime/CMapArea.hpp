@@ -13,6 +13,7 @@
 
 #if defined(TARGET_PC)
 #include <span>
+#include <vector>
 
 class CResourceReader;
 typedef std::span< const CVector3f > TMapVertices;
@@ -74,6 +75,14 @@ public:
   const CAABox& GetBoundingBox() const { return mBox; }
   CTransform4f GetAreaPostTransform(const IWorld&, int);
   static const CVector3f& GetAreaPostTranslate(const IWorld&, int);
+#if defined(TARGET_PC)
+  // World space to map space for area `aid`: the Mines' floors pulled apart, or the room
+  // randomizer's map layout. Map objects are stored in world space and go through this; the
+  // area's surfaces go through GetAreaPostTransform, which is this times the area's transform.
+  static CTransform4f GetAreaMapTransform(const IWorld&, int);
+  // The triangles of every surface, as indices into GetVertices, three per triangle.
+  void GetTriangles(std::vector< int >& indices) const;
+#endif
 
 private:
   uint mMagic;

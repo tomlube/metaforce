@@ -1,5 +1,6 @@
 #include "MetroidPrime/CMapArea.hpp"
 
+#include "Kyoto/Basics/CBasics.hpp"
 #include "Kyoto/Streams/CInputStream.hpp"
 #include "Metaforce/CResourceReader.hpp"
 #include "Metaforce/Common.hpp"
@@ -101,6 +102,45 @@ CMapArea::CMapArea(CInputStream& in, uint size) {
     mSurfaces.push_back(CMapAreaSurface(body, *this, commandStart));
   }
   mSurfaceStart = mSurfaces.data();
+}
+
+void CMapArea::GetTriangles(std::vector< int >& indices) const {
+  for (int s = 0; s < mSurfaceCount; ++s) {
+    // Same walk over the commands as CMapAreaSurface::Draw.
+    const int* surface = mSurfaceStart[s].mSurfOffset;
+    const int count = CBasics::SwapBytes(*surface++);
+    for (int i = 0; i < count; ++i) {
+      const uint primitive = CBasics::SwapBytes(static_cast< uint >(*surface++));
+      const int vertices = CBasics::SwapBytes(*surface++);
+      const uchar* data = reinterpret_cast< const uchar* >(surface);
+      surface += ((vertices + 3) & ~3) / 4;
+      switch (primitive) {
+      case GX_TRIANGLES:
+        for (int v = 0; v + 2 < vertices; v += 3) {
+          indices.insert(indices.end(), {data[v], data[v + 1], data[v + 2]});
+        }
+        break;
+      case GX_TRIANGLESTRIP:
+        for (int v = 0; v + 2 < vertices; ++v) {
+          indices.insert(indices.end(), {data[v], data[v + 1], data[v + 2]});
+        }
+        break;
+      case GX_TRIANGLEFAN:
+        for (int v = 1; v + 1 < vertices; ++v) {
+          indices.insert(indices.end(), {data[0], data[v], data[v + 1]});
+        }
+        break;
+      case GX_QUADS:
+        for (int v = 0; v + 3 < vertices; v += 4) {
+          indices.insert(indices.end(), {data[v], data[v + 1], data[v + 2], data[v], data[v + 2],
+                                         data[v + 3]});
+        }
+        break;
+      default:
+        break;
+      }
+    }
+  }
 }
 
 CMappableObject::CMappableObject(CResourceReader& in)

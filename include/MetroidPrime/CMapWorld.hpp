@@ -138,6 +138,7 @@ public:
   // Keeps the first `ownCount` map areas and puts `appended` after them, for areas of other
   // regions appended to the world. Only while no map area is loaded or loading.
   void SetAppendedMapAreas(int ownCount, const rstl::vector< CAssetId >& appended);
+  CAssetId GetMapAreaRes(int aid) const { return mAreas[aid].GetAreaRes(); }
 #endif
   void MoveMapAreaToList(CMapAreaData* data, EMapAreaList list);
   int GetCurrentMapAreaDepth(const IWorld& wld, int aid) const;

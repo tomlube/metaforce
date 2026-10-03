@@ -46,6 +46,10 @@
 
 #include <math.h>
 
+#if defined(TARGET_PC)
+#include "Metaforce/MapLayout.hpp"
+#endif
+
 static const char* const skFRME_MapScreen = "FRME_MapScreen";
 
 static inline const rstl::vector< CGameHintInfo::CGameHint >& GetGameHints() {
@@ -1143,7 +1147,12 @@ void CAutoMapper::Draw(const CStateManager& mgr, const CTransform4f& xf, float a
     CMapUniverse* mapu = mMapu.GetObject();
     const CMapWorld* mapWorld = wld->GetMapWorld();
     CMapArea* mapArea = mapWorld->GetMapArea(areaId);
+#if defined(TARGET_PC)
+    // The universe's hexagons follow the vanilla map.
+    CTransform4f areaXf = wld->GetAreaAlways(TAreaId(areaId)).GetTM();
+#else
     CTransform4f areaXf = mapArea->GetAreaPostTransform(*wld, areaId);
+#endif
 
     const CMapUniverse::CMapWorldData& mwData =
         mapu->GetMapWorldDataByWorldId(gpGameState->CurrentWorldAssetId());
@@ -1178,11 +1187,20 @@ void CAutoMapper::Draw(const CStateManager& mgr, const CTransform4f& xf, float a
 
       CEulerAngles eulers =
           CEulerAngles::FromTransform(mgr.GetCameraManager()->GetCurrentCameraTransform(mgr));
+#if defined(TARGET_PC)
+      // Turned and moved with the room the player is in.
+      const int playerArea = mgr.GetNextAreaId().value;
+      float angle = CMath::ClampRadians(
+          eulers.GetZ() + metaforce::maplayout::GetAreaYaw(*mWorld, playerArea));
+      const CVector3f playerPos =
+          CMapArea::GetAreaMapTransform(*mWorld, playerArea) * mgr.GetPlayer()->GetTranslation();
+#else
       float angle = CMath::ClampRadians(eulers.GetZ());
 
       const CVector3f& playerPos =
           CMapArea::GetAreaPostTranslate(*mWorld, mgr.GetNextAreaId().value) +
           mgr.GetPlayer()->GetTranslation();
+#endif
 
       gpRender->SetModelMatrix(mapXf *
                                CTransform4f(CMatrix3f::RotateZ(CRelAngle(angle)), playerPos) *
@@ -1797,8 +1815,18 @@ CQuaternion CAutoMapper::GetMiniMapCameraOrientation(const CStateManager& stateM
   float miniCamXAngle = gpTweakAutoMapper->mMiniCamXAngle;
   const CGameCamera& cam = stateMgr.GetCameraManager()->GetCurrentCamera(stateMgr);
   CEulerAngles angles = CEulerAngles::FromQuaternion(CQuaternion::FromMatrix(cam.GetTransform()));
+#if defined(TARGET_PC)
+  // Facing the way the player faces on the map, which turns each room its own way.
+  const CWorld* world = stateMgr.GetWorld();
+  const float yaw =
+      world == nullptr ? 0.f
+                       : metaforce::maplayout::GetAreaYaw(*world, stateMgr.GetNextAreaId().value);
+  return CQuaternion::ZRotation(CMath::ClampRadians(angles.GetZ() + yaw)) *
+         CQuaternion::XRotation(CRelAngle::FromDegrees(miniCamXAngle));
+#else
   return CQuaternion::ZRotation(CMath::ClampRadians(angles.GetZ())) *
          CQuaternion::XRotation(CRelAngle::FromDegrees(miniCamXAngle));
+#endif
 }
 
 CVector3f CAutoMapper::GetAreaPointOfInterest(const CStateManager& mgr, int aid) const {

@@ -32,6 +32,7 @@
 #include "rstl/vector.hpp"
 
 #if defined(TARGET_PC)
+#include "Metaforce/MapLayout.hpp"
 #include "Metaforce/MergedWorld.hpp"
 #include "Metaforce/Randomizer/Hooks.hpp"
 #endif
@@ -160,6 +161,7 @@ bool CWorld::CheckWorldComplete(CStateManager* mgr, TAreaId aid, CAssetId mreaId
     for (int i = 0; i < areaCount; ++i) {
       CGameArea* area = mAreas[i].get();
       const CAssetId sourceWorld = metaforce::merged::GetSourceWorld(mMlvlId, TAreaId(i));
+      rstl::vector< TAreaId > leftBehind;
       for (int dock = 0; dock < area->GetDockCount(); ++dock) {
         unsigned int targetArea;
         int targetDock;
@@ -167,11 +169,30 @@ bool CWorld::CheckWorldComplete(CStateManager* mgr, TAreaId aid, CAssetId mreaId
                                                    targetArea, targetDock)) {
           const TAreaId target = GetAreaId(targetArea);
           if (target != kInvalidAreaId) {
+            const IGameArea::Dock& vanilla = area->GetDock(dock);
+            for (int ref = 0; ref < vanilla.GetDockRefs().size(); ++ref) {
+              leftBehind.push_back(vanilla.GetConnectedAreaId(ref));
+            }
             area->DockNC(dock).Redirect(target, targetDock);
             // The map streams in map areas through attached areas, and the minimap expects
             // every attached area's map to be loaded.
             area->AddAttachedArea(target);
           }
+        }
+      }
+      // Rooms a moved door used to lead to aren't neighbors any more, unless another door still
+      // leads there. The map draws and frames the neighbors of the player's room, and with the
+      // map laid out again they can be far away.
+      for (int i = 0; i < leftBehind.size(); ++i) {
+        bool stillJoined = false;
+        for (int dock = 0; dock < area->GetDockCount() && !stillJoined; ++dock) {
+          const IGameArea::Dock& current = area->GetDock(dock);
+          for (int ref = 0; ref < current.GetDockRefs().size(); ++ref) {
+            stillJoined = stillJoined || current.GetConnectedAreaId(ref) == leftBehind[i];
+          }
+        }
+        if (!stillJoined) {
+          area->RemoveAttachedArea(leftBehind[i]);
         }
       }
     }
@@ -239,6 +260,7 @@ bool CWorld::CheckWorldComplete(CStateManager* mgr, TAreaId aid, CAssetId mreaId
     }
 #if defined(TARGET_PC)
     metaforce::merged::AppendForeignMapAreas(*mMapWorld->GetObject());
+    metaforce::maplayout::Build(*this);
 #endif
     if (mCurAreaId == kInvalidAreaId) {
       GetMapWorld()->SetWhichMapAreasLoaded(*this, 0, 9999);
@@ -314,6 +336,7 @@ CWorld::~CWorld() {
   CScriptRoomAcoustics::DisableAuxCallbacks();
 #if defined(TARGET_PC)
   metaforce::merged::ReleaseWorld(this);
+  metaforce::maplayout::Release(this);
 #endif
 }
 

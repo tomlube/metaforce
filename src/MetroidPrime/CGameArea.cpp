@@ -1213,6 +1213,16 @@ void CGameArea::AddAttachedArea(TAreaId area) {
   CMemoryDrawEnum::AddWorldMemory(sizeof(ushort));
 }
 
+void CGameArea::RemoveAttachedArea(TAreaId area) {
+  for (int i = 0; i < mAttachedAreaIndices.size(); ++i) {
+    if (mAttachedAreaIndices[i] == area.Value()) {
+      mAttachedAreaIndices.erase(mAttachedAreaIndices.begin() + i);
+      CMemoryDrawEnum::SubtractWorldMemory(sizeof(ushort));
+      return;
+    }
+  }
+}
+
 void IGameArea::Dock::Redirect(TAreaId area, int dock) {
   for (int i = 0; i < mDockReferences.size(); ++i) {
     mDockReferences[i].mArea = area;
