@@ -25,43 +25,71 @@ int sCapturedFrames = 0;
 float sMouseX = 0.f;
 float sMouseY = 0.f;
 
-// In beam command order: Power, Ice, Wave, Plasma.
-std::array< aurora::binding::ControlId, 4 > sBeamControls{};
-aurora::binding::State sBeamKeys;
+struct GameKey {
+  const char* name;
+  SDL_Scancode key;
+};
 
-void bind_beam_keys() {
-  constexpr std::array< const char*, 4 > kNames{
-      "metaforce.beam_power",
-      "metaforce.beam_ice",
-      "metaforce.beam_wave",
-      "metaforce.beam_plasma",
-  };
-  // Acquisition order on 1-4: Power, Wave, Ice, Plasma.
-  constexpr std::array< SDL_Scancode, 4 > kKeys{
-      SDL_SCANCODE_1,
-      SDL_SCANCODE_3,
-      SDL_SCANCODE_2,
-      SDL_SCANCODE_4,
-  };
+// In beam command order (kC_PowerBeam..kC_PlasmaBeam), on 1-4 in acquisition order: Power, Wave,
+// Ice, Plasma.
+constexpr std::array< GameKey, 4 > kBeamKeys{{
+    {"metaforce.beam_power", SDL_SCANCODE_1},
+    {"metaforce.beam_ice", SDL_SCANCODE_3},
+    {"metaforce.beam_wave", SDL_SCANCODE_2},
+    {"metaforce.beam_plasma", SDL_SCANCODE_4},
+}};
+// In visor command order (kC_XrayVisor..kC_NoVisor), on Z X C V as Combat, Scan, Thermal, X-Ray.
+constexpr std::array< GameKey, 4 > kVisorKeys{{
+    {"metaforce.visor_xray", SDL_SCANCODE_V},
+    {"metaforce.visor_thermal", SDL_SCANCODE_C},
+    {"metaforce.visor_scan", SDL_SCANCODE_X},
+    {"metaforce.visor_combat", SDL_SCANCODE_Z},
+}};
+
+std::array< aurora::binding::ControlId, 4 > sBeamControls{};
+std::array< aurora::binding::ControlId, 4 > sVisorControls{};
+aurora::binding::State sGameKeys;
+// Visors switch on a press, so presses are latched until the next frame's input takes them; a tap
+// shorter than a frame still counts.
+unsigned char sVisorPresses = 0;
+
+void add_game_keys(aurora::binding::BindingSet& set, const std::array< GameKey, 4 >& keys,
+                   std::array< aurora::binding::ControlId, 4 >& controls) {
   const auto keyboard = aurora::input::keyboard_source().id;
-  auto set = std::make_shared< aurora::binding::BindingSet >();
-  for (size_t i = 0; i < sBeamControls.size(); ++i) {
-    sBeamControls[i] = aurora::binding::register_control({
-        .name = kNames[i],
+  for (size_t i = 0; i < keys.size(); ++i) {
+    controls[i] = aurora::binding::register_control({
+        .name = keys[i].name,
         .kind = aurora::binding::ControlKind::Button,
     });
-    set->bindings.push_back({
+    set.bindings.push_back({
         .input = {.source = keyboard,
-                  .control = aurora::binding::PhysicalInput::Key{.scancode = kKeys[i]}},
-        .target = sBeamControls[i],
+                  .control = aurora::binding::PhysicalInput::Key{.scancode = keys[i].key}},
+        .target = controls[i],
     });
   }
-  (void)sBeamKeys.set_bindings(std::move(set));
+}
+
+void bind_game_keys() {
+  auto set = std::make_shared< aurora::binding::BindingSet >();
+  add_game_keys(*set, kBeamKeys, sBeamControls);
+  add_game_keys(*set, kVisorKeys, sVisorControls);
+  (void)sGameKeys.set_bindings(std::move(set));
 }
 
 aurora::input::EventResult on_game_event(const aurora::input::InputEvent& event, void*) {
   // Menus above take the keyboard while open; the router cancels held keys when they do.
-  (void)sBeamKeys.process(event);
+  const aurora::binding::MappingResult result = sGameKeys.process(event);
+  for (const auto& change : result.changes) {
+    if (change.reason != aurora::binding::ControlChange::Reason::Input || change.value < 0.5f ||
+        change.previousValue >= 0.5f) {
+      continue;
+    }
+    for (size_t i = 0; i < sVisorControls.size(); ++i) {
+      if (change.control == sVisorControls[i]) {
+        sVisorPresses |= 1 << i;
+      }
+    }
+  }
   if (sCaptureWanted && event.source.kind == aurora::input::InputSource::Kind::Mouse) {
     if (const auto* pointer = event.payload.get_if< aurora::input::InputEvent::PointerChanged >()) {
       if (pointer->phase == aurora::input::InputEvent::PointerChanged::Phase::Move) {
@@ -148,7 +176,7 @@ void InitializeGameInput() {
   if (sGameLayer != aurora::input::kInvalidLayerId) {
     return;
   }
-  bind_beam_keys();
+  bind_game_keys();
   // Above the PAD layer so it sees motion first, below RmlUi and ImGui so their menus take the
   // cursor back.
   sGameLayer = aurora::input::register_layer({
@@ -164,7 +192,8 @@ void ShutdownGameInput() {
     aurora::input::unregister_layer(sGameLayer);
     sGameLayer = aurora::input::kInvalidLayerId;
   }
-  (void)sBeamKeys.reset();
+  (void)sGameKeys.reset();
+  sVisorPresses = 0;
   sCaptureRequested = false;
   sCaptureWanted = false;
 }
@@ -173,11 +202,17 @@ unsigned char BeamKeysHeld() {
   unsigned char held = 0;
   for (size_t i = 0; i < sBeamControls.size(); ++i) {
     if (sBeamControls[i] != aurora::binding::kInvalidControlId &&
-        sBeamKeys.value(sBeamControls[i]) >= 0.5f) {
+        sGameKeys.value(sBeamControls[i]) >= 0.5f) {
       held |= 1 << i;
     }
   }
   return held;
+}
+
+unsigned char ConsumeVisorKeyPresses() {
+  const unsigned char presses = sVisorPresses;
+  sVisorPresses = 0;
+  return presses;
 }
 
 bool MouseLookEnabled() {

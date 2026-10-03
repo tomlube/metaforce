@@ -74,6 +74,14 @@ static bool BeamKeyHeld(ControlMapper::ECommands command, const CFinalInput& inp
   }
   return (input.BeamKeys() & (1 << (command - ControlMapper::kC_PowerBeam))) != 0;
 }
+
+// The keyboard's visor keys press their visor command. Visor changes read presses only.
+static bool VisorKeyPressed(ControlMapper::ECommands command, const CFinalInput& input) {
+  if (command < ControlMapper::kC_XrayVisor || command > ControlMapper::kC_NoVisor) {
+    return false;
+  }
+  return (input.VisorKeyPresses() & (1 << (command - ControlMapper::kC_XrayVisor))) != 0;
+}
 #endif
 
 const FAnalogInput ControlMapper::gAnalogInputs[] = {
@@ -381,6 +389,9 @@ bool ControlMapper::GetDigitalInput(ECommands command, const CFinalInput& input)
 bool ControlMapper::GetPressInput(ECommands command, const CFinalInput& input) {
 #if defined(TARGET_PC)
   if (gCommandFilterFlag[command]) {
+    if (VisorKeyPressed(command, input)) {
+      return true;
+    }
     const EFunctionList mapping = ::GetMapping(command, input);
     if (gPressInputs[mapping] != nullptr) {
       return (input.*gPressInputs[mapping])();

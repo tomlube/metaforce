@@ -27,11 +27,12 @@ bool CInputGenerator::Update(float dt, CArchitectureQueue& queue) {
 
   bool firstController = false;
 #if defined(TARGET_PC)
-  // Gameplay reads port 0, so the mouse and beam keys ride on whichever input lands there.
+  // Gameplay reads port 0, so the mouse and game keys ride on whichever input lands there.
   float mouseX;
   float mouseY;
   metaforce::input::ConsumeMouseDelta(mouseX, mouseY);
   const uchar beamKeys = metaforce::input::BeamKeysHeld();
+  const uchar visorKeys = metaforce::input::ConsumeVisorKeyPresses();
 #endif
   if (!mController.null()) {
     const int count = mController->GetDeviceCount();
@@ -48,6 +49,7 @@ bool CInputGenerator::Update(float dt, CArchitectureQueue& queue) {
           if (i == 0) {
             input.SetMouseDelta(mouseX, mouseY);
             input.SetBeamKeys(beamKeys);
+            input.SetVisorKeyPresses(visorKeys);
           }
 #else
           const CFinalInput input(i, dt, cont, mLeftDiv, mRightDiv);
@@ -72,6 +74,7 @@ bool CInputGenerator::Update(float dt, CArchitectureQueue& queue) {
     CFinalInput input(0, dt, *mContext);
     input.SetMouseDelta(mouseX, mouseY);
     input.SetBeamKeys(beamKeys);
+    input.SetVisorKeyPresses(visorKeys);
     const CArchitectureMessage msg = MakeMsg::CreateUserInput(kAMT_Game, input);
 #else
     const CArchitectureMessage msg = MakeMsg::CreateUserInput(kAMT_Game, CFinalInput(0, dt, *mContext));

@@ -33,6 +33,11 @@ void ShutdownGameInput();
 // (kC_PowerBeam, kC_IceBeam, kC_WaveBeam, kC_PlasmaBeam), set while the key is held.
 unsigned char BeamKeysHeld();
 
+// Z, X, C and V select Combat, Scan, Thermal and X-Ray. Bits follow the visor commands
+// (kC_XrayVisor, kC_ThermoVisor, kC_EnviroVisor, kC_NoVisor), set for keys pressed since the last
+// call. Called once per game frame when input is generated.
+unsigned char ConsumeVisorKeyPresses();
+
 // Mouse look builds on modern controls: the mouse turns Samus and pitches her view directly.
 bool MouseLookEnabled();
 // Captures the mouse for the next game frame. Gameplay calls this every frame it wants to look,

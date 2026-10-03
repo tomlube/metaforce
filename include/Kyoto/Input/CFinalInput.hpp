@@ -43,6 +43,7 @@ public:
   , mRightAsLeftX(other.mRightAsLeftX)
   , mRightAsLeftY(other.mRightAsLeftY)
   , mBeamKeys(other.mBeamKeys)
+  , mVisorKeyPresses(other.mVisorKeyPresses)
 #endif
   {
   }
@@ -72,6 +73,9 @@ public:
   // Held beam keys (Metaforce/Input.hpp BeamKeysHeld), one bit per beam command.
   uchar BeamKeys() const { return mBeamKeys; }
   void SetBeamKeys(uchar keys) { mBeamKeys = keys; }
+  // Visor keys pressed this frame (Metaforce/Input.hpp ConsumeVisorKeyPresses).
+  uchar VisorKeyPresses() const { return mVisorKeyPresses; }
+  void SetVisorKeyPresses(uchar presses) { mVisorKeyPresses = presses; }
 #endif
 
   float ALAUp() const { return mAnaLeftY > 0.f ? mAnaLeftY : 0.f; }
@@ -277,6 +281,7 @@ private:
   float mRightAsLeftX;
   float mRightAsLeftY;
   uchar mBeamKeys;
+  uchar mVisorKeyPresses;
 #endif
 };
 

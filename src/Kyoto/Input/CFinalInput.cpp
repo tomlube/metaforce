@@ -52,6 +52,7 @@ CFinalInput::CFinalInput()
 , mRightAsLeftX(0.f)
 , mRightAsLeftY(0.f)
 , mBeamKeys(0)
+, mVisorKeyPresses(0)
 #endif
 {
 }
@@ -102,6 +103,7 @@ CFinalInput::CFinalInput(int channel, float dt, const CControllerGamepadData& da
 , mRightAsLeftX(0.f)
 , mRightAsLeftY(0.f)
 , mBeamKeys(0)
+, mVisorKeyPresses(0)
 #endif
 {
   InitializeAnalog(leftDiv, rightDiv);
@@ -227,6 +229,7 @@ CFinalInput::CFinalInput(int channel, float dt, const COsContext& ctx)
 , mRightAsLeftX(0.f)
 , mRightAsLeftY(0.f)
 , mBeamKeys(0)
+, mVisorKeyPresses(0)
 #endif
 {
 }
