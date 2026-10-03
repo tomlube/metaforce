@@ -15,6 +15,10 @@
 #include "rstl/math.hpp"
 #include "dolphin/os.h"
 
+#if defined(TARGET_PC)
+#include "Metaforce/FusionBonus.hpp"
+#endif
+
 union SGameTime {
   double value;
   u64 bits;
@@ -42,7 +46,11 @@ CSystemState::CSystemState() : mNesState(static_cast< uchar >(0))
 , mHardModeBeat(false)
 , mFusionBeat(false)
 , mFusionSuitActive(false)
-, mAllItemsCollected(false) {}
+, mAllItemsCollected(false) {
+#if defined(TARGET_PC)
+  metaforce::fusion::InitSystemState(*this);
+#endif
+}
 
 CSystemState::CSystemState(CInputStream& in) : mNesState(static_cast< uchar >(0))
 , x68_(static_cast< uchar >(0))
@@ -76,6 +84,9 @@ CSystemState::CSystemState(CInputStream& in) : mNesState(static_cast< uchar >(0)
   mAutoMapperKeyState = in.ReadBits(2);
 #if VERSION >= VERSION_GM8P_00
   mLanguage = in.ReadBits(GetBitCount(7));
+#endif
+#if defined(TARGET_PC)
+  metaforce::fusion::InitSystemState(*this);
 #endif
 
   const rstl::vector< CMemoryCard::MemoryWorld >& worlds = gpMemoryCard->GetMemoryWorlds();

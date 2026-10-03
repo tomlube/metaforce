@@ -54,6 +54,7 @@ struct RuntimeConfig {
   struct Game {
     // metaforce::cutscenes::ESkipMode
     RuntimeVar< int > cutsceneSkips{0};
+    RuntimeVar< bool > fusionSuit{false};
   } game;
 
   struct Interface {

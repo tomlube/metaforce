@@ -1,6 +1,7 @@
 #include "Metaforce/UI/SettingsWindow.hpp"
 
 #include "Metaforce/Display.hpp"
+#include "Metaforce/FusionBonus.hpp"
 #include "Metaforce/GameOptionDefaults.hpp"
 #include "Metaforce/UI/ControllerConfigWindow.hpp"
 #include "Metaforce/UI/RuntimeConfig.hpp"
@@ -243,6 +244,18 @@ void add_game_tab(Pane& leftPane, Pane& rightPane) {
       "time too.<br/><br/><b>Any Cutscene</b>: Start also skips cutscenes the game never lets you "
       "skip. The screen fades out while the cutscene plays at high speed in the background, so "
       "the room ends up exactly as if you had watched it.");
+
+  leftPane.add_section("Suit");
+  config_bool_select(
+      leftPane, rightPane, GetRuntimeConfig().game.fusionSuit,
+      {
+          .key = "Fusion Suit",
+          .helpText = "Wear the Fusion Suit from Metroid Fusion, the bonus the original unlocked "
+                      "by linking a Game Boy Advance. It changes Samus's look only.<br/><br/>This "
+                      "applies to every file, starting the next time you start or load one. The "
+                      "Fusion Bonus screen on the title menu changes this setting too.",
+          .onChange = [](bool value) { fusion::SetSuitEnabled(value); },
+      });
 }
 
 void add_demo_tab(Window& window, Pane& leftPane, Pane& rightPane) {

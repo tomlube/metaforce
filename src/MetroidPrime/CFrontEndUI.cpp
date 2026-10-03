@@ -58,6 +58,7 @@
 
 #if defined(TARGET_PC)
 #include "Metaforce/Display.hpp"
+#include "Metaforce/FusionBonus.hpp"
 #endif
 
 struct FEMovie {
@@ -2021,7 +2022,12 @@ void CFrontEndUI::SFusionBonusFrame::DoSelectionChange(CGuiTableGroup* caller, i
   } else {
     CSfxManager::SfxStart(SFXfnt_enum_change, 0x7f, 0x40, false, CSfxManager::kMedPriority, false,
                           CSfxManager::kAllAreas);
+#if defined(TARGET_PC)
+    // Remember the choice as the Game tab's Fusion Suit setting.
+    metaforce::fusion::SetSuitEnabled(mTablegroup_fusionsuit->GetUserSelection() == 1);
+#else
     gpGameState->SystemState().SetHasFusion(mTablegroup_fusionsuit->GetUserSelection() == 1);
+#endif
     gpGameState->PlayerState()->SetIsFusionEnabled(mTablegroup_fusionsuit->GetUserSelection() ==
                                                    1);
   }

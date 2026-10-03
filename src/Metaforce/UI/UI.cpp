@@ -151,6 +151,7 @@ void LoadRuntimeConfig(const std::filesystem::path& userPath) {
 
   const json& game = section_of(root, "game");
   read_int(game, "cutsceneSkips", config.game.cutsceneSkips, 0, 2);
+  read_var(game, "fusionSuit", config.game.fusionSuit);
 
   const json& ui = section_of(root, "interface");
   read_int(ui, "scale", config.ui.scale, 50, 200);
@@ -187,6 +188,7 @@ void SaveRuntimeConfig() {
       {"game",
        {
            {"cutsceneSkips", config.game.cutsceneSkips.getValue()},
+           {"fusionSuit", config.game.fusionSuit.getValue()},
        }},
       {"interface",
        {
