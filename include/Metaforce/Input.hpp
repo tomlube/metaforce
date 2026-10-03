@@ -55,4 +55,8 @@ bool UncappedMouseTurnUnderR();
 // Aim assist bends shots toward the targeted enemy when not locked on.
 bool AimAssistEnabled();
 
+// The kiosk demo's dash: a sideways jump dashes whenever L orbits, even around an empty point with
+// nothing locked on. Retail only dashes while locked onto an object.
+bool UnlockedDash();
+
 } // namespace metaforce::input

@@ -146,9 +146,20 @@ void CPlayer::UpdateStepCameraZBias(float dt) {
   mStepCameraZBiasDirty = false;
 }
 
+// Retail only dashes while locked onto an object. The kiosk demo lacked this check, so any orbit
+// that reaches ComputeDash (an empty orbit point or a carcass too) could dash.
+static bool DashOrbitLost(CPlayer::EPlayerOrbitState orbitState) {
+#if defined(TARGET_PC)
+  if (metaforce::input::UnlockedDash()) {
+    return false;
+  }
+#endif
+  return orbitState != CPlayer::kOS_OrbitObject;
+}
+
 bool CPlayer::SidewaysDashAllowed(float strafeInput, float forwardInput, const CFinalInput& input,
                                   CStateManager& mgr) const {
-  if (mSlidingOnWall || mHitWall || mOrbitState != kOS_OrbitObject) {
+  if (mSlidingOnWall || mHitWall || DashOrbitLost(mOrbitState)) {
     return false;
   }
   if (gpTweakPlayer->GetDashOnButtonRelease()) {
@@ -220,7 +231,7 @@ void CPlayer::ComputeDash(const CFinalInput& input, float dt, CStateManager& mgr
   } else {
     mDashTimer += dt;
     if (mMovementState == NPlayer::kMS_OnGround || mDashTimer >= mDashDuration ||
-        GetPlayerIsSlidingOnWall() || mHitWall || mOrbitState != kOS_OrbitObject) {
+        GetPlayerIsSlidingOnWall() || mHitWall || DashOrbitLost(mOrbitState)) {
       FinishSidewaysDash();
       strafeVelocity *= strafeInput;
       CSfxManager::RemoveEmitter(mDashSfx);

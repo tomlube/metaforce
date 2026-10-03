@@ -148,6 +148,7 @@ void LoadRuntimeConfig(const std::filesystem::path& userPath) {
   read_var(input, "invertMouseY", config.input.invertMouseY);
   read_var(input, "uncappedMouseTurnUnderR", config.input.uncappedMouseTurnUnderR);
   read_var(input, "aimAssist", config.input.aimAssist);
+  read_var(input, "unlockedDash", config.input.unlockedDash);
 
   const json& ui = section_of(root, "interface");
   read_int(ui, "scale", config.ui.scale, 50, 200);
@@ -180,6 +181,7 @@ void SaveRuntimeConfig() {
            {"invertMouseY", config.input.invertMouseY.getValue()},
            {"uncappedMouseTurnUnderR", config.input.uncappedMouseTurnUnderR.getValue()},
            {"aimAssist", config.input.aimAssist.getValue()},
+           {"unlockedDash", config.input.unlockedDash.getValue()},
        }},
       {"interface",
        {
