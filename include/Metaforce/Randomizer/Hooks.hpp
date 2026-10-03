@@ -112,6 +112,13 @@ bool IsDoorTraversed(unsigned int worldId, unsigned int editorId);
 bool IsDockTraversed(unsigned int areaAssetId, int dock);
 int GetTraversedDockCount();
 
+// CResLoader: assets the door lock randomizer adds to the game, served as if they were in a pak.
+// GetCustomAssetType is the asset's FourCC, 0 for ids that aren't custom assets. GetCustomAsset
+// builds the asset on first use and keeps it; false when it can't be built (a texture file or
+// the model it's built from is missing).
+unsigned int GetCustomAssetType(unsigned int id);
+bool GetCustomAsset(unsigned int id, const unsigned char*& data, unsigned int& size);
+
 // CScriptPickup::Touch, after the item was given.
 void OnPickupCollected(CStateManager& mgr, int itemType);
 

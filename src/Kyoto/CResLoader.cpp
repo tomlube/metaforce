@@ -6,6 +6,34 @@
 
 static inline int align_size(const int size) { return (size + 31) & ~31; }
 
+#if defined(TARGET_PC)
+#include "Kyoto/CDvdRequest.hpp"
+#include "Metaforce/Randomizer/Hooks.hpp"
+
+#include <cstring>
+
+namespace {
+// Assets the randomizer adds, served before the paks are searched. They're already in memory,
+// so reading one finishes at once.
+class CFinishedDvdRequest : public CDvdRequest {
+public:
+  void WaitUntilComplete() override {}
+  bool IsComplete() override { return true; }
+  void PostCancelRequest() override {}
+  int GetMediaType() const override { return 0; }
+};
+
+bool IsCustomAsset(const CAssetId asset) {
+  return metaforce::randomizer::GetCustomAssetType(asset) != 0;
+}
+
+// The asset's data, or false for one that can't be built (which then doesn't exist).
+bool GetCustomAsset(const CAssetId asset, const uchar*& data, uint& size) {
+  return metaforce::randomizer::GetCustomAsset(asset, data, size);
+}
+} // namespace
+#endif
+
 CResLoader::CResLoader()
 : mCurPak(mPakLoadedList.end())
 , mCachedResId(kInvalidAssetId)
@@ -99,6 +127,13 @@ CPakFile* CResLoader::FindResource(const SObjectTag& tag) {
 }
 
 bool CResLoader::ResourceExists(CAssetId asset) {
+#if defined(TARGET_PC)
+  if (IsCustomAsset(asset)) {
+    const uchar* data;
+    uint size;
+    return GetCustomAsset(asset, data, size);
+  }
+#endif
   if (mCachedResId == asset) {
     return true;
   }
@@ -172,6 +207,13 @@ const SObjectTag* CResLoader::GetResourceIdByName(const char* name) const {
 }
 
 FourCC CResLoader::GetResourceTypeById(const CAssetId asset) const {
+#if defined(TARGET_PC)
+  if (IsCustomAsset(asset)) {
+    return const_cast< CResLoader& >(*this).ResourceExists(asset)
+               ? metaforce::randomizer::GetCustomAssetType(asset)
+               : 0;
+  }
+#endif
   if (const_cast< CResLoader& >(*this).ResourceExists(asset)) {
     return mCachedResInfo->GetType();
   }
@@ -188,6 +230,13 @@ bool CResLoader::ResourceExists(const SObjectTag& tag) const {
 }
 
 uint CResLoader::ResourceSize(const SObjectTag& tag) const {
+#if defined(TARGET_PC)
+  if (IsCustomAsset(tag.GetId())) {
+    const uchar* data;
+    uint size;
+    return GetCustomAsset(tag.GetId(), data, size) ? size : 0;
+  }
+#endif
   if (const_cast< CResLoader& >(*this).ResourceExists(tag.GetId())) {
     return mCachedResInfo->GetSize();
   }
@@ -196,6 +245,11 @@ uint CResLoader::ResourceSize(const SObjectTag& tag) const {
 }
 
 CResLoader::ECompressionType CResLoader::GetResourceCompression(const SObjectTag& tag) const {
+#if defined(TARGET_PC)
+  if (IsCustomAsset(tag.GetId())) {
+    return kCompressionType_Uncompressed;
+  }
+#endif
   if (const_cast< CResLoader& >(*this).ResourceExists(tag.GetId())) {
     return mCachedResInfo->IsCompressed() ? kCompressionType_Compressed
                                              : kCompressionType_Uncompressed;
@@ -205,6 +259,14 @@ CResLoader::ECompressionType CResLoader::GetResourceCompression(const SObjectTag
 }
 
 CDvdRequest* CResLoader::LoadResourceAsync(const SObjectTag& tag, char* extBuf) {
+#if defined(TARGET_PC)
+  const uchar* customData;
+  uint customSize;
+  if (IsCustomAsset(tag.GetId()) && GetCustomAsset(tag.GetId(), customData, customSize)) {
+    memcpy(extBuf, customData, customSize);
+    return rs_new CFinishedDvdRequest();
+  }
+#endif
   CPakFile* curPak = FindResourceForLoad(tag);
   const CPakFile::SResInfo* info = mCachedResInfo;
   return curPak->DvdFile().AsyncSeekRead(extBuf, align_size(info->GetSize()), kSO_Begin, info->GetOffset());
@@ -212,11 +274,31 @@ CDvdRequest* CResLoader::LoadResourceAsync(const SObjectTag& tag, char* extBuf) 
 
 CDvdRequest* CResLoader::LoadResourcePartAsync(const SObjectTag& tag, const int offset,
                                                const int length, char* extBuf) {
+#if defined(TARGET_PC)
+  const uchar* customData;
+  uint customSize;
+  if (IsCustomAsset(tag.GetId()) && GetCustomAsset(tag.GetId(), customData, customSize)) {
+    memcpy(extBuf, customData + offset, length);
+    return rs_new CFinishedDvdRequest();
+  }
+#endif
   CPakFile* curPak = FindResourceForLoad(tag);
   const CPakFile::SResInfo* info = mCachedResInfo;
   return curPak->DvdFile().AsyncSeekRead(extBuf, length, kSO_Begin, info->GetOffset() + offset);
 }
 CInputStream* CResLoader::LoadNewResourceSync(const SObjectTag& tag, char* extBuf) {
+#if defined(TARGET_PC)
+  const uchar* customData;
+  uint customSize;
+  if (IsCustomAsset(tag.GetId()) && GetCustomAsset(tag.GetId(), customData, customSize)) {
+    void* customDest =
+        extBuf ? extBuf : CMemory::Alloc(align_size(customSize), IAllocator::kHI_RoundUpLen);
+    memcpy(customDest, customData, customSize);
+    return rs_new CMemoryInStream(customDest, customSize,
+                                  extBuf == nullptr ? CMemoryInStream::kOS_Owned
+                                                    : CMemoryInStream::kOS_NotOwned);
+  }
+#endif
   CPakFile* curPak = FindResourceForLoad(tag);
   const CPakFile::SResInfo* info = mCachedResInfo;
   uint len = align_size(info->GetSize());
@@ -236,6 +318,13 @@ CInputStream* CResLoader::LoadNewResourceSync(const SObjectTag& tag, char* extBu
 }
 
 CInputStream* CResLoader::LoadResourceFromMemorySync(const SObjectTag& tag, const void* extBuf) {
+#if defined(TARGET_PC)
+  const uchar* customData;
+  uint customSize;
+  if (IsCustomAsset(tag.GetId()) && GetCustomAsset(tag.GetId(), customData, customSize)) {
+    return rs_new CMemoryInStream(extBuf, customSize);
+  }
+#endif
   FindResourceForLoad(tag);
   const CPakFile::SResInfo* info = mCachedResInfo;
   CInputStream* input = rs_new CMemoryInStream(extBuf, info->GetSize());
@@ -248,6 +337,18 @@ CInputStream* CResLoader::LoadResourceFromMemorySync(const SObjectTag& tag, cons
 }
 
 void CResLoader::LoadMemResourceSync(const SObjectTag& tag, char** bufOut, int* lenOut) {
+#if defined(TARGET_PC)
+  const uchar* customData;
+  uint customSize;
+  if (IsCustomAsset(tag.GetId()) && GetCustomAsset(tag.GetId(), customData, customSize)) {
+    char* customBuf =
+        static_cast< char* >(CMemory::Alloc(align_size(customSize), IAllocator::kHI_RoundUpLen));
+    memcpy(customBuf, customData, customSize);
+    *bufOut = customBuf;
+    *lenOut = customSize;
+    return;
+  }
+#endif
   CPakFile* curPak = FindResourceForLoad(tag);
   const CPakFile::SResInfo* info = mCachedResInfo;
   uint len = align_size(info->GetSize());
@@ -259,6 +360,17 @@ void CResLoader::LoadMemResourceSync(const SObjectTag& tag, char** bufOut, int* 
 
 CInputStream* CResLoader::LoadNewResourcePartSync(const SObjectTag& tag, int offset, int length,
                                                   char* extBuf) {
+#if defined(TARGET_PC)
+  const uchar* customData;
+  uint customSize;
+  if (IsCustomAsset(tag.GetId()) && GetCustomAsset(tag.GetId(), customData, customSize)) {
+    void* customDest = extBuf ? extBuf : CMemory::Alloc(length, IAllocator::kHI_RoundUpLen);
+    memcpy(customDest, customData + offset, length);
+    return rs_new CMemoryInStream(customDest, length,
+                                  extBuf == nullptr ? CMemoryInStream::kOS_Owned
+                                                    : CMemoryInStream::kOS_NotOwned);
+  }
+#endif
   CPakFile* curPak = FindResourceForLoad(tag);
   const CPakFile::SResInfo* info = mCachedResInfo;
 
