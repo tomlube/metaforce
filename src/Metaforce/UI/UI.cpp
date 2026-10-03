@@ -146,6 +146,7 @@ void LoadRuntimeConfig(const std::filesystem::path& userPath) {
   read_var(input, "mouseLook", config.input.mouseLook);
   read_int(input, "mouseSensitivity", config.input.mouseSensitivity, 5, 1000);
   read_var(input, "invertMouseY", config.input.invertMouseY);
+  read_var(input, "uncappedMouseTurnUnderR", config.input.uncappedMouseTurnUnderR);
   read_var(input, "aimAssist", config.input.aimAssist);
 
   const json& ui = section_of(root, "interface");
@@ -177,6 +178,7 @@ void SaveRuntimeConfig() {
            {"mouseLook", config.input.mouseLook.getValue()},
            {"mouseSensitivity", config.input.mouseSensitivity.getValue()},
            {"invertMouseY", config.input.invertMouseY.getValue()},
+           {"uncappedMouseTurnUnderR", config.input.uncappedMouseTurnUnderR.getValue()},
            {"aimAssist", config.input.aimAssist.getValue()},
        }},
       {"interface",

@@ -47,6 +47,7 @@ struct RuntimeConfig {
     // Percent of 0.044 degrees per mouse count (sensitivity 2 in Source and Quake games).
     RuntimeVar< int > mouseSensitivity{100};
     RuntimeVar< bool > invertMouseY{false};
+    RuntimeVar< bool > uncappedMouseTurnUnderR{true};
     RuntimeVar< bool > aimAssist{true};
   } input;
 

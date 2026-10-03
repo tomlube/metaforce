@@ -543,6 +543,22 @@ SettingsWindow::SettingsWindow() {
                 },
         });
     config_bool_select(
+        leftPane, rightPane, GetRuntimeConfig().input.uncappedMouseTurnUnderR,
+        {
+            .key = "Uncapped Mouse Turn Under R",
+            .helpText =
+                "Holding R (free look) gives movement back to the original game's free look "
+                "physics: forward pushes, back brakes, no strafing, and Samus stops on the "
+                "ground.<br/><br/>On, the mouse keeps turning Samus directly while R is held. "
+                "Off, it turns like the original control stick, building up to the original "
+                "turn speed and no faster.",
+            .isDisabled =
+                [] {
+                  const auto& input = GetRuntimeConfig().input;
+                  return !input.modernControls.getValue() || !input.mouseLook.getValue();
+                },
+        });
+    config_bool_select(
         leftPane, rightPane, GetRuntimeConfig().input.aimAssist,
         {
             .key = "Aim Assist",

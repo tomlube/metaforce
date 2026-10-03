@@ -248,6 +248,10 @@ float MouseRadiansPerCount() {
 
 bool InvertMouseY() { return ui::GetRuntimeConfig().input.invertMouseY.getValue(); }
 
+bool UncappedMouseTurnUnderR() {
+  return ui::GetRuntimeConfig().input.uncappedMouseTurnUnderR.getValue();
+}
+
 bool SquareDiagonalLook() { return ui::GetRuntimeConfig().input.squareDiagonalLook.getValue(); }
 
 bool AimAssistEnabled() { return ui::GetRuntimeConfig().input.aimAssist.getValue(); }

@@ -48,6 +48,9 @@ void RequestMouseCapture();
 void ConsumeMouseDelta(float& x, float& y);
 float MouseRadiansPerCount();
 bool InvertMouseY();
+// Holding R gives the left stick back its original free look movement. On, the mouse still
+// turns Samus outright meanwhile; off, it turns as a stick would, capped at the original turn speed.
+bool UncappedMouseTurnUnderR();
 
 // Aim assist bends shots toward the targeted enemy when not locked on.
 bool AimAssistEnabled();

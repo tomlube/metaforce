@@ -319,7 +319,7 @@ public:
 #if defined(TARGET_PC)
   // Modern controls (Metaforce/Input.hpp) outside of orbit: the left stick strafes as well as
   // moving forward and back, and the right stick turns. Holding R hands movement back to the
-  // original free look physics, with the mouse turning as a stick would.
+  // original free look physics; the mouse turns outright or, uncapped turn off, as a stick would.
   bool UseModernMovement() const;
   bool UseModernFreeLookMovement() const;
   float ModernStrafeInput(const CFinalInput& input) const;

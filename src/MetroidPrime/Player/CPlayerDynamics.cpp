@@ -605,7 +605,7 @@ void CPlayer::UpdateModernLook(const CFinalInput& input, float dt, CStateManager
 
     // The mouse turns Samus outright. Stick turning still builds up through ComputeMovement.
     const float yaw = -input.MouseDeltaX() * radiansPerCount;
-    if (UseModernFreeLookMovement()) {
+    if (UseModernFreeLookMovement() && !metaforce::input::UncappedMouseTurnUnderR()) {
       // Under R the mouse turns as a stick would: as a share of the top turn speed ComputeMovement
       // allows, building up and capped the same way. Motion past a full push is lost.
       float turnSpeedMultiplier = gpTweakPlayer->GetTurnSpeedMultiplier();
