@@ -13,6 +13,7 @@
 #include "Metaforce/SaveAnywhere.hpp"
 #include "Metaforce/UI/RuntimeConfig.hpp"
 #include "Metaforce/UI/UI.hpp"
+#include "Metaforce/Version.hpp"
 #include "MetroidPrime/CArchitectureMessage.hpp"
 #include "MetroidPrime/CMain.hpp"
 #include "MetroidPrime/CMemoryCard.hpp"
@@ -47,6 +48,7 @@
 #include <SDL3/SDL_keycode.h>
 #include <SDL3/SDL_timer.h>
 #include <dolphin/pad.h>
+#include <dolphin/vi.h>
 
 #if defined(_WIN32)
 #ifndef NOMINMAX
@@ -502,6 +504,8 @@ int Initialize(int argc, char** argv) {
       .logLevel = borealis::log::to_aurora_level(logOptions.level),
   };
   const auto auroraInfo = aurora_initialize(argc, argv, &config);
+  VISetWindowTitle(
+      fmt::format("{} {}", AppInfo.appName, VersionAndBuildTimeText()).c_str());
 
   // Open the disc after the window exists so we can fall back to a file dialog.
   auto discPath = args["dvd"].as< std::string >();
