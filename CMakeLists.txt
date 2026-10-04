@@ -788,6 +788,9 @@ if (WIN32)
     if (MSVC)
         # metaforce.rc embeds the manifest
         target_link_options(metaforce PRIVATE /MANIFEST:NO)
+        # Record only the PDB's file name in the executable, not its path on the build machine,
+        # so debuggers and symbolizers find metaforce.pdb next to metaforce.exe anywhere.
+        target_link_options(metaforce PRIVATE "/PDBALTPATH:%_PDB%")
     endif ()
 endif ()
 
