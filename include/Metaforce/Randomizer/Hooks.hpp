@@ -99,6 +99,10 @@ int GetScriptTimerSpawns(unsigned int worldId, unsigned int areaAssetId,
 // one that takes Samus's upgrades after the frigate) would take them away again.
 bool AllowSpawnPointInventoryReset();
 
+// CHintOptions::Update and CAutoMapper: false turns the hint system off. Its hints follow the
+// vanilla item route, which means nothing in a randomized game, and the Z prompt can softlock.
+bool AllowHintSystem();
+
 // DockPortals::OnPlayerCrossedDock, whenever the player walks through dock `dock` of `area`:
 // marks the doors on both sides of it as gone through.
 void OnPlayerCrossedDock(CStateManager& mgr, int area, int dock);

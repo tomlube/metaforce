@@ -1329,6 +1329,10 @@ void CAutoMapper::Draw(const CStateManager& mgr, const CTransform4f& xf, float a
 }
 
 CAssetId CAutoMapper::GetAreaHintDescriptionString(CAssetId mreaId) {
+#if defined(TARGET_PC)
+  if (!metaforce::randomizer::AllowHintSystem())
+    return kInvalidAssetId;
+#endif
   const CHintOptions& hintOpts = gpGameState->HintOptions();
   const rstl::vector< SHintState >& hintStates = hintOpts.GetHintStates();
   for (int i = 0; i < static_cast< int >(hintStates.size()); ++i) {

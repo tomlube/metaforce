@@ -923,6 +923,8 @@ bool StripPickupInputLocks() { return S().active.has_value(); }
 
 bool AllowSpawnPointInventoryReset() { return !S().active; }
 
+bool AllowHintSystem() { return !S().active; }
+
 bool AllowLayerChange(unsigned int areaSaveId, unsigned int layer) {
   return !S().active || areaSaveId != kArtifactTempleSaveId ||
          layer < static_cast< unsigned int >(kFirstArtifactLayer) ||

@@ -11,6 +11,10 @@
 #include "Kyoto/Streams/COutputStream.hpp"
 #include "rstl/math.hpp"
 
+#if defined(TARGET_PC)
+#include "Metaforce/Randomizer/Hooks.hpp"
+#endif
+
 const float CGameHintInfo::skHintTextTime = 3.f;
 
 uint CHintOptions::GetBitCount(uint value) {
@@ -118,6 +122,12 @@ void CHintOptions::InitializeMemoryState() {
 
 void CHintOptions::Update(float dt, const CStateManager& mgr) {
   mNextHintIdx = -1;
+#if defined(TARGET_PC)
+  // No hint timers advance and none is ever current, so nothing pops up or asks for Z.
+  if (!metaforce::randomizer::AllowHintSystem()) {
+    return;
+  }
+#endif
   for (int i = 0; i < mHintStates.size(); ++i) {
     SHintState& state = mHintStates[i];
     const CGameHintInfo::CGameHint& hint = gpMemoryCard->GetHints()[i];
