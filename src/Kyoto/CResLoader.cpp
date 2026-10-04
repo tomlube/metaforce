@@ -10,9 +10,19 @@ static inline int align_size(const int size) { return (size + 31) & ~31; }
 #include "Kyoto/CDvdRequest.hpp"
 #include "Metaforce/Randomizer/Hooks.hpp"
 
+#include <borealis/log.hpp>
+
 #include <cstring>
 
 namespace {
+constexpr borealis::Log ResLoaderLog{"ResLoader"};
+
+// A resource no pak has. The pak lookup that follows crashes, so say which one it was first.
+void ReportMissingResource(const SObjectTag& tag) {
+  ResLoaderLog.error("Resource 0x{:08X} {} is in no loaded pak", tag.GetId(),
+                     SObjectTag::Type2Text(tag.GetType()));
+}
+
 // Assets the randomizer adds, served before the paks are searched. They're already in memory,
 // so reading one finishes at once.
 class CFinishedDvdRequest : public CDvdRequest {
@@ -268,6 +278,11 @@ CDvdRequest* CResLoader::LoadResourceAsync(const SObjectTag& tag, char* extBuf) 
   }
 #endif
   CPakFile* curPak = FindResourceForLoad(tag);
+#if defined(TARGET_PC)
+  if (curPak == nullptr) {
+    ReportMissingResource(tag);
+  }
+#endif
   const CPakFile::SResInfo* info = mCachedResInfo;
   return curPak->DvdFile().AsyncSeekRead(extBuf, align_size(info->GetSize()), kSO_Begin, info->GetOffset());
 }
@@ -300,6 +315,11 @@ CInputStream* CResLoader::LoadNewResourceSync(const SObjectTag& tag, char* extBu
   }
 #endif
   CPakFile* curPak = FindResourceForLoad(tag);
+#if defined(TARGET_PC)
+  if (curPak == nullptr) {
+    ReportMissingResource(tag);
+  }
+#endif
   const CPakFile::SResInfo* info = mCachedResInfo;
   uint len = align_size(info->GetSize());
   void* dest = extBuf ? extBuf : CMemory::Alloc(len, IAllocator::kHI_RoundUpLen);

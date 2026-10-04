@@ -29,15 +29,14 @@ TEST_DOORS = {
     ("Chozo Ruins", "Main Plaza", 1): ("Super Missile", "Super Missile", "Super Missile blast shield"),
     # Dock 2 keeps its missile blast shield: the game's own is replaced by randomprime's
     ("Chozo Ruins", "Main Plaza", 3): ("Charge Beam", "Charge Beam", "Charge Beam blast shield"),
-    ("Chozo Ruins", "Main Plaza", 4): ("Wavebuster", "Wavebuster", "Wavebuster blast shield on the locked door (special shield actor)"),
     # The rooms next to it
     ("Chozo Ruins", "Ruined Fountain Access", 0): ("Power Beam Only", "", "Power Beam Only door (behind the Power Bomb shield)"),
-    ("Chozo Ruins", "Ruined Fountain Access", 1): ("Ice Spreader", "Ice Spreader", "Ice Spreader blast shield"),
+    ("Chozo Ruins", "Ruined Fountain Access", 1): ("Wavebuster", "Wavebuster", "Wavebuster blast shield"),
     ("Chozo Ruins", "Ruins Entrance", 0): ("Ice Beam", "", "Ice door (behind the Super Missile shield)"),
     ("Chozo Ruins", "Ruins Entrance", 1): ("Bomb", "Bomb", "Bomb blast shield (no lock-on)"),
     ("Chozo Ruins", "Nursery Access", 0): ("Flamethrower", "Flamethrower", "Flamethrower blast shield"),
     ("Chozo Ruins", "Nursery Access", 1): ("Plasma Beam", "", "Plasma door (behind the Charge Beam shield)"),
-    ("Chozo Ruins", "Ruined Shrine Access", 0): ("Wave Beam", "", "Wave door"),
+    ("Chozo Ruins", "Ruined Shrine Access", 0): ("Ice Spreader", "Ice Spreader", "Ice Spreader blast shield"),
     ("Chozo Ruins", "Ruined Fountain", 0): ("Super Missile", "", "Super Missile door color, no blast shield"),
     ("Chozo Ruins", "Ruined Fountain", 2): ("Disabled", "", "Permanently locked door"),
     # Special cases, a warp away

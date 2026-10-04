@@ -24,6 +24,7 @@
 #include "Kyoto/Graphics/CCubeSurface.hpp"
 #include "Metaforce/CModelSectionReader.hpp"
 #include "Metaforce/Endian.hpp"
+#include "Metaforce/Randomizer/Hooks.hpp"
 #include <borealis/log.hpp>
 
 namespace {
@@ -597,6 +598,10 @@ void CGameArea::LoadScriptObjects(CStateManager& mgr) {
       mgr.LoadScriptObjects(GetId(), stream, ids);
     }
   }
+#if defined(TARGET_PC)
+  // Once every layer is in, so the door objects it looks for are all there.
+  metaforce::randomizer::SpawnDoorLocks(mgr, GetId().Value());
+#endif
   mgr.InitScriptObjects(ids);
 }
 

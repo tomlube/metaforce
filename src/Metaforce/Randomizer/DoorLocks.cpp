@@ -69,7 +69,22 @@ uint64_t ObjectKey(uint32_t world, uint32_t editorId) {
 struct DoorStyle {
   DoorColor color;
   bool vertical;
+  // The door's dock and whether it has a blast shield. Like the lock's requirements say, the
+  // door behind a blast shield is a blue door once the shield is gone.
+  uint32_t mrea;
+  int dock;
+  bool blastShield;
 };
+
+DoorColor CurrentColor(const DoorStyle& style) {
+  return style.blastShield && IsBlastShieldDestroyed(style.mrea, style.dock) ? DoorColor::Blue
+                                                                            : style.color;
+}
+
+uint32_t ShieldModel(DoorColor color, bool vertical) {
+  const DoorColorStyle& style = GetDoorColorStyle(color);
+  return vertical ? style.verticalShieldModel : style.shieldModel;
+}
 
 struct State {
   bool active = false;
@@ -227,7 +242,8 @@ class CDoorLockShield : public CEntity {
 public:
   CDoorLockShield(TUniqueId uid, const CEntityInfo& info, uint32_t mrea, int dock,
                   const CVector3f& position, TUniqueId actor, TUniqueId trigger, TUniqueId scan,
-                  TUniqueId jingle, TUniqueId door, const TUniqueId (&forces)[2])
+                  TUniqueId jingle, TUniqueId door, const TUniqueId (&forces)[2],
+                  const TUniqueId (&doorShields)[2], bool vertical)
   : CEntity(uid, info, true, rstl::string_l("Randomizer Blast Shield"))
   , mMrea(mrea)
   , mDock(dock)
@@ -236,9 +252,12 @@ public:
   , mTrigger(trigger)
   , mScan(scan)
   , mJingle(jingle)
-  , mDoor(door) {
+  , mDoor(door)
+  , mVertical(vertical) {
     mForces[0] = forces[0];
     mForces[1] = forces[1];
+    mDoorShields[0] = doorShields[0];
+    mDoorShields[1] = doorShields[1];
   }
 
 #ifndef HAS_TYPES_MATCH
@@ -285,6 +304,27 @@ private:
       }
     }
     SendToForces(kSM_Decrement, mgr);
+    TurnDoorBlue(mgr);
+  }
+
+  // The door now opens like a blue door. Its triggers keep their old textures until the room
+  // is loaded again.
+  void TurnDoorBlue(CStateManager& mgr) {
+    const CDamageVulnerability blue = MakeVulnerability(DoorColor::Blue);
+    for (const TUniqueId force : mForces) {
+      if (CScriptDamageableTrigger* trigger =
+              dynamic_cast< CScriptDamageableTrigger* >(mgr.ObjectById(force))) {
+        trigger->SetDamageVulnerability(blue);
+      }
+    }
+    const uint32_t model = ShieldModel(DoorColor::Blue, mVertical);
+    for (const TUniqueId id : mDoorShields) {
+      if (CActor* shield = TCastToPtr< CActor >(mgr.ObjectById(id))) {
+        if (shield->GetModelData() != nullptr) {
+          shield->SetModelData(CModelData(CStaticRes(model, shield->GetModelData()->GetScale())));
+        }
+      }
+    }
   }
 
   void Break(CStateManager& mgr) {
@@ -314,6 +354,8 @@ private:
   TUniqueId mJingle;
   TUniqueId mDoor;
   TUniqueId mForces[2];
+  TUniqueId mDoorShields[2];
+  bool mVertical;
   bool mPrimed = false;
   bool mDone = false;
 };
@@ -332,8 +374,12 @@ void SpawnBlastShield(CStateManager& mgr, TAreaId area, uint32_t mrea, int dock,
     Log.warn("No door to put a blast shield on at dock {} of room {:08X}", dock, mrea);
     return;
   }
-  const CActor* shieldActor =
-      TCastToConstPtr< CActor >(mgr.GetObjectById(FindLoadedObject(mgr, area, door->shields[0])));
+  const CActor* shieldActor = nullptr;
+  for (const uint32_t id : door->shields) {
+    if (shieldActor == nullptr) {
+      shieldActor = TCastToConstPtr< CActor >(mgr.GetObjectById(FindLoadedObject(mgr, area, id)));
+    }
+  }
   if (shieldActor == nullptr) {
     Log.warn("No shield actor for the blast shield at dock {} of room {:08X}", dock, mrea);
     return;
@@ -361,8 +407,9 @@ void SpawnBlastShield(CStateManager& mgr, TAreaId area, uint32_t mrea, int dock,
                                 0);
   const CActorParameters actorParms(
       lights, CScannableParameters(kInvalidAssetId),
-      rstl::pair< CAssetId, CAssetId >(kInvalidAssetId, kInvalidAssetId),
-      rstl::pair< CAssetId, CAssetId >(kInvalidAssetId, kInvalidAssetId), visor, true, false,
+      // No X-ray or thermal models: CActor takes 0 for none.
+      rstl::pair< CAssetId, CAssetId >(0, 0), rstl::pair< CAssetId, CAssetId >(0, 0), visor, true,
+      false,
       false, false, 1.f, 1.f, 1.f);
   CScriptActor* actor = rs_new CScriptActor(
       mgr.AllocateUniqueId(), rstl::string_l("Randomizer Blast Shield Model"), info, xf, model,
@@ -397,10 +444,13 @@ void SpawnBlastShield(CStateManager& mgr, TAreaId area, uint32_t mrea, int dock,
 
   const TUniqueId forces[2] = {FindLoadedObject(mgr, area, door->forces[0]),
                                FindLoadedObject(mgr, area, door->forces[1])};
+  const TUniqueId doorShields[2] = {FindLoadedObject(mgr, area, door->shields[0]),
+                                    FindLoadedObject(mgr, area, door->shields[1])};
   mgr.AddObject(rs_new CDoorLockShield(mgr.AllocateUniqueId(), info, mrea, dock,
                                        placement->position, actor->GetUniqueId(),
                                        trigger->GetUniqueId(), scan, jingle->GetUniqueId(),
-                                       FindLoadedObject(mgr, area, door->door), forces));
+                                       FindLoadedObject(mgr, area, door->door), forces,
+                                       doorShields, door->vertical));
 }
 
 // The map icon type for a door color, keeping the floor and ceiling variants the game has for
@@ -481,7 +531,7 @@ void Activate(const Seed& seed) {
       Log.warn("Can't restyle {} as a {} door", lock.name, lock.shield);
       continue;
     }
-    const DoorStyle style{color, door->vertical};
+    const DoorStyle style{color, door->vertical, lock.area, lock.dock, !lock.blastShield.empty()};
     s.doors[ObjectKey(lock.world, door->door)] = style;
     for (const uint32_t id : door->shields) {
       if (id != 0) {
@@ -521,8 +571,7 @@ bool GetDoorShieldModel(unsigned int worldId, unsigned int editorId, unsigned in
   if (style == nullptr) {
     return false;
   }
-  const DoorColorStyle& color = GetDoorColorStyle(style->color);
-  const uint32_t shieldModel = style->vertical ? color.verticalShieldModel : color.shieldModel;
+  const uint32_t shieldModel = ShieldModel(CurrentColor(*style), style->vertical);
   if (!IsAvailable(shieldModel)) {
     return false;
   }
@@ -543,8 +592,9 @@ bool GetDoorForceOverride(unsigned int worldId, unsigned int editorId, DoorForce
   if (style == nullptr) {
     return false;
   }
-  const DoorColorStyle& color = GetDoorColorStyle(style->color);
-  out.vulnerability = S().vulnerabilities[static_cast< size_t >(style->color)].data();
+  const DoorColor current = CurrentColor(*style);
+  const DoorColorStyle& color = GetDoorColorStyle(current);
+  out.vulnerability = S().vulnerabilities[static_cast< size_t >(current)].data();
   out.vulnerabilitySize = kVulnerabilitySize;
   out.texturesChanged =
       IsAvailable(color.pattern0) && IsAvailable(color.pattern1) && IsAvailable(color.color);
@@ -579,7 +629,7 @@ bool GetDoorMapType(unsigned int worldId, unsigned int editorId, int& type) {
   if (!s.active || it == s.doors.end()) {
     return false;
   }
-  type = MapType(GetDoorColorStyle(it->second.color).map, type);
+  type = MapType(GetDoorColorStyle(CurrentColor(it->second)).map, type);
   return true;
 }
 

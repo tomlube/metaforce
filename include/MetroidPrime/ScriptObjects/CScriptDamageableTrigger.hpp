@@ -38,6 +38,10 @@ public:
   CHealthInfo* HealthInfo(CStateManager&) override;
   void Think(float, CStateManager&) override;
   rstl::optional_object< CAABox > GetTouchBounds() const override;
+#if defined(TARGET_PC)
+  // Door lock randomizer: a door turns blue once its blast shield is gone.
+  void SetDamageVulnerability(const CDamageVulnerability& vuln) { mDVuln = vuln; }
+#endif
 
 private:
   CFrustumPlanes mFrustum;
