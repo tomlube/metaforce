@@ -223,6 +223,18 @@ void CMapWorld::SetWhichMapAreasLoaded(const IWorld& wld, int start, int count) 
   rstl::vector< CMapAreaBFSInfo > bfsInfos;
   bfsInfos.reserve(mAreas.size());
   DoBFS(wld, start, count, 9999.f, 9999.f, false, bfsInfos);
+#if defined(TARGET_PC)
+  // Room randomizer: moved doors can leave rooms out of reach of the one the walk starts from.
+  // When the whole world is asked for, take the walk up again from every room it missed, so the
+  // map of the room the player is in isn't let go of.
+  if (count >= mAreas.size()) {
+    for (int i = 0; i < mAreas.size(); ++i) {
+      if (!mTraversed[i]) {
+        DoBFS(wld, i, count, 9999.f, 9999.f, false, bfsInfos);
+      }
+    }
+  }
+#endif
   for (int i = 0; i < 2; ++i) {
     CMapAreaData* data = mListHeads[i == 0 ? kMAL_Loaded : kMAL_Loading];
     while (data != nullptr) {
