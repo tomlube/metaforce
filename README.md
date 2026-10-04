@@ -1,7 +1,7 @@
-## Metaforce [![Build Status]][actions] [![Discord Badge]][discord]
+** THIS BUILD IS AN UNOFFICIAL PROOF OF CONCEPT. IT CURRENTLY USES GPL3.0 LICENSING BUT AS A PERSONAL FORK DOES NOT REPRESENT THE OFFICIAL METAFORCE REPO**
 
-[Build Status]: https://github.com/AxioDL/metaforce/actions/workflows/build.yml/badge.svg
-[actions]: https://github.com/AxioDL/metaforce/actions
+## Metaforce [![Discord Badge]][discord]
+
 [Discord Badge]: https://dcbadge.limes.pink/api/server/AMBVFuf?style=flat
 [discord]: https://discord.gg/AMBVFuf
 
