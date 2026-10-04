@@ -76,9 +76,36 @@ struct DoorStyle {
   bool blastShield;
 };
 
+// Colors of locks rather than doors: randomprime gives the door behind a blast shield the
+// shield's color, but in Randovania's logic that door opens like a blue one. They're only shown
+// while the blast shield stands, and the door always takes shots like a blue one.
+bool IsLockColor(DoorColor color) {
+  switch (color) {
+  case DoorColor::PowerBomb:
+  case DoorColor::Bomb:
+  case DoorColor::Missile:
+  case DoorColor::Charge:
+  case DoorColor::Super:
+  case DoorColor::Wavebuster:
+  case DoorColor::IceSpreader:
+  case DoorColor::Flamethrower:
+    return true;
+  default:
+    return false;
+  }
+}
+
+// The color the door shows now.
 DoorColor CurrentColor(const DoorStyle& style) {
-  return style.blastShield && IsBlastShieldDestroyed(style.mrea, style.dock) ? DoorColor::Blue
-                                                                            : style.color;
+  if (style.blastShield && IsBlastShieldDestroyed(style.mrea, style.dock)) {
+    return DoorColor::Blue;
+  }
+  return IsLockColor(style.color) && !style.blastShield ? DoorColor::Blue : style.color;
+}
+
+// The color whose vulnerability the door takes.
+DoorColor VulnerabilityColor(DoorColor shown) {
+  return IsLockColor(shown) ? DoorColor::Blue : shown;
 }
 
 uint32_t ShieldModel(DoorColor color, bool vertical) {
@@ -594,7 +621,8 @@ bool GetDoorForceOverride(unsigned int worldId, unsigned int editorId, DoorForce
   }
   const DoorColor current = CurrentColor(*style);
   const DoorColorStyle& color = GetDoorColorStyle(current);
-  out.vulnerability = S().vulnerabilities[static_cast< size_t >(current)].data();
+  out.vulnerability =
+      S().vulnerabilities[static_cast< size_t >(VulnerabilityColor(current))].data();
   out.vulnerabilitySize = kVulnerabilitySize;
   out.texturesChanged =
       IsAvailable(color.pattern0) && IsAvailable(color.pattern1) && IsAvailable(color.color);

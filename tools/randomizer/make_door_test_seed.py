@@ -37,7 +37,7 @@ TEST_DOORS = {
     ("Chozo Ruins", "Nursery Access", 0): ("Flamethrower", "Flamethrower", "Flamethrower blast shield"),
     ("Chozo Ruins", "Nursery Access", 1): ("Plasma Beam", "", "Plasma door (behind the Charge Beam shield)"),
     ("Chozo Ruins", "Ruined Shrine Access", 0): ("Ice Spreader", "Ice Spreader", "Ice Spreader blast shield"),
-    ("Chozo Ruins", "Ruined Fountain", 0): ("Super Missile", "", "Super Missile door color, no blast shield"),
+    ("Chozo Ruins", "Ruined Fountain", 0): ("Super Missile", "", "lock color with no blast shield: should look and open like a blue door"),
     ("Chozo Ruins", "Ruined Fountain", 2): ("Disabled", "", "Permanently locked door"),
     # Special cases, a warp away
     ("Chozo Ruins", "Hive Totem", 0): ("Super Missile", "Super Missile", "tilted door (Hive Totem west case)"),
