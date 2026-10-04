@@ -79,6 +79,9 @@ struct Seed {
   // Which way the player faces at the start, in radians about the Z axis (0 faces +Y). Unset
   // keeps the facing of the area's own spawn point.
   std::optional< float > startYaw;
+  // A start at a door: the game puts the player just inside dock `startDock` of the start area,
+  // from the door's own geometry, and startPosition is only the fallback. -1 for other starts.
+  int startDock = -1;
   // The start was picked at random, so the UI keeps it a surprise.
   bool randomStart = false;
 

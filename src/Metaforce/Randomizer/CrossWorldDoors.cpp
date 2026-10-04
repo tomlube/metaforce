@@ -5,9 +5,13 @@
 #include "Metaforce/Randomizer/Randomizer.hpp"
 #include "Metaforce/Warp.hpp"
 
+#include "Collision/CMaterialFilter.hpp"
+#include "Collision/CMaterialList.hpp"
+#include "Collision/CRayCastResult.hpp"
 #include "Kyoto/Math/CTransform4f.hpp"
 #include "Kyoto/Math/CVector3f.hpp"
 #include "MetroidPrime/CGameArea.hpp"
+#include "MetroidPrime/CGameCollision.hpp"
 #include "MetroidPrime/CStateManager.hpp"
 #include "MetroidPrime/CWorld.hpp"
 #include "MetroidPrime/Cameras/CCameraFilterPass.hpp"
@@ -47,6 +51,10 @@ constexpr float kBallArrivalHeight = 0.5f;
 constexpr float kCeilingArrivalDrop = 3.f;
 // On top of a (closed) door in a floor.
 constexpr float kFloorArrivalHeight = 0.5f;
+// Finding the floor in front of a wall door: the ray starts this far under the top of the
+// doorway and looks this far below its bottom edge.
+constexpr float kFloorProbeMargin = 0.1f;
+constexpr float kFloorProbeDepth = 4.f;
 
 constexpr CStateManager::ECameraFilterStage kFadeStage = CStateManager::kCFS_Seven;
 
@@ -245,6 +253,44 @@ void FinishLeaving() {
 
 } // namespace
 
+std::optional< CTransform4f > DockArrivalTransform(const CStateManager& mgr,
+                                                   const CGameArea& area, int dock,
+                                                   bool morphBall, float yaw) {
+  DockFrame frame;
+  if (!GetDockFrame(area, dock, frame)) {
+    return std::nullopt;
+  }
+  CVector3f spawn = frame.center;
+  CVector3f facing(-std::sin(yaw), std::cos(yaw), 0.f);
+  if (frame.normal.GetZ() >= 0.7f) {
+    // A door in the ceiling: drop in below it.
+    spawn.SetZ(frame.center.GetZ() - kCeilingArrivalDrop);
+  } else if (frame.normal.GetZ() <= -0.7f) {
+    // A door in the floor: come up and stand on it, closed.
+    spawn.SetZ(frame.center.GetZ() + kFloorArrivalHeight);
+  } else {
+    CVector3f inward = -frame.normal;
+    inward.SetZ(0.f);
+    inward = inward.AsNormalized();
+    const float depth = morphBall ? kBallArrivalDepth : kArrivalDepth;
+    const float height = morphBall ? kBallArrivalHeight : kArrivalHeight;
+    spawn = frame.center + inward * depth;
+    spawn.SetZ(std::min(frame.bottom + height, frame.center.GetZ()));
+    // The floor past the door needn't be level with it (Tallon's Transport Tunnel B climbs
+    // right away), so stand on whatever floor is there, looking down from the top of the door.
+    const float top = 2.f * frame.center.GetZ() - frame.bottom - kFloorProbeMargin;
+    const CVector3f probe(spawn.GetX(), spawn.GetY(), top);
+    const CRayCastResult floor = CGameCollision::RayStaticIntersection(
+        mgr, probe, CVector3f::Down(), top - frame.bottom + kFloorProbeDepth,
+        CMaterialFilter::MakeInclude(CMaterialList(kMT_Solid)));
+    if (floor.IsValid()) {
+      spawn.SetZ(floor.GetPoint().GetZ() + height);
+    }
+    facing = inward;
+  }
+  return CTransform4f::LookAt(spawn, spawn + facing, CVector3f::Up());
+}
+
 bool OnCrossWorldDoorOpen(CStateManager& mgr, int area, int dock) {
   const CWorld* world = mgr.GetWorld();
   if (world == nullptr || !world->DoesAreaExist(TAreaId(area))) {
@@ -354,30 +400,14 @@ void ApplyCrossWorldArrival(CStateManager& mgr) {
     return;
   }
   const TAreaId areaId = world->GetAreaId(arrival.area);
-  DockFrame frame;
-  if (!world->DoesAreaExist(areaId) ||
-      !GetDockFrame(world->GetAreaAlways(areaId), arrival.dock, frame)) {
+  std::optional< CTransform4f > xf;
+  if (world->DoesAreaExist(areaId)) {
+    xf = DockArrivalTransform(mgr, world->GetAreaAlways(areaId), arrival.dock,
+                              arrival.morphBall, arrival.yaw);
+  }
+  if (!xf) {
     Log.error("Arrival dock {} of 0x{:08X} wasn't found", arrival.dock, arrival.area);
     return;
-  }
-
-  CVector3f spawn = frame.center;
-  CVector3f facing(-std::sin(arrival.yaw), std::cos(arrival.yaw), 0.f);
-  if (frame.normal.GetZ() >= 0.7f) {
-    // A door in the ceiling: drop in below it.
-    spawn.SetZ(frame.center.GetZ() - kCeilingArrivalDrop);
-  } else if (frame.normal.GetZ() <= -0.7f) {
-    // A door in the floor: come up and stand on it, closed.
-    spawn.SetZ(frame.center.GetZ() + kFloorArrivalHeight);
-  } else {
-    CVector3f inward = -frame.normal;
-    inward.SetZ(0.f);
-    inward = inward.AsNormalized();
-    const float depth = arrival.morphBall ? kBallArrivalDepth : kArrivalDepth;
-    const float height = arrival.morphBall ? kBallArrivalHeight : kArrivalHeight;
-    spawn = frame.center + inward * depth;
-    spawn.SetZ(std::min(frame.bottom + height, frame.center.GetZ()));
-    facing = inward;
   }
 
   if (!MarkDockDoor(mgr, areaId, arrival.dock)) {
@@ -386,7 +416,7 @@ void ApplyCrossWorldArrival(CStateManager& mgr) {
     sState.pendingMarkFrames = 60;
   }
 
-  player->Teleport(CTransform4f::LookAt(spawn, spawn + facing, CVector3f::Up()), mgr, true);
+  player->Teleport(*xf, mgr, true);
   if (arrival.morphBall) {
     player->SetSpawnedMorphBallState(CPlayer::kMS_Morphed, mgr);
   }

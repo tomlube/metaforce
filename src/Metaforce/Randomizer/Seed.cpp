@@ -59,6 +59,9 @@ json Seed::ToJson() const {
   if (startYaw) {
     root["start"]["yaw"] = *startYaw;
   }
+  if (startDock >= 0) {
+    root["start"]["dock"] = startDock;
+  }
   json& locationsJson = root["locations"] = json::array();
   for (const auto& loc : locations) {
     locationsJson.push_back(
@@ -120,6 +123,7 @@ std::optional< Seed > Seed::FromJson(const json& root, std::string& error) {
     if (start.contains("yaw")) {
       seed.startYaw = start.at("yaw").get< float >();
     }
+    seed.startDock = start.value("dock", -1);
     seed.shuffledArtifacts = root.at("shuffled_artifacts");
     seed.spheres = root.at("spheres").get< std::vector< std::vector< std::string > > >();
     seed.warnings = root.value("warnings", std::vector< std::string >{});

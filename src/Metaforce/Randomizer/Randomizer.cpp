@@ -13,10 +13,12 @@
 #include "Kyoto/Math/CRelAngle.hpp"
 #include "Kyoto/Math/CTransform4f.hpp"
 #include "MetroidPrime/CEntityInfo.hpp"
+#include "MetroidPrime/CGameArea.hpp"
 #include "MetroidPrime/CMain.hpp"
 #include "MetroidPrime/CMemoryCard.hpp"
 #include "MetroidPrime/CScriptLayerManager.hpp"
 #include "MetroidPrime/CStateManager.hpp"
+#include "MetroidPrime/CWorld.hpp"
 #include "MetroidPrime/Player/CGameState.hpp"
 #include "MetroidPrime/Player/CPlayer.hpp"
 #include "MetroidPrime/Player/CPlayerState.hpp"
@@ -750,14 +752,33 @@ void OnGameLoad() {
 }
 
 namespace {
-// Puts the player on the seed's start position, facing its start direction.
+// Puts the player on the seed's start position, facing its start direction. Starts at doors go
+// just inside the door, facing into the room.
 void TeleportToStart(CStateManager& mgr) {
   const auto& s = S();
-  if (!s.active || !s.active->startPosition || mgr.Player() == nullptr) {
+  if (!s.active || (!s.active->startPosition && s.active->startDock < 0) ||
+      mgr.Player() == nullptr) {
+    return;
+  }
+  CPlayer* samus = mgr.Player();
+  if (s.active->startDock >= 0 && mgr.GetWorld() != nullptr) {
+    const CWorld& world = *mgr.GetWorld();
+    const TAreaId area = world.GetAreaId(s.active->startArea);
+    if (world.DoesAreaExist(area)) {
+      const float yaw = s.active->startYaw.value_or(0.f);
+      if (const std::optional< CTransform4f > xf = DockArrivalTransform(
+              mgr, world.GetAreaAlways(area), s.active->startDock, false, yaw)) {
+        samus->Teleport(*xf, mgr, true);
+        return;
+      }
+    }
+    Log.error("Start dock {} of 0x{:08X} wasn't found", s.active->startDock,
+              s.active->startArea);
+  }
+  if (!s.active->startPosition) {
     return;
   }
   const auto& pos = *s.active->startPosition;
-  CPlayer* samus = mgr.Player();
   const CMatrix3f facing =
       s.active->startYaw
           ? CTransform4f::RotateZ(CRelAngle::FromRadians(*s.active->startYaw)).BuildMatrix3f()

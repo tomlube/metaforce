@@ -976,6 +976,12 @@ private:
         seed.startPosition = placement->position;
         seed.startYaw = placement->yaw;
       }
+      // The logic doesn't know which way a door faces, so the step toward another node can go
+      // sideways into the wall in a narrow room (Tallon's Transport Tunnel B). The game places
+      // door starts from the door itself.
+      if (start.dock && start.dock->type == "door" && start.dock->index >= 0) {
+        seed.startDock = start.dock->index;
+      }
     }
     for (int node = 0; node < static_cast< int >(mDockRemap.size()); ++node) {
       const int target = mDockRemap[node];
