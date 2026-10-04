@@ -22,7 +22,8 @@ ROOT = Path(__file__).resolve().parents[2]
 LOGIC = ROOT / "res" / "randomizer" / "prime1" / "logic.json"
 HASH = "DOORTEST"
 
-# (region, room, dock): (shieldType, blastShieldType or "", what it tests)
+# (region, room, dock): (shieldType, blastShieldType or "", what it tests). Like the generator,
+# each lock goes on both sides of its door unless the other side has its own entry.
 TEST_DOORS = {
     # Main Plaza, where the game starts
     ("Chozo Ruins", "Main Plaza", 0): ("Power Bomb", "Power Bomb", "Power Bomb blast shield (no lock-on)"),
@@ -30,15 +31,14 @@ TEST_DOORS = {
     # Dock 2 keeps its missile blast shield: the game's own is replaced by randomprime's
     ("Chozo Ruins", "Main Plaza", 3): ("Charge Beam", "Charge Beam", "Charge Beam blast shield"),
     # The rooms next to it
-    ("Chozo Ruins", "Ruined Fountain Access", 0): ("Power Beam Only", "", "Power Beam Only door (behind the Power Bomb shield)"),
     ("Chozo Ruins", "Ruined Fountain Access", 1): ("Wavebuster", "Wavebuster", "Wavebuster blast shield"),
-    ("Chozo Ruins", "Ruins Entrance", 0): ("Ice Beam", "", "Ice door (behind the Super Missile shield)"),
     ("Chozo Ruins", "Ruins Entrance", 1): ("Bomb", "Bomb", "Bomb blast shield (no lock-on)"),
     ("Chozo Ruins", "Nursery Access", 0): ("Flamethrower", "Flamethrower", "Flamethrower blast shield"),
-    ("Chozo Ruins", "Nursery Access", 1): ("Plasma Beam", "", "Plasma door (behind the Charge Beam shield)"),
     ("Chozo Ruins", "Ruined Shrine Access", 0): ("Ice Spreader", "Ice Spreader", "Ice Spreader blast shield"),
-    ("Chozo Ruins", "Ruined Fountain", 0): ("Super Missile", "", "lock color with no blast shield: should look and open like a blue door"),
-    ("Chozo Ruins", "Ruined Fountain", 2): ("Disabled", "", "Permanently locked door"),
+    ("Chozo Ruins", "Ruined Fountain", 0): ("Power Beam Only", "", "Power Beam Only door"),
+    ("Chozo Ruins", "Ruined Fountain", 2): ("Ice Beam", "", "Ice door"),
+    ("Chozo Ruins", "Ruined Shrine", 0): ("Plasma Beam", "", "Plasma door"),
+    ("Chozo Ruins", "Arboretum Access", 0): ("Disabled", "", "Permanently locked door"),
     # Special cases, a warp away
     ("Chozo Ruins", "Hive Totem", 0): ("Super Missile", "Super Missile", "tilted door (Hive Totem west case)"),
     # Hive Totem dock 1 keeps its missile blast shield: the other tilted case
@@ -72,8 +72,30 @@ def main() -> int:
     base = json.loads((bases[0] / "seed.json").read_text())
 
     logic = json.loads(LOGIC.read_text())
-    doors = []
+    tests = dict(TEST_DOORS)
     found = set()
+    for region in logic["regions"]:
+        for area in region["areas"]:
+            for node in area["nodes"]:
+                dock = node.get("dock")
+                key = (region["name"], area["name"], dock["index"]) if dock else None
+                if key not in TEST_DOORS:
+                    continue
+                found.add(key)
+                target_region, target_area, target_node = dock["target"]
+                for other_area in (a for r in logic["regions"] if r["name"] == target_region
+                                   for a in r["areas"] if a["name"] == target_area):
+                    for other in other_area["nodes"]:
+                        if other["name"] == target_node and other.get("dock"):
+                            other_key = (target_region, target_area, other["dock"]["index"])
+                            if other_key not in TEST_DOORS:
+                                shield, blast, test = TEST_DOORS[key]
+                                tests[other_key] = (shield, blast, f"{test} (other side)")
+    missing = set(TEST_DOORS) - found
+    if missing:
+        print(f"error: no such docks: {sorted(missing)}", file=sys.stderr)
+        return 1
+    doors = []
     for region in logic["regions"]:
         for area in region["areas"]:
             for node in area["nodes"]:
@@ -83,19 +105,13 @@ def main() -> int:
                 key = (region["name"], area["name"], dock["index"])
                 door = {"world": region["asset_id"], "area": area["asset_id"], "dock": dock["index"],
                         "name": f"{region['name']} / {area['name']} / {node['name']}"}
-                if key in TEST_DOORS:
-                    shield, blast, test = TEST_DOORS[key]
-                    found.add(key)
+                if key in tests:
+                    shield, blast, test = tests[key]
                     doors.append({**door, "shield": shield, "blast_shield": blast, "weakness": test, "changed": True})
                 elif dock["weakness"] == MISSILE_SHIELD:
                     # Like the generator: the game's own missile blast shields become randomprime's.
                     doors.append({**door, "shield": "Blue", "blast_shield": "Missile",
                                   "weakness": "Missile Blast Shield", "changed": False})
-    missing = set(TEST_DOORS) - found
-    if missing:
-        print(f"error: no such docks: {sorted(missing)}", file=sys.stderr)
-        return 1
-
     starting = []
     pickups = json.loads((ROOT / "res" / "randomizer" / "prime1" / "pickups.json").read_text())
     for item in pickups["standard"]:
@@ -126,7 +142,7 @@ def main() -> int:
     out.mkdir(parents=True, exist_ok=True)
     (out / "seed.json").write_text(json.dumps(seed, indent=1))
     print(f"Wrote {out / 'seed.json'} ({len(doors)} doors, pickups from {bases[0].name})")
-    for key, (shield, blast, test) in TEST_DOORS.items():
+    for key, (shield, blast, test) in tests.items():
         print(f"  {' / '.join(map(str, key))}: {test}")
     return 0
 
