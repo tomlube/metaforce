@@ -4,12 +4,17 @@
 
 #include <algorithm>
 #include <fstream>
+#include <iterator>
 
 namespace metaforce::randomizer {
 namespace {
 using json = nlohmann::json;
 
 constexpr int kLogicVersion = 3;
+
+// Locks Randovania can give doors that Metaforce doesn't offer: a Power Beam Only door is more
+// annoying than interesting.
+constexpr std::string_view kUnofferedDoorLocks[] = {"door/Power Beam Only Door"};
 
 std::string NodeKey(std::string_view region, std::string_view area, std::string_view node) {
   std::string key;
@@ -186,7 +191,10 @@ bool Database::Load(const std::filesystem::path& path, std::string& error) {
         d.changeFrom.push_back(weaknessIndex(name));
       }
       for (const auto& name : distributor.at("change_to")) {
-        d.changeTo.push_back(weaknessIndex(name));
+        if (std::find(std::begin(kUnofferedDoorLocks), std::end(kUnofferedDoorLocks),
+                      name.get_ref< const std::string& >()) == std::end(kUnofferedDoorLocks)) {
+          d.changeTo.push_back(weaknessIndex(name));
+        }
       }
       mDockTypes.push_back(std::move(d));
     }

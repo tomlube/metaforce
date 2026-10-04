@@ -35,7 +35,7 @@ TEST_DOORS = {
     ("Chozo Ruins", "Ruins Entrance", 1): ("Bomb", "Bomb", "Bomb blast shield (no lock-on)"),
     ("Chozo Ruins", "Nursery Access", 0): ("Flamethrower", "Flamethrower", "Flamethrower blast shield"),
     ("Chozo Ruins", "Ruined Shrine Access", 0): ("Ice Spreader", "Ice Spreader", "Ice Spreader blast shield"),
-    ("Chozo Ruins", "Ruined Fountain", 0): ("Power Beam Only", "", "Power Beam Only door"),
+    ("Chozo Ruins", "Ruined Fountain", 0): ("Wave Beam", "", "Wave door"),
     ("Chozo Ruins", "Ruined Fountain", 2): ("Ice Beam", "", "Ice door"),
     ("Chozo Ruins", "Ruined Shrine", 0): ("Plasma Beam", "", "Plasma door"),
     ("Chozo Ruins", "Arboretum Access", 0): ("Disabled", "", "Permanently locked door"),
