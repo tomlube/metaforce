@@ -57,10 +57,11 @@ constexpr uint32_t kArtifactTempleSaveId = 0xCD2B0EA2;
 constexpr int kFirstArtifactLayer = 2;
 constexpr int kLastArtifactLayer = 12;
 
-// The Artifact of Truth has no layer of its own: a relay in Artifact Temple always shows its
-// progress, so it's only allowed through once Truth is in hand, matching randomprime.
+// The Artifact of Truth has no layer of its own: "Relay One Shot Out" (0x04100574) in Artifact
+// Temple always shows its progress, so it's only allowed through once Truth is in hand, matching
+// randomprime. Editor ids are compared without their layer bits.
 constexpr uint32_t kTallonWorld = 0x39F2DE28;
-constexpr uint32_t kTruthRelay = 0x00100074;
+constexpr uint32_t kTruthRelay = 0x00100574;
 constexpr uint32_t kTruthProgressRelay = 0x00100125;
 
 // Landing Site plays the ship's arrival cinematic the first time it loads, which leaves the
