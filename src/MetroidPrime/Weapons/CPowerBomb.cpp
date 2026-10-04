@@ -10,6 +10,10 @@
 #include "Kyoto/Particles/CElementGen.hpp"
 #include "MetaRender/CCubeRenderer.hpp"
 
+#if defined(TARGET_PC)
+#include "Metaforce/DockPortals.hpp"
+#endif
+
 CColor CPowerBomb::kFadeColor(0xffffff7f);
 const float CPowerBomb::kEndingTime = 4.25f;
 
@@ -35,6 +39,10 @@ CPowerBomb::~CPowerBomb() {}
 
 void CPowerBomb::ApplyDynamicDamage(const CVector3f& pos, CStateManager& mgr) {
   mgr.ApplyDamageToWorld(GetOwnerId(), *this, pos, mCurDamageInfo, CMaterialFilter(mFilter));
+#if defined(TARGET_PC)
+  metaforce::portals::ApplyDamageThroughDocks(mgr, *this, pos, mCurDamageInfo,
+                                              CMaterialFilter(mFilter));
+#endif
 }
 
 void CPowerBomb::Touch(CActor&, CStateManager&) {

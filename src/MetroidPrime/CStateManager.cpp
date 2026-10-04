@@ -1771,6 +1771,48 @@ void CStateManager::ApplyDamageToWorld(TUniqueId damagerId, const CActor& actor,
   }
 }
 
+#if defined(TARGET_PC)
+void CStateManager::ApplyDamageThroughDock(const CActor& actor, const CVector3f& pos, TAreaId area,
+                                           int dock, const CDamageInfo& info,
+                                           const CMaterialFilter& filter) {
+  // Collide with what `area` collides with, not the rooms around the damager.
+  const metaforce::merged::QueryScope scope(area);
+  const float radius = info.GetRadius();
+  const CAABox aabb(pos - CVector3f(radius, radius, radius), pos + CVector3f(radius, radius, radius));
+
+  TEntityList nearList;
+  BuildNearList(nearList, aabb, filter, nullptr);
+
+  for (TEntityList::iterator it = nearList.begin(); it != nearList.end(); ++it) {
+    CActor* const act = TCastToPtr< CActor >(ObjectById(*it));
+    if (act == nullptr || act->GetCurrentAreaId() != area || act == mPlayer ||
+        act->GetUniqueId() == actor.GetUniqueId()) {
+      continue;
+    }
+    if (CWallCrawlerSwarm* const wallSwarm = TCastToPtr< CWallCrawlerSwarm >(act)) {
+      wallSwarm->ApplyRadiusDamage(pos, info, *this);
+    }
+    if (CSnakeWeedSwarm* const snakeSwarm = TCastToPtr< CSnakeWeedSwarm >(act)) {
+      snakeSwarm->ApplyRadiusDamage(pos, info, *this);
+    }
+    const rstl::optional_object< CAABox > bounds = act->GetTouchBounds();
+    if (!bounds) {
+      continue;
+    }
+    // `pos` is out past the doorway, where the room's walls would block the view; look from where
+    // the line to the target comes in through the doorway instead, which it has to.
+    CVector3f entry = CVector3f::Zero();
+    if (!metaforce::portals::GetDoorwayEntry(*mWorld, area, dock, pos, bounds->GetCenterPoint(),
+                                             entry)) {
+      continue;
+    }
+    if (TestRayDamage(entry, *act, nearList)) {
+      ApplyRadiusDamage(actor, pos, *act, info);
+    }
+  }
+}
+#endif
+
 void CStateManager::ApplyKnockBack(CActor& actor, const CDamageInfo& info,
                                    const CDamageVulnerability& vuln, const CVector3f& dir,
                                    float dampen) {

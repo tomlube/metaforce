@@ -8,7 +8,10 @@
 
 #include "MetroidPrime/TGameTypes.hpp"
 
+class CActor;
+class CDamageInfo;
 class CFrustumPlanes;
+class CMaterialFilter;
 class CGameProjectile;
 class CStateManager;
 class CTransform4f;
@@ -37,6 +40,17 @@ void UpdateProjectileCrossing(CStateManager& mgr, CGameProjectile& projectile);
 // Whether shots keep their own area rather than following the player's. True while any loaded
 // room has a moved door.
 bool TracksProjectileAreas();
+
+// CPowerBomb: radius damage from `damager` at `pos` also reaches through the open moved doors of
+// its room that are within `info`'s radius, into the rooms behind them. A blast is centered in its
+// own room, so without this it never touches what stands just past a moved doorway.
+void ApplyDamageThroughDocks(CStateManager& mgr, const CActor& damager, const CVector3f& pos,
+                             const CDamageInfo& info, const CMaterialFilter& filter);
+
+// Where the segment `from` -> `to` goes in through `dock` of `area`, from outside the room, nudged
+// just inside. False when it doesn't cross the doorway.
+bool GetDoorwayEntry(const CWorld& world, TAreaId area, int dock, const CVector3f& from,
+                     const CVector3f& to, CVector3f& out);
 
 // Collision and actor queries. Two loaded rooms whose doorways meet in world space, but that no
 // door in that place joins any more, are separated: neither collides with or sees the other.

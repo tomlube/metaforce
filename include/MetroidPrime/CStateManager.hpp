@@ -275,6 +275,12 @@ public:
 
   void ApplyDamageToWorld(TUniqueId, const CActor&, const CVector3f&, const CDamageInfo& info,
                           const CMaterialFilter&);
+#if defined(TARGET_PC)
+  // ApplyDamageToWorld for the actors of `area` alone, as seen from `pos` through `dock` of
+  // `area`: damage reaching in through a moved door, with `pos` carried through it.
+  void ApplyDamageThroughDock(const CActor& actor, const CVector3f& pos, TAreaId area, int dock,
+                              const CDamageInfo& info, const CMaterialFilter& filter);
+#endif
   bool ApplyLocalDamage(const CVector3f&, const CVector3f&, CActor&, float, const CWeaponMode&);
   void ApplyDamage(const TUniqueId damagerId, const TUniqueId damageeId,
                    const TUniqueId radiusSender, const CDamageInfo& info,

@@ -8,6 +8,7 @@
 #include "Kyoto/Math/CRelAngle.hpp"
 #include "Kyoto/Math/CTransform4f.hpp"
 #include "Kyoto/Math/CVector3f.hpp"
+#include "MetroidPrime/CDamageInfo.hpp"
 #include "MetroidPrime/CGameArea.hpp"
 #include "MetroidPrime/CStateManager.hpp"
 #include "MetroidPrime/CWorld.hpp"
@@ -49,6 +50,8 @@ constexpr float kPlayerCrossingDepth = 3.f;
 // How far past a doorway's plane a shot may start and still be carried through it, for shots
 // fired with the gun already through the doorway.
 constexpr float kProjectileCrossingDepth = 2.f;
+// How far past a doorway's plane damage coming in through it starts its line-of-sight checks.
+constexpr float kDoorwayEntryDepth = 0.1f;
 // Parts of a doorway nearer than the near plane are sealed this far past it, as a multiple of the
 // near clip distance, so the seal itself isn't clipped.
 constexpr float kSealNearScale = 1.05f;
@@ -346,6 +349,83 @@ void UpdateProjectileCrossing(CStateManager& mgr, CGameProjectile& projectile) {
 }
 
 bool TracksProjectileAreas() { return sFrame.valid; }
+
+void ApplyDamageThroughDocks(CStateManager& mgr, const CActor& damager, const CVector3f& pos,
+                             const CDamageInfo& info, const CMaterialFilter& filter) {
+  CWorld* world = mgr.World();
+  const TAreaId current = damager.GetCurrentAreaId();
+  const float radius = info.GetRadius();
+  if (world == nullptr || radius <= 0.f || !world->DoesAreaExist(current)) {
+    return;
+  }
+  const CGameArea& area = world->GetAreaAlways(current);
+  if (!area.IsPostConstructed()) {
+    return;
+  }
+  for (int dock = 0; dock < area.GetDockCount(); ++dock) {
+    CTransform4f xf = CTransform4f::Identity();
+    DockFrame dockFrame;
+    if (!GetDockTransform(*world, current, dock, xf) || !GetDockFrame(area, dock, dockFrame)) {
+      continue;
+    }
+    // Only a blast inside the room, and near enough to reach the doorway.
+    const CVector3f offset = pos - dockFrame.center;
+    const float planeDist = CVector3f::Dot(offset, dockFrame.normal);
+    if (planeDist > 0.f) {
+      continue;
+    }
+    const float lateral = std::max(
+        0.f, (offset - dockFrame.normal * planeDist).Magnitude() - dockFrame.radius);
+    if (planeDist * planeDist + lateral * lateral >= radius * radius) {
+      continue;
+    }
+    const IGameArea::Dock& gameDock = area.GetDock(dock);
+    const int ref = gameDock.GetReferenceCount();
+    const TAreaId next = gameDock.GetConnectedAreaId(ref);
+    const int otherDock = gameDock.GetOtherDockNumber(ref);
+    if (!world->DoesAreaExist(next) || !world->GetAreaAlways(next).IsPostConstructed()) {
+      continue;
+    }
+    const CGameArea& nextArea = world->GetAreaAlways(next);
+    DockFrame nextFrame;
+    if (!GetDockFrame(nextArea, otherDock, nextFrame) ||
+        IsDoorwayClosed(mgr, area, dock, dockFrame.center) ||
+        IsDoorwayClosed(mgr, nextArea, otherDock, nextFrame.center)) {
+      continue;
+    }
+    if (sLogEnabled) {
+      Log.info("[portal] frame {}: damage from {} through dock {} of area {}, {} -> {}",
+               mgr.GetUpdateFrameIndex(), damager.GetUniqueId().Value(), dock, current.Value(),
+               FormatVec(pos), FormatVec(xf * pos));
+    }
+    mgr.ApplyDamageThroughDock(damager, xf * pos, next, otherDock, info, filter);
+  }
+}
+
+bool GetDoorwayEntry(const CWorld& world, TAreaId area, int dock, const CVector3f& from,
+                     const CVector3f& to, CVector3f& out) {
+  if (!world.DoesAreaExist(area)) {
+    return false;
+  }
+  DockFrame dockFrame;
+  if (!GetDockFrame(world.GetAreaAlways(area), dock, dockFrame)) {
+    return false;
+  }
+  const float fromDist = CVector3f::Dot(from - dockFrame.center, dockFrame.normal);
+  const float toDist = CVector3f::Dot(to - dockFrame.center, dockFrame.normal);
+  if (fromDist < 0.f || toDist >= 0.f) {
+    return false;
+  }
+  const CVector3f crossing = from + (to - from) * (fromDist / (fromDist - toDist));
+  const CVector3f offset = crossing - dockFrame.center;
+  if ((offset - dockFrame.normal * CVector3f::Dot(offset, dockFrame.normal)).Magnitude() >
+      dockFrame.radius) {
+    return false;
+  }
+  // A little way inside, so the check doesn't start on the doorway's own edge.
+  out = crossing + (to - crossing) * std::min(1.f, kDoorwayEntryDepth / -toDist);
+  return true;
+}
 
 namespace {
 
