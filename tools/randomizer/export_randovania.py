@@ -22,6 +22,7 @@ Outputs:
   res/randomizer/prime1/logic.json     compact logic database
   res/randomizer/prime1/pickups.json   item pool definitions and preset defaults
   res/randomizer/prime1/door_assets/   randomprime's door and blast shield textures
+  res/randomizer/prime1/pickup_assets/ randomprime's pickup model textures and models
   src/Metaforce/Randomizer/PickupTables.cpp
   src/Metaforce/Randomizer/DoorTables.cpp
 """
@@ -40,6 +41,7 @@ OUT_RES = ROOT / "res" / "randomizer" / "prime1"
 OUT_TABLES = ROOT / "src" / "Metaforce" / "Randomizer" / "PickupTables.cpp"
 OUT_DOOR_TABLES = ROOT / "src" / "Metaforce" / "Randomizer" / "DoorTables.cpp"
 OUT_ASSETS = OUT_RES / "door_assets"
+OUT_PICKUP_ASSETS = OUT_RES / "pickup_assets"
 
 LOGIC_VERSION = 3
 
@@ -540,6 +542,27 @@ DOOR_ASSET_EXTRA = ["power_beam_holorim.TXTR", "orange.txtr", "pink.txtr", "yell
 
 def copy_door_assets(randomprime: Path, out: Path) -> None:
     files = [f"{p}_{s}.TXTR" for p in DOOR_ASSET_PREFIXES for s in DOOR_ASSET_SUFFIXES] + DOOR_ASSET_EXTRA
+    copy_extra_assets(randomprime, out, files)
+
+
+# randomprime's textures and models for the pickup models it adds to the game. The models are
+# built from these and the game's own models at runtime (see PickupAssets.cpp).
+PICKUP_ASSETS = [
+    "phazon_suit_texure_1.txtr",
+    "phazon_suit_texure_2.txtr",
+    "nothing_texture.txtr",
+    "zoomer.CMDL",
+    "cog.CMDL",
+    "randovania_gamecube.CMDL",
+    "randovania_gamecube.TXTR",
+    "randovania_gamecube_text.TXTR",
+    "flamethrower_vertice_color.TXTR",
+    "flamethrower_cap_glow.TXTR",
+    "flamethrower_color_body.TXTR",
+]
+
+
+def copy_extra_assets(randomprime: Path, out: Path, files: list[str]) -> None:
     out.mkdir(parents=True, exist_ok=True)
     for name in files:
         (out / name.lower()).write_bytes((randomprime / "extra_assets" / name).read_bytes())
@@ -719,8 +742,9 @@ def main() -> int:
     write_tables(logic, args.randomprime, OUT_TABLES)
     write_door_tables(args.randomprime, OUT_DOOR_TABLES)
     copy_door_assets(args.randomprime, OUT_ASSETS)
-    print(f"Wrote {OUT_RES / 'logic.json'}, {OUT_RES / 'pickups.json'}, {OUT_TABLES}, {OUT_DOOR_TABLES} "
-          f"and {OUT_ASSETS}")
+    copy_extra_assets(args.randomprime, OUT_PICKUP_ASSETS, PICKUP_ASSETS)
+    print(f"Wrote {OUT_RES / 'logic.json'}, {OUT_RES / 'pickups.json'}, {OUT_TABLES}, {OUT_DOOR_TABLES}, "
+          f"{OUT_ASSETS} and {OUT_PICKUP_ASSETS}")
     return 0
 
 

@@ -1,5 +1,6 @@
 #include "Metaforce/Randomizer/DoorStyles.hpp"
 
+#include "Metaforce/Randomizer/CustomAssets.hpp"
 #include "Metaforce/Randomizer/Hooks.hpp"
 
 #include "Kyoto/Alloc/CMemory.hpp"
@@ -22,12 +23,10 @@ namespace metaforce::randomizer {
 namespace {
 constexpr borealis::Log Log{"randomizer"};
 
-constexpr uint32_t kCMDL = 0x434D444C;
-constexpr uint32_t kTXTR = 0x54585452;
-
-// Custom asset ids, in the range randomprime uses for its own.
-constexpr uint32_t kCustomTextureBase = 0xDEAF0000;
-constexpr uint32_t kCustomModelBase = 0xDEAF0100;
+// Custom asset ids, in the range randomprime uses for its own but past the ids of its pickup
+// models, which the pickup objects in PickupTables.cpp refer to (see PickupAssets.cpp).
+constexpr uint32_t kCustomTextureBase = 0xDEAF8000;
+constexpr uint32_t kCustomModelBase = 0xDEAF8100;
 
 // randomprime's textures, copied to res/randomizer/prime1/door_assets by the exporter: a set of
 // six for each blast shield, plus a few for door colors.
@@ -305,16 +304,7 @@ uint32_t GetBig(const uint8_t* in) {
 
 // Custom assets ------------------------------------------------------------------------------
 
-std::filesystem::path AssetDirectory() {
-  // Resolve like GetDatabase: relative to the app's resources directory.
-  std::filesystem::path dir = std::filesystem::path("res") / "randomizer" / "prime1" / "door_assets";
-  if (const char* resources = SDL_GetBasePath()) {
-    dir = std::filesystem::path(resources) / dir;
-  }
-  return dir;
-}
-
-std::optional< std::vector< uint8_t > > ReadTexture(uint32_t id) {
+AssetData ReadTexture(uint32_t id) {
   const uint32_t index = id - kCustomTextureBase;
   std::string name;
   if (index < static_cast< uint32_t >(kSetTextureCount)) {
@@ -323,17 +313,35 @@ std::optional< std::vector< uint8_t > > ReadTexture(uint32_t id) {
   } else {
     name = kExtraTextureNames[index - kSetTextureCount];
   }
-  const std::filesystem::path path = AssetDirectory() / (name + ".txtr");
-  std::ifstream file(path, std::ios::binary);
-  if (!file) {
-    Log.error("Missing door texture {}", path.string());
-    return std::nullopt;
-  }
-  return std::vector< uint8_t >(std::istreambuf_iterator< char >(file), {});
+  return ReadAssetFile("door_assets", name + ".txtr");
 }
 
-// One of the game's resources, decompressed.
-std::optional< std::vector< uint8_t > > ReadGameResource(FourCC type, uint32_t id) {
+// A copy of `recipe.base` with the first textures of its first material set replaced.
+AssetData BuildModel(const ModelRecipe& recipe) {
+  AssetData model = ReadGameResource(kCMDL, recipe.base);
+  if (!model) {
+    Log.error("Missing model {:08X} to build a door model from", recipe.base);
+    return std::nullopt;
+  }
+  if (!ReplaceModelTextures(*model, recipe.textures.data(), recipe.textureCount)) {
+    return std::nullopt;
+  }
+  return model;
+}
+
+struct CustomAsset {
+  bool built = false;
+  AssetData data;
+};
+
+std::unordered_map< uint32_t, CustomAsset >& CustomAssets() {
+  static std::unordered_map< uint32_t, CustomAsset > assets;
+  return assets;
+}
+
+} // namespace
+
+AssetData ReadGameResource(uint32_t type, uint32_t id) {
   CResLoader& loader = gpResourceFactory->GetResLoader();
   const SObjectTag tag(type, id);
   if (!loader.ResourceExists(tag)) {
@@ -344,7 +352,7 @@ std::optional< std::vector< uint8_t > > ReadGameResource(FourCC type, uint32_t i
   char* buffer = nullptr;
   int length = 0;
   loader.LoadMemResourceSync(tag, &buffer, &length);
-  std::optional< std::vector< uint8_t > > result;
+  AssetData result;
   const auto* bytes = reinterpret_cast< const uint8_t* >(buffer);
   if (!compressed) {
     result.emplace(bytes, bytes + length);
@@ -360,45 +368,45 @@ std::optional< std::vector< uint8_t > > ReadGameResource(FourCC type, uint32_t i
   return result;
 }
 
-// A copy of `recipe.base` with the first textures of its first material set replaced.
-std::optional< std::vector< uint8_t > > BuildModel(const ModelRecipe& recipe) {
-  std::optional< std::vector< uint8_t > > model = ReadGameResource(kCMDL, recipe.base);
-  if (!model) {
-    Log.error("Missing model {:08X} to build a door model from", recipe.base);
+AssetData ReadAssetFile(std::string_view directory, std::string_view name) {
+  // Resolve like GetDatabase: relative to the app's resources directory.
+  std::filesystem::path path =
+      std::filesystem::path("res") / "randomizer" / "prime1" / directory / name;
+  if (const char* resources = SDL_GetBasePath()) {
+    path = std::filesystem::path(resources) / path;
+  }
+  std::ifstream file(path, std::ios::binary);
+  if (!file) {
+    Log.error("Missing randomizer asset {}", path.string());
     return std::nullopt;
   }
-  std::vector< uint8_t >& data = *model;
+  return std::vector< uint8_t >(std::istreambuf_iterator< char >(file), {});
+}
+
+bool ReplaceModelTextures(std::vector< uint8_t >& data, const uint32_t* textures, int count) {
   // Header: magic, version, flags, bounds, section count, material set count, section sizes,
   // then padding to 32 bytes. The first section is the first material set: a texture count and
   // the texture ids.
   if (data.size() < 44 || GetBig(data.data()) != 0xDEADBABE) {
-    return std::nullopt;
+    return false;
   }
   const uint32_t sectionCount = GetBig(data.data() + 36);
   const size_t materials = (44 + sectionCount * 4 + 31) & ~size_t(31);
   if (GetBig(data.data() + 40) == 0 || materials + 4 > data.size() ||
-      GetBig(data.data() + materials) < static_cast< uint32_t >(recipe.textureCount) ||
-      materials + 4 + recipe.textureCount * 4 > data.size()) {
-    return std::nullopt;
+      GetBig(data.data() + materials) < static_cast< uint32_t >(count) ||
+      materials + 4 + count * 4 > data.size()) {
+    return false;
   }
-  uint8_t* textures = data.data() + materials + 4;
-  for (int i = 0; i < recipe.textureCount; ++i) {
-    PutBig(textures, recipe.textures[i]);
+  uint8_t* out = data.data() + materials + 4;
+  for (int i = 0; i < count; ++i) {
+    if (textures[i] != 0) {
+      PutBig(out, textures[i]);
+    } else {
+      out += 4;
+    }
   }
-  return model;
+  return true;
 }
-
-struct CustomAsset {
-  bool built = false;
-  std::optional< std::vector< uint8_t > > data;
-};
-
-std::unordered_map< uint32_t, CustomAsset >& CustomAssets() {
-  static std::unordered_map< uint32_t, CustomAsset > assets;
-  return assets;
-}
-
-} // namespace
 
 bool ParseDoorColor(std::string_view name, DoorColor& out) {
   static const std::unordered_map< std::string, DoorColor > kNames = {
@@ -490,6 +498,9 @@ void WriteDoorVulnerability(DoorColor color, uint8_t (&out)[kVulnerabilitySize])
 }
 
 unsigned int GetCustomAssetType(unsigned int id) {
+  if (const unsigned int type = GetPickupAssetType(id)) {
+    return type;
+  }
   if (id >= kCustomTextureBase && id < kTextureEnd) {
     return kTXTR;
   }
@@ -507,9 +518,15 @@ bool GetCustomAsset(unsigned int id, const unsigned char*& data, unsigned int& s
   CustomAsset& asset = CustomAssets()[id];
   if (!asset.built) {
     asset.built = true;
-    asset.data = type == kTXTR ? ReadTexture(id) : BuildModel(kModelRecipes[id - kCustomModelBase]);
+    if (GetPickupAssetType(id) != 0) {
+      asset.data = BuildPickupAsset(id);
+    } else if (type == kTXTR) {
+      asset.data = ReadTexture(id);
+    } else {
+      asset.data = BuildModel(kModelRecipes[id - kCustomModelBase]);
+    }
     if (!asset.data) {
-      Log.error("Could not build door asset {:08X}", id);
+      Log.error("Could not build custom asset {:08X}", id);
     }
   }
   if (!asset.data) {

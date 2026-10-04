@@ -756,6 +756,7 @@ set(GAME_FILES
       src/Metaforce/Randomizer/DoorTables.cpp
       src/Metaforce/Randomizer/Generator.cpp
       src/Metaforce/Randomizer/Logic.cpp
+      src/Metaforce/Randomizer/PickupAssets.cpp
       src/Metaforce/Randomizer/PickupTables.cpp
       src/Metaforce/Randomizer/Randomizer.cpp
       src/Metaforce/Randomizer/RoomRando.cpp

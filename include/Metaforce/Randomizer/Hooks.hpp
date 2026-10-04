@@ -150,10 +150,10 @@ bool GetDoorMapType(unsigned int worldId, unsigned int editorId, int& type);
 // since the last save stay broken.
 void OnGameSaved();
 
-// CResLoader: assets the door lock randomizer adds to the game, served as if they were in a pak.
-// GetCustomAssetType is the asset's FourCC, 0 for ids that aren't custom assets. GetCustomAsset
-// builds the asset on first use and keeps it; false when it can't be built (a texture file or
-// the model it's built from is missing).
+// CResLoader: assets the randomizer adds to the game (door lock styles and randomprime's pickup
+// models), served as if they were in a pak. GetCustomAssetType is the asset's FourCC, 0 for ids
+// that aren't custom assets. GetCustomAsset builds the asset on first use and keeps it; false
+// when it can't be built (a texture file or the model it's built from is missing).
 unsigned int GetCustomAssetType(unsigned int id);
 bool GetCustomAsset(unsigned int id, const unsigned char*& data, unsigned int& size);
 
