@@ -5,6 +5,7 @@
 // out, loads the other world and brings the player out of the door it's paired with.
 
 #include "Kyoto/Math/CTransform4f.hpp"
+#include "Kyoto/Math/CVector3f.hpp"
 
 #include <optional>
 
@@ -23,5 +24,10 @@ void ApplyCrossWorldArrival(CStateManager& mgr);
 std::optional< CTransform4f > DockArrivalTransform(const CStateManager& mgr,
                                                    const CGameArea& area, int dock,
                                                    bool morphBall, float yaw);
+
+// Where the player stands for a start in `area` that isn't at a door: `pos`, or on the floor
+// under it where she wouldn't fit at `pos` (a Save Station's is up in the station's emitter).
+CVector3f SettleStartPosition(const CStateManager& mgr, const CGameArea& area,
+                              const CVector3f& pos);
 
 } // namespace metaforce::randomizer

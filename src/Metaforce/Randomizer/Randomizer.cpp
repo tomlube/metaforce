@@ -821,11 +821,19 @@ void TeleportToStart(CStateManager& mgr) {
     return;
   }
   const auto& pos = *s.active->startPosition;
+  CVector3f at(pos[0], pos[1], pos[2]);
+  if (mgr.GetWorld() != nullptr) {
+    const CWorld& world = *mgr.GetWorld();
+    const TAreaId area = world.GetAreaId(s.active->startArea);
+    if (world.DoesAreaExist(area)) {
+      at = SettleStartPosition(mgr, world.GetAreaAlways(area), at);
+    }
+  }
   const CMatrix3f facing =
       s.active->startYaw
           ? CTransform4f::RotateZ(CRelAngle::FromRadians(*s.active->startYaw)).BuildMatrix3f()
           : samus->GetTransform().BuildMatrix3f();
-  const CTransform4f xf(facing, CVector3f(pos[0], pos[1], pos[2]));
+  const CTransform4f xf(facing, at);
   samus->Teleport(xf, mgr, true);
 }
 } // namespace

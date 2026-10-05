@@ -5,9 +5,13 @@
 #include "Metaforce/Randomizer/Randomizer.hpp"
 #include "Metaforce/Warp.hpp"
 
+#include "Collision/CCollidableAABox.hpp"
+#include "Collision/CCollidableSphere.hpp"
 #include "Collision/CMaterialFilter.hpp"
 #include "Collision/CMaterialList.hpp"
 #include "Collision/CRayCastResult.hpp"
+#include "Kyoto/Math/CAABox.hpp"
+#include "Kyoto/Math/CSphere.hpp"
 #include "Kyoto/Math/CTransform4f.hpp"
 #include "Kyoto/Math/CVector3f.hpp"
 #include "MetroidPrime/CGameArea.hpp"
@@ -19,6 +23,7 @@
 #include "MetroidPrime/ScriptObjects/CScriptDock.hpp"
 #include "MetroidPrime/ScriptObjects/CScriptDoor.hpp"
 #include "MetroidPrime/TCastTo.hpp"
+#include "MetroidPrime/Tweaks/CTweakPlayer.hpp"
 
 #include <borealis/log.hpp>
 
@@ -41,20 +46,30 @@ constexpr float kFadeTime = 0.35f;
 constexpr float kDoorApproachDistance = 4.f;
 // How far outside a doorway's outline the player may be and still count as in it.
 constexpr float kDoorwayMargin = 0.5f;
-// Where the player comes out: this far inside the doorway, standing this far above its bottom
-// edge. Morph Ball tunnels are narrower and come out morphed.
+// Where the player comes out: this far inside the doorway, this far above the floor there. Morph
+// Ball tunnels are narrower and come out morphed.
 constexpr float kArrivalDepth = 3.f;
 constexpr float kArrivalHeight = 1.f;
 constexpr float kBallArrivalDepth = 2.f;
 constexpr float kBallArrivalHeight = 0.5f;
+// Where she doesn't fit there: nearer the floor, then nearer the door a step at a time. She
+// also keeps this far from anything facing the doorway.
+constexpr float kLowArrivalHeight = 0.3f;
+constexpr float kBallLowArrivalHeight = 0.1f;
+constexpr float kArrivalStep = 0.5f;
+constexpr float kMinArrivalDepth = 1.f;
+constexpr float kArrivalClearance = 1.f;
+// A Morph Ball tunnel can be at the bottom of a dock much taller than it is: the way in is
+// looked for no higher than this above the dock's bottom edge.
+constexpr float kBallDoorwayHeight = 0.7f;
 // Below a door in a ceiling: the player's feet this far under the doorway.
 constexpr float kCeilingArrivalDrop = 3.f;
 // On top of a (closed) door in a floor.
 constexpr float kFloorArrivalHeight = 0.5f;
-// Finding the floor in front of a wall door: the ray starts this far under the top of the
-// doorway and looks this far below its bottom edge.
-constexpr float kFloorProbeMargin = 0.1f;
+// Finding the floor in front of a wall door: how far below the doorway's bottom edge to look.
 constexpr float kFloorProbeDepth = 4.f;
+// A start that isn't at a door: how far under it to look for floor when she doesn't fit there.
+constexpr float kStartSettleDepth = 6.f;
 
 constexpr CStateManager::ECameraFilterStage kFadeStage = CStateManager::kCFS_Seven;
 
@@ -91,6 +106,23 @@ bool GetDockFrame(const CGameArea& area, int dock, DockFrame& out) {
   }
   out.normal = normal.AsNormalized();
   return true;
+}
+
+// Whether the player's collision, with her feet at `pos`, touches none of the world's.
+bool IsArrivalClear(const CStateManager& mgr, const CVector3f& pos, bool morphBall) {
+  const CMaterialFilter solid = CMaterialFilter::MakeInclude(CMaterialList(kMT_Solid));
+  const CTransform4f xf = CTransform4f::Translate(pos);
+  if (morphBall) {
+    const float radius = gpTweakPlayer->GetPlayerBallHalfExtent();
+    const CCollidableSphere ball(CSphere(CVector3f(0.f, 0.f, radius), radius),
+                                 CMaterialList(kMT_Solid));
+    return !CGameCollision::DetectStaticCollisionBoolean(mgr, ball, xf, solid);
+  }
+  const float half = gpTweakPlayer->GetPlayerXYHalfExtent();
+  const CCollidableAABox box(CAABox(CVector3f(-half, -half, 0.f),
+                                    CVector3f(half, half, gpTweakPlayer->GetPlayerHeight())),
+                             CMaterialList(kMT_Solid));
+  return !CGameCollision::DetectStaticCollisionBoolean(mgr, box, xf, solid);
 }
 
 uint64_t DockKey(uint32_t area, int dock) {
@@ -272,23 +304,70 @@ std::optional< CTransform4f > DockArrivalTransform(const CStateManager& mgr,
     CVector3f inward = -frame.normal;
     inward.SetZ(0.f);
     inward = inward.AsNormalized();
-    const float depth = morphBall ? kBallArrivalDepth : kArrivalDepth;
-    const float height = morphBall ? kBallArrivalHeight : kArrivalHeight;
-    spawn = frame.center + inward * depth;
-    spawn.SetZ(std::min(frame.bottom + height, frame.center.GetZ()));
-    // The floor past the door needn't be level with it (Tallon's Transport Tunnel B climbs
-    // right away), so stand on whatever floor is there, looking down from the top of the door.
-    const float top = 2.f * frame.center.GetZ() - frame.bottom - kFloorProbeMargin;
-    const CVector3f probe(spawn.GetX(), spawn.GetY(), top);
-    const CRayCastResult floor = CGameCollision::RayStaticIntersection(
-        mgr, probe, CVector3f::Down(), top - frame.bottom + kFloorProbeDepth,
-        CMaterialFilter::MakeInclude(CMaterialList(kMT_Solid)));
-    if (floor.IsValid()) {
-      spawn.SetZ(floor.GetPoint().GetZ() + height);
-    }
     facing = inward;
+    // As the arrival room sees the world, whichever room the player is in for now.
+    const merged::QueryScope scope(area.GetAreaId());
+    const CMaterialFilter solid = CMaterialFilter::MakeInclude(CMaterialList(kMT_Solid));
+    // The dock is taller and wider than the doorway in it, and rays take triangles from behind
+    // too: one that starts in the rock around the doorway stands her on top of its ceiling,
+    // outside the room (Tallon Canyon). Only the middle of the doorway is known to be open, so
+    // everything is looked for from the line going in from there.
+    CVector3f origin = frame.center;
+    if (morphBall) {
+      origin.SetZ(std::min(origin.GetZ(), frame.bottom + kBallDoorwayHeight));
+    }
+    float depth = morphBall ? kBallArrivalDepth : kArrivalDepth;
+    const CRayCastResult wall = CGameCollision::RayStaticIntersection(
+        mgr, origin, inward, depth + kArrivalClearance, solid);
+    if (wall.IsValid()) {
+      depth = std::max(wall.GetTime() - kArrivalClearance, kMinArrivalDepth);
+    }
+    const float heights[2] = {morphBall ? kBallArrivalHeight : kArrivalHeight,
+                              morphBall ? kBallLowArrivalHeight : kLowArrivalHeight};
+    bool placed = false;
+    bool clear = false;
+    for (; !clear && depth >= kMinArrivalDepth - 0.001f; depth -= kArrivalStep) {
+      CVector3f at = origin + inward * depth;
+      // The floor past the door needn't be level with it (Tallon's Transport Tunnel B climbs
+      // right away), so stand on whatever floor is there.
+      const CRayCastResult floor = CGameCollision::RayStaticIntersection(
+          mgr, at, CVector3f::Down(), origin.GetZ() - frame.bottom + kFloorProbeDepth, solid);
+      for (int i = 0; i < 2 && !clear; ++i) {
+        at.SetZ(floor.IsValid() ? floor.GetPoint().GetZ() + heights[i]
+                                : std::min(frame.bottom + heights[i], frame.center.GetZ()));
+        // Past a ledge (Arboretum) the floor found is the one below it, and she'd be in its
+        // side. Failing everything, the first place tried.
+        clear = IsArrivalClear(mgr, at, morphBall);
+        if (clear || !placed) {
+          spawn = at;
+          placed = true;
+        }
+      }
+    }
   }
   return CTransform4f::LookAt(spawn, spawn + facing, CVector3f::Up());
+}
+
+CVector3f SettleStartPosition(const CStateManager& mgr, const CGameArea& area,
+                              const CVector3f& pos) {
+  const merged::QueryScope scope(area.GetAreaId());
+  if (IsArrivalClear(mgr, pos, false)) {
+    return pos;
+  }
+  const CRayCastResult floor = CGameCollision::RayStaticIntersection(
+      mgr, pos, CVector3f::Down(), kStartSettleDepth,
+      CMaterialFilter::MakeInclude(CMaterialList(kMT_Solid)));
+  if (floor.IsValid()) {
+    const float heights[2] = {kArrivalHeight, kLowArrivalHeight};
+    for (int i = 0; i < 2; ++i) {
+      CVector3f at = pos;
+      at.SetZ(floor.GetPoint().GetZ() + heights[i]);
+      if (at.GetZ() < pos.GetZ() && IsArrivalClear(mgr, at, false)) {
+        return at;
+      }
+    }
+  }
+  return pos;
 }
 
 bool OnCrossWorldDoorOpen(CStateManager& mgr, int area, int dock) {
