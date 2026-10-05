@@ -154,6 +154,7 @@ struct Session {
   std::optional< Seed > active;
   std::unordered_map< uint64_t, int > pickupByObject;
   std::unordered_map< uint64_t, int > memoByObject;
+  std::unordered_map< uint64_t, int > audioByObject;
   // DockKey(area, dock) -> index into active->docks
   std::unordered_map< uint64_t, int > dockByKey;
   std::vector< std::wstring > memoText;
@@ -235,6 +236,7 @@ void Deactivate() {
   s.active.reset();
   s.pickupByObject.clear();
   s.memoByObject.clear();
+  s.audioByObject.clear();
   s.dockByKey.clear();
   s.memoText.clear();
   s.templeLocation = -1;
@@ -329,6 +331,7 @@ void Activate(Seed seed) {
     const PickupLocationInfo& loc = kPickupLocations[i];
     s.pickupByObject.emplace(ObjectKey(loc.mlvl, loc.pickupId), i);
     s.memoByObject.emplace(ObjectKey(loc.mlvl, loc.hudMemoId), i);
+    s.audioByObject.emplace(ObjectKey(loc.mlvl, loc.audioId), i);
     s.memoText[i] = Widen(seed.locations[i].name + " acquired!");
     if (loc.mrea == templeArea) {
       s.templeLocation = i;
@@ -927,6 +930,27 @@ const wchar_t* GetHudMemoOverride(unsigned int worldId, unsigned int editorId) {
   editorId = merged::ToSourceEditorId(editorId, worldId);
   const auto it = s.memoByObject.find(ObjectKey(worldId, editorId));
   return it == s.memoByObject.end() ? nullptr : s.memoText[it->second].c_str();
+}
+
+const char* GetPickupAudioOverride(unsigned int worldId, unsigned int editorId) {
+  const auto& s = S();
+  if (!s.active) {
+    return nullptr;
+  }
+  editorId = merged::ToSourceEditorId(editorId, worldId);
+  const auto it = s.audioByObject.find(ObjectKey(worldId, editorId));
+  if (it == s.audioByObject.end()) {
+    return nullptr;
+  }
+  // Like randomprime's attainment_audio_file_name: artifacts get the artifact jingle, major
+  // upgrades the long item fanfare, and expansions, refills and the rest the short one.
+  const PlacedPickup& placed = s.active->locations[it->second];
+  const int type = placed.grant.itemType;
+  if (type >= CPlayerState::kIT_Truth && type <= CPlayerState::kIT_Newborn) {
+    return "/audio/jin_artifact.dsp";
+  }
+  const StandardPickupDef* def = s.pickups.FindStandard(placed.name);
+  return def != nullptr && def->major ? "/audio/jin_itemattain.dsp" : "/audio/itm_x_short_02.dsp";
 }
 
 namespace {

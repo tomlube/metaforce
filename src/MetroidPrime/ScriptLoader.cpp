@@ -3368,6 +3368,13 @@ CEntity* ScriptLoader::LoadStreamedMusic(CStateManager& mgr, CInputStream& in, i
   bool loop = in.Get< uint >() == 0;
   bool music = in.Get< bool >();
 
+#if defined(TARGET_PC)
+  if (const char* jingle = metaforce::randomizer::GetPickupAudioOverride(
+          mgr.GetWorld()->GetWorldAssetId(), info.GetEditorId().Value())) {
+    fileName = rstl::string_l(jingle);
+  }
+#endif
+
   return rs_new CScriptStreamedMusic(mgr.AllocateUniqueId(), info, name, active, fileName,
                                      noStopOnDeactivate, fadeIn, fadeOut, volume, loop, music);
 }

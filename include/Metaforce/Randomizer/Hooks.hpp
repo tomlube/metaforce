@@ -65,6 +65,10 @@ bool GetPickupModelCenter(unsigned int cmdl, float out[3]);
 // CScriptHUDMemo SetToZero: replacement text for a randomized pickup's memo, or null.
 const wchar_t* GetHudMemoOverride(unsigned int worldId, unsigned int editorId);
 
+// ScriptLoader::LoadStreamedMusic: the jingle a randomized pickup's attainment audio should play,
+// the one its new item has in the unrandomized game, or null to keep the file it has.
+const char* GetPickupAudioOverride(unsigned int worldId, unsigned int editorId);
+
 // Load-time edits to a room's script objects, standing in for what randomprime patches into the
 // game files. Values are EScriptObjectState / EScriptObjectMessage numbers and editor ids
 // without layer bits.
