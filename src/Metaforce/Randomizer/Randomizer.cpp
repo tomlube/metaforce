@@ -93,6 +93,34 @@ constexpr ScriptTimerSpawn kLandingSiteTimers[] = {
     {kBackFromLoadTimer, 0.02f, true, kBackFromLoadTimerConnections, 1},
 };
 
+// Each elevator room's "Memory Relay - dim scan holo", which scanning the elevator's hologram
+// activates: it dims the hologram and switches on the trigger that starts the ride. Editor ids
+// are without area bits; the game drops script object names, so they can't be found by name.
+struct ElevatorRelay {
+  uint32_t area; // MREA
+  uint32_t relay;
+};
+constexpr ElevatorRelay kElevatorRelays[] = {
+    {0x8316EDF5, 0x0040}, // Chozo Ruins / Transport to Magmoor Caverns North
+    {0xA5FA69A1, 0x0046}, // Chozo Ruins / Transport to Tallon Overworld East
+    {0x3E6B2BB7, 0x0097}, // Chozo Ruins / Transport to Tallon Overworld North
+    {0x236E1B0F, 0x0042}, // Chozo Ruins / Transport to Tallon Overworld South
+    {0x3BEAADC9, 0x004C}, // Magmoor Caverns / Transport to Chozo Ruins North
+    {0xEF2F1440, 0x003E}, // Magmoor Caverns / Transport to Phazon Mines West
+    {0xDCA9A28B, 0x004F}, // Magmoor Caverns / Transport to Phendrana Drifts North
+    {0xC1AC9233, 0x0056}, // Magmoor Caverns / Transport to Phendrana Drifts South
+    {0x4C3D244C, 0x004D}, // Magmoor Caverns / Transport to Tallon Overworld West
+    {0xE2C2CF38, 0x003F}, // Phazon Mines / Transport to Magmoor Caverns South
+    {0x430E999C, 0x004A}, // Phazon Mines / Transport to Tallon Overworld South
+    {0xDD0B0739, 0x0073}, // Phendrana Drifts / Transport to Magmoor Caverns South
+    {0xC00E3781, 0x0046}, // Phendrana Drifts / Transport to Magmoor Caverns West
+    {0x8A31665E, 0x0066}, // Tallon Overworld / Transport to Chozo Ruins East
+    {0x0CA514F0, 0x0052}, // Tallon Overworld / Transport to Chozo Ruins South
+    {0x11A02448, 0x002E}, // Tallon Overworld / Transport to Chozo Ruins West
+    {0x15D6FF8B, 0x004B}, // Tallon Overworld / Transport to Magmoor Caverns East
+    {0x7D106670, 0x003D}, // Tallon Overworld / Transport to Phazon Mines East
+};
+
 uint64_t ObjectKey(uint32_t world, uint32_t editorId) {
   return (static_cast< uint64_t >(world) << 32) | (editorId & 0x3FFFFFF);
 }
@@ -933,6 +961,35 @@ int GetScriptTimerSpawns(unsigned int worldId, unsigned int areaAssetId,
   }
   *out = kLandingSiteTimers;
   return static_cast< int >(std::size(kLandingSiteTimers));
+}
+
+bool GetAutoEnabledElevator(unsigned int areaAssetId, unsigned int& relay) {
+  const auto& s = S();
+  if (!s.active || gpGameState == nullptr) {
+    return false;
+  }
+  const ElevatorRelay* elevator = nullptr;
+  for (const ElevatorRelay& candidate : kElevatorRelays) {
+    if (candidate.area == areaAssetId) {
+      elevator = &candidate;
+      break;
+    }
+  }
+  if (elevator == nullptr) {
+    return false;
+  }
+  // A new game's starting items are only given once its first room has loaded.
+  if (s.pendingNewGame) {
+    for (const auto& item : s.active->startingItems) {
+      if (item.grant.itemType == CPlayerState::kIT_ScanVisor && item.grant.capacity > 0) {
+        return false;
+      }
+    }
+  } else if (gpGameState->PlayerState()->HasPowerUp(CPlayerState::kIT_ScanVisor)) {
+    return false;
+  }
+  relay = elevator->relay;
+  return true;
 }
 
 void OnPickupCollected(CStateManager&, int itemType) {

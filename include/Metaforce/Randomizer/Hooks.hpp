@@ -94,6 +94,12 @@ struct ScriptTimerSpawn {
 int GetScriptTimerSpawns(unsigned int worldId, unsigned int areaAssetId,
                          const ScriptTimerSpawn** out);
 
+// CStateManager::LoadScriptObjects: true when the elevator in the area with this MREA should
+// switch itself on, as if its hologram had been scanned, because the player doesn't have the
+// Scan Visor. Like randomprime's auto-enabled elevators; the logic never asks for Scan on them.
+// `relay` is the editor id, without area bits, of the memory relay the scan would activate.
+bool GetAutoEnabledElevator(unsigned int areaAssetId, unsigned int& relay);
+
 // CScriptSpawnPoint Reset: false keeps the player's inventory instead of replacing it with the
 // spawn point's. The randomizer gives the starting items itself, and the vanilla resets (like the
 // one that takes Samus's upgrades after the frigate) would take them away again.

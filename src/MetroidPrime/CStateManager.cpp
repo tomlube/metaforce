@@ -2080,6 +2080,24 @@ void CStateManager::LoadScriptObjects(TAreaId aid, CInputStream& in,
                                    CEntityInfo(aid, conns, eid), spawn.startTime, 0.f, false,
                                    spawn.autoStart, true));
   }
+
+  // Without the Scan Visor, randomized games switch elevators on through the relay their
+  // hologram's scan would set, as randomprime does.
+  uint elevatorRelay = 0;
+  if (mWorld.get() != nullptr && aid != kInvalidAreaId &&
+      metaforce::randomizer::GetAutoEnabledElevator(mWorld->GetArea(aid)->GetAreaAssetId(),
+                                                    elevatorRelay)) {
+    const TEditorId eid(0xFFF2 | (static_cast< uint >(aid.Value()) << 16));
+    if (GetIdForScript(eid) == kInvalidUniqueId) {
+      rstl::vector< SConnection > conns;
+      conns.push_back(SConnection(
+          kSS_Zero, kSM_Activate,
+          TEditorId(elevatorRelay | (static_cast< uint >(aid.Value()) << 16))));
+      AddObject(*rs_new CScriptTimer(AllocateUniqueId(), rstl::string_l("Auto Enable Elevator"),
+                                     CEntityInfo(aid, conns, eid), 0.001f, 0.f, false, true,
+                                     true));
+    }
+  }
 #endif
 }
 
