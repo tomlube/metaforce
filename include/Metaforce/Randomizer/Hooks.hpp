@@ -40,6 +40,10 @@ bool OnShortcutInput(bool r, bool z, bool dpadLeft, bool dpadRight);
 // direction is pressed.
 bool ShortcutsHoldMap(bool r);
 
+// CMFGameLoader construction: true, once, when the game being loaded is a quick reload. The
+// loader then leaves out the world name screen, so the game is back as soon as it has loaded.
+bool TakeQuickReload();
+
 // CMFGameLoader construction: picks the seed for the game being loaded, and moves a new game
 // to the seed's starting location.
 void OnGameLoad();

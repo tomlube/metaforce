@@ -349,6 +349,12 @@ CMFGameLoader::CMFGameLoader()
 #if defined(TARGET_PC)
   metaforce::randomizer::OnGameLoad();
   metaforce::warp::ApplyPendingWarp();
+  // A quick reload goes without the world name screen. The transition stays disabled, which is
+  // finished from the start, so the game comes back as soon as it has loaded.
+  if (metaforce::randomizer::TakeQuickReload()) {
+    mInitialized = true;
+    return;
+  }
 #endif
   if (gpMain->GetRestartMode() == CMain::kRM_Default ||
       gpMain->GetRestartMode() == CMain::kRM_StateSetter) {

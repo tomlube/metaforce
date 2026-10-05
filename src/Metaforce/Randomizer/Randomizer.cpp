@@ -148,6 +148,8 @@ struct Session {
   // Whether each shortcut chord was held on the last input seen, so holding one acts once.
   bool quickReloadHeld = false;
   bool quickSaveHeld = false;
+  // A quick reload left the game, and the loader hasn't picked it up yet.
+  bool quickReloadPending = false;
 
   std::optional< Seed > active;
   std::unordered_map< uint64_t, int > pickupByObject;
@@ -670,6 +672,7 @@ bool OnShortcutInput(bool r, bool z, bool dpadLeft, bool dpadRight) {
     // The game over screen's Continue: kRM_StateSetter rebuilds the game state from the backup
     // the last save left behind (CMain::RefreshGameState), then loads it.
     Log.info("Quick reload: reloading the last save");
+    s.quickReloadPending = true;
     gpGameState->WorldTransitionManager()->DisableTransition();
     gpMain->SetRestartMode(CMain::kRM_StateSetter);
     gpStateManager->QuitGame();
@@ -741,6 +744,13 @@ bool IsDoorTraversed(unsigned int worldId, unsigned int editorId) {
 
 bool ShortcutsHoldMap(bool r) {
   return r && S().active && (S().quickReload || S().quickSave);
+}
+
+bool TakeQuickReload() {
+  auto& s = S();
+  const bool pending = s.quickReloadPending;
+  s.quickReloadPending = false;
+  return pending;
 }
 
 void OnGameLoad() {
