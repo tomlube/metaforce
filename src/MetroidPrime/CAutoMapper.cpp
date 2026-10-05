@@ -50,11 +50,14 @@
 #include "Metaforce/MapLayout.hpp"
 #include "Metaforce/Randomizer/Hooks.hpp"
 
-// Randomizer: the map screen's A button warps to the seed's start instead of opening the world
-// map, whose maps of the other regions don't follow the room randomizer. The first press arms it
-// for this many seconds; a second press warps.
+// Randomizer: the map screen's X button warps to the seed's start. The first press arms it for
+// this many seconds; a second press warps.
 static const float skWarpConfirmSeconds = 3.f;
 static float sWarpArmedAt = -1.f;
+
+// The warp's hint goes on the Key/Legend hint's line. That hint is 151 pixels wide and centred on
+// its 40 pixel pane, so it starts this far from the pane's left edge.
+static const int skKeyHintLeft = -55;
 
 static bool IsWarpArmed() {
   if (sWarpArmedAt < 0.f) {
@@ -722,25 +725,23 @@ void CAutoMapper::ProcessControllerInput(const CFinalInput& input, const CStateM
 void CAutoMapper::ProcessMapScreenInput(const CFinalInput& input, const CStateManager& mgr) {
   CMatrix3f camRot(mRenderState0.mCamOrientation.BuildTransform());
   if (mState == kAMS_MapScreen) {
-#if defined(TARGET_PC)
-    if (metaforce::randomizer::CanWarpToStart()) {
-      if (input.PA() && x328_ == 0) {
-        if (IsWarpArmed()) {
-          sWarpArmedAt = -1.f;
-          metaforce::randomizer::WarpToStart();
-        } else {
-          sWarpArmedAt = CGraphics::GetSecondsMod900();
-        }
-        CSfxManager::SfxStart(0x5a6, 127, 64, false, CSfxManager::kMedPriority, false,
-                              CSfxManager::kAllAreas);
-      }
-    } else
-#endif
-        if (input.PA() && x328_ == 0) {
+    if (input.PA() && x328_ == 0) {
       if (HasCurrentMapUniverseWorld(mgr)) {
         BeginMapperStateTransition(kAMS_MapScreenUniverse, mgr);
       }
     }
+#if defined(TARGET_PC)
+    else if (input.PX() && x328_ == 0 && metaforce::randomizer::CanWarpToStart()) {
+      if (IsWarpArmed()) {
+        sWarpArmedAt = -1.f;
+        metaforce::randomizer::WarpToStart();
+      } else {
+        sWarpArmedAt = CGraphics::GetSecondsMod900();
+      }
+      CSfxManager::SfxStart(0x5a6, 127, 64, false, CSfxManager::kMedPriority, false,
+                            CSfxManager::kAllAreas);
+    }
+#endif
   } else if (mState == kAMS_MapScreenUniverse && input.PA()) {
     const CMapUniverse::CMapWorldData& mapuWld = mMapu.GetObject()->GetMapWorldData(mWorldIdx);
     const CVector3f& pointLocal =
@@ -1412,12 +1413,8 @@ void CAutoMapper::Update(float dt, const CStateManager& mgr) {
       const wchar_t imageSuffix[] = L";";
       rstl::wstring string;
 
-      bool showA = mState == kAMS_MapScreenUniverse ||
-                   (mState == kAMS_MapScreen && HasCurrentMapUniverseWorld(mgr));
-#if defined(TARGET_PC)
-      showA = showA || (mState == kAMS_MapScreen && metaforce::randomizer::CanWarpToStart());
-#endif
-      if (showA) {
+      if (mState == kAMS_MapScreenUniverse ||
+          (mState == kAMS_MapScreen && HasCurrentMapUniverseWorld(mgr))) {
         string.reserve(0x100);
         string.append(imagePrefix, -1);
         string.append(CStringExtras::ConvertToUNICODE(rstl::string(
@@ -1432,11 +1429,6 @@ void CAutoMapper::Update(float dt, const CStateManager& mgr) {
     CGuiTextPane* right =
         static_cast< CGuiTextPane* >(mFrmeInitialized->FindWidget("textpane_right"));
     rstl::wstring rightString;
-#if defined(TARGET_PC)
-    if (mState == kAMS_MapScreen && metaforce::randomizer::CanWarpToStart()) {
-      rightString = rstl::wstring_l(IsWarpArmed() ? L"Confirm Warp" : L"Warp to Start");
-    } else
-#endif
     if (mState == kAMS_MapScreenUniverse) {
       rightString = rstl::wstring_l(gpStringTable->GetString(0x2d));
     } else if (mState == kAMS_MapScreen && HasCurrentMapUniverseWorld(mgr)) {
@@ -1445,6 +1437,32 @@ void CAutoMapper::Update(float dt, const CStateManager& mgr) {
       rightString = rstl::wstring_l(L"");
     }
     right->TextSupport().SetText(rightString);
+
+#if defined(TARGET_PC)
+    {
+      // Randomizer: the warp's hint follows the Key/Legend one. The line is left justified and
+      // the pane moved to where it used to start, which keeps the Key/Legend hint in place. The
+      // X button fills its texture's height, so it isn't cropped the way the Y button is.
+      CGuiTextPane* yicon =
+          static_cast< CGuiTextPane* >(mFrmeInitialized->FindWidget("textpane_yicon"));
+      const bool showWarp = mState == kAMS_MapScreen && metaforce::randomizer::CanWarpToStart();
+      rstl::wstring string(gpStringTable->GetString(0x2b));
+      CVector3f offset = CVector3f::Zero();
+      if (showWarp) {
+        string.append(L"    &image=", -1);
+        string.append(CStringExtras::ConvertToUNICODE(
+            rstl::string(CBasics::Stringize("%8.8X", gpTweakPlayerRes->mXButton[0]))));
+        string.append(IsWarpArmed() ? L";  Confirm Warp" : L";  Warp to Start", -1);
+        offset = CVector3f(skKeyHintLeft * yicon->GetWidth() /
+                               yicon->GetTextSupport().GetTextBoundingWidth(),
+                           0.f, 0.f);
+      }
+      yicon->TextSupport().SetJustification(showWarp ? kJustification_Left
+                                                     : kJustification_Center);
+      yicon->TextSupport().SetText(string);
+      yicon->SetO2PTransform(yicon->GetTransform() * CTransform4f::Translate(offset));
+    }
+#endif
   }
 
   // Update pane positions
