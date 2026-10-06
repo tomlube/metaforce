@@ -137,6 +137,17 @@ Rml::String SeedLabel(const rando::SeedSummary& seed) {
   return fmt::format("{}  ·  {}", seed.hash, seed.randomStart ? "Random start" : seed.startName);
 }
 
+Rml::String BackupLabel(const rando::AutosaveBackup& backup) {
+  const int seconds = static_cast< int >(backup.playTime);
+  Rml::String label =
+      fmt::format("{}:{:02}:{:02}", seconds / 3600, seconds / 60 % 60, seconds % 60);
+  if (!backup.region.empty()) {
+    label += fmt::format("  ·  {}", backup.region);
+  }
+  return label + fmt::format("  ·  {} Energy Tanks  ·  {}% items", backup.energyTanks,
+                             backup.itemPercent);
+}
+
 Rml::String PoolRml() {
   const auto* pickups = rando::GetPickupDatabase();
   if (pickups == nullptr) {
@@ -325,6 +336,33 @@ void RandomizerWindow::build_seeds_tab(Rml::Element* content) {
           "last save at once, as if you had died and chosen Continue.<br/><br/>Without a save, "
           "the seed starts over. While this is on, holding R stops Z from opening the map.");
 
+  std::vector< DropdownButton::Option > autosaveModes;
+  for (const char* name : rando::kAutosaveNames) {
+    autosaveModes.push_back({name});
+  }
+  auto& autosave = leftPane.add_child< DropdownButton >(DropdownButton::Props{
+      .key = "Autosave",
+      .options = std::move(autosaveModes),
+      .getValue = [] { return rando::GetAutosave(); },
+      .setValue = [](int v) { rando::SetAutosave(v); },
+      .isModified = [] { return rando::GetAutosave() != rando::kAutosaveAuto; },
+  });
+  SetHelp(leftPane, rightPane, autosave,
+          "Saves a randomized game to its slot after you collect a pickup, without the save "
+          "screen. Loading the save puts you back on that spot.<br/><br/>The save waits until "
+          "the game could be saved, Samus is on the ground and she hasn't lost energy for two "
+          "seconds, so it isn't made mid-jump, in a fight or in lava.<br/><br/><b>Major "
+          "Only</b> saves after upgrades, Energy Tanks and artifacts. <b>All Pickups</b> saves "
+          "after expansions too. <b>Auto</b> is Major Only for seeds with the room randomizer, "
+          "where a wrong turn costs the most, and Off for the rest.<br/><br/>The save each "
+          "autosave replaces is kept; see <b>Autosave Backups</b>.");
+
+  auto& backups = leftPane.add_group_button({.text = "Autosave Backups"});
+  leftPane.register_control(backups, rightPane, [this](Pane& pane) {
+    pane.clear();
+    add_backup_list(pane);
+  });
+
   std::vector< DropdownButton::Option > mapLayouts;
   for (const char* name : rando::kMapLayoutNames) {
     mapLayouts.push_back({name});
@@ -447,6 +485,71 @@ void RandomizerWindow::show_seed_actions(const std::string& hash) {
                         rando::DeleteSeed(hash);
                         dismiss(modal);
                         refresh_seeds();
+                      },
+              },
+              ModalAction{
+                  .label = "Cancel",
+                  .onPressed =
+                      [dismiss](Modal& modal) {
+                        play_nav_sound(NavSound::WindowClose);
+                        dismiss(modal);
+                      },
+              },
+          },
+      .onDismiss = dismiss,
+      .icon = "controller",
+      .isVertical = true,
+  }));
+}
+
+void RandomizerWindow::add_backup_list(Pane& pane) {
+  mBackups = rando::ListAutosaveBackups();
+  if (!rando::CanRestoreAutosaveBackup()) {
+    pane.add_text("Start or load a randomized game to see the backups of its save slot.");
+    return;
+  }
+  if (mBackups.empty()) {
+    pane.add_text("No backups yet. One is kept each time an autosave replaces a save.");
+    return;
+  }
+  pane.add_text("The saves your autosaves replaced, newest first. Choose one to go back to it.");
+  std::vector< List::Item > items;
+  for (size_t i = 0; i < mBackups.size(); ++i) {
+    items.push_back({.key = i, .label = BackupLabel(mBackups[i])});
+  }
+  pane.add_child< List >(List::Props{
+      .items = std::move(items),
+      .onPressed =
+          [this](uint64_t key) {
+            if (key < mBackups.size()) {
+              play_nav_sound(NavSound::Click);
+              show_backup_actions(mBackups[key]);
+            }
+          },
+  });
+}
+
+void RandomizerWindow::show_backup_actions(const rando::AutosaveBackup& backup) {
+  const auto dismiss = [](Modal& modal) { modal.pop(); };
+  push(std::make_unique< Modal >(Modal::Props{
+      .title = "Restore Backup",
+      .bodyRml = fmt::format("{}<br/><br/>The game reloads from this save, as with Quick Reload, "
+                             "and saves it to your slot once it's loaded. The save it replaces "
+                             "is kept as a backup.",
+                             EscapeRml(BackupLabel(backup))),
+      .actions =
+          {
+              ModalAction{
+                  .label = "Restore",
+                  .onPressed =
+                      [this, file = backup.file, dismiss](Modal& modal) {
+                        const std::string error = rando::RestoreAutosaveBackup(file);
+                        dismiss(modal);
+                        if (error.empty()) {
+                          play_nav_sound(NavSound::ItemEnable);
+                        } else {
+                          show_message("Restore Backup", EscapeRml(error), true);
+                        }
                       },
               },
               ModalAction{

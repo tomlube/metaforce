@@ -54,6 +54,9 @@ const Seed* GetActiveSeed();
 void MarkDoorTraversed(unsigned int world, unsigned int editorId);
 // A dock, by its area's MREA, the player went through, from either side.
 void MarkDockTraversed(unsigned int areaAssetId, int dock);
+// The player went into the room `areaAssetId` (MREA) through its dock `dock`, morphed or not and
+// facing `yaw` (radians about Z, 0 facing +Y). Autosaves made in the room load them there.
+void MarkRoomEntered(unsigned int areaAssetId, int dock, bool morphed, float yaw);
 
 // Whether R + Z + D-pad Left reloads the last save in a randomized game. On by default.
 bool GetQuickReload();
@@ -73,6 +76,38 @@ inline constexpr int kMapLayoutTidy = 1;
 inline constexpr int kMapLayoutConnected = 2;
 int GetMapLayout();
 void SetMapLayout(int mode);
+
+// Autosave: in a randomized game, saves to the game's slot after a pickup, on the first frame
+// the game could be saved from the save screen, Samus is on the ground and she hasn't lost energy
+// for a moment. Major Only saves after upgrades, Energy Tanks and artifacts; All Pickups after
+// expansions too. Auto is Major Only for seeds with the room randomizer and Off for the rest.
+// Auto by default.
+inline constexpr const char* kAutosaveNames[] = {"Auto", "Off", "Major Only", "All Pickups"};
+inline constexpr int kAutosaveAuto = 0;
+inline constexpr int kAutosaveOff = 1;
+inline constexpr int kAutosaveMajor = 2;
+inline constexpr int kAutosaveAll = 3;
+int GetAutosave();
+void SetAutosave(int mode);
+// The mode the game being played autosaves with: Auto resolved for its seed. Off without one.
+int GetEffectiveAutosave();
+
+// The save an autosave replaced, kept so a bad autosave (say, in a room there's no way out of)
+// can be undone. The last few are kept for each save slot.
+struct AutosaveBackup {
+  std::filesystem::path file;
+  double playTime = 0.0; // seconds
+  std::string region;
+  int energyTanks = 0;
+  int itemPercent = 0;
+};
+// The backups of the slot of the randomized game being played, newest first.
+std::vector< AutosaveBackup > ListAutosaveBackups();
+bool CanRestoreAutosaveBackup();
+// Leaves the game and loads `file` in place of the last save, like Quick Reload, then saves it to
+// the slot once it has loaded (backing up the save it replaces). Empty on success, otherwise why
+// it couldn't.
+std::string RestoreAutosaveBackup(const std::filesystem::path& file);
 
 enum class GenerationState {
   Idle,

@@ -170,8 +170,12 @@ void OnGameSaved();
 unsigned int GetCustomAssetType(unsigned int id);
 bool GetCustomAsset(unsigned int id, const unsigned char*& data, unsigned int& size);
 
-// CScriptPickup::Touch, after the item was given.
-void OnPickupCollected(CStateManager& mgr, int itemType);
+// CScriptPickup::Touch, after the item was given. editorId is the pickup's, with layer bits.
+void OnPickupCollected(CStateManager& mgr, int itemType, unsigned int editorId);
+
+// CStateManager::Update, after actors think, while gameplay runs and the player is alive: makes
+// the autosave a pickup asked for once the game can be saved.
+void UpdateAutosave(CStateManager& mgr, float dt);
 
 // CScriptPickup::Touch: true to take the "disable input" flag off the player hints the pickup's
 // acquisition sequence turns on. With the message box skipped, those hints only drop the

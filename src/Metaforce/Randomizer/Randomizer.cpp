@@ -7,6 +7,7 @@
 #include "Metaforce/Randomizer/Hooks.hpp"
 #include "Metaforce/Randomizer/PickupTables.hpp"
 #include "Metaforce/SaveAnywhere.hpp"
+#include "Metaforce/SaveIndicator.hpp"
 #include "Metaforce/Warp.hpp"
 
 #include "Kyoto/Audio/CSfxManager.hpp"
@@ -18,8 +19,10 @@
 #include "MetroidPrime/CMemoryCard.hpp"
 #include "MetroidPrime/CScriptLayerManager.hpp"
 #include "MetroidPrime/CStateManager.hpp"
+#include "MetroidPrime/CMemoryCardDriver.hpp"
 #include "MetroidPrime/CWorld.hpp"
 #include "MetroidPrime/Player/CGameState.hpp"
+#include "MetroidPrime/Player/CMorphBall.hpp"
 #include "MetroidPrime/Player/CPlayer.hpp"
 #include "MetroidPrime/Player/CPlayerState.hpp"
 #include "MetroidPrime/Player/CWorldState.hpp"
@@ -35,7 +38,11 @@
 #include <atomic>
 #include <bit>
 #include <cctype>
+#include <chrono>
+#include <cmath>
+#include <cstring>
 #include <fstream>
+#include <functional>
 #include <map>
 #include <mutex>
 #include <thread>
@@ -121,6 +128,17 @@ constexpr ElevatorRelay kElevatorRelays[] = {
     {0x7D106670, 0x003D}, // Tallon Overworld / Transport to Phazon Mines East
 };
 
+// An autosave waits until Samus has gone this long (seconds) without losing energy, so it isn't
+// made in the middle of a fight, in lava or in a heated room.
+constexpr float kAutosaveUnhurtTime = 2.f;
+// And this long (seconds) after the pickup. The pickup is only remembered as collected once its
+// message reaches a memory relay, which relays and timers on the way pass on a frame or more
+// later: saved before then, the save has the item and the pickup both, and loading it puts the
+// pickup back to be collected again.
+constexpr float kAutosavePickupSettleTime = 1.f;
+// Saves kept for each save slot from before its autosaves replaced them.
+constexpr size_t kAutosaveBackups = 5;
+
 uint64_t ObjectKey(uint32_t world, uint32_t editorId) {
   return (static_cast< uint64_t >(world) << 32) | (editorId & 0x3FFFFFF);
 }
@@ -145,11 +163,31 @@ struct Session {
   bool quickReload = true;
   bool quickSave = true;
   int mapLayout = kMapLayoutConnected;
+  int autosave = kAutosaveAuto;
   // Whether each shortcut chord was held on the last input seen, so holding one acts once.
   bool quickReloadHeld = false;
   bool quickSaveHeld = false;
   // A quick reload left the game, and the loader hasn't picked it up yet.
   bool quickReloadPending = false;
+  // A pickup the autosave mode covers was collected, and the game hasn't been autosaved since.
+  bool autosavePending = false;
+  // How long since the last pickup the autosave is waiting on.
+  float sincePickup = 0.f;
+  // An autosave backup is being loaded, and is to be saved once it has.
+  bool restoredBackupPending = false;
+  // Samus's energy on the last frame, and how long since it last went down.
+  float lastEnergy = -1.f;
+  float unhurtTime = 0.f;
+  // How Samus came into the room she's in, where autosaves load her: the room keeps little of
+  // what happened in it (fallen debris is back up, say), but the way she came in is open.
+  struct RoomEntry {
+    uint32_t area = 0; // MREA
+    int dock = -1;     // the dock she came through, or -1 to load at `transform`
+    bool morphed = false;
+    float yaw = 0.f; // radians about Z, 0 facing +Y; for doors in floors and ceilings
+    std::optional< CTransform4f > transform;
+  };
+  std::optional< RoomEntry > entry;
 
   std::optional< Seed > active;
   std::unordered_map< uint64_t, int > pickupByObject;
@@ -196,6 +234,7 @@ void SaveSession() {
       {"quick_reload", S().quickReload},
       {"quick_save", S().quickSave},
       {"map_layout", S().mapLayout},
+      {"autosave", S().autosave},
   };
   std::error_code ec;
   fs::create_directories(S().root, ec);
@@ -217,6 +256,8 @@ void LoadSession() {
   S().quickSave = root.value("quick_save", true);
   S().mapLayout = std::clamp(root.value("map_layout", static_cast< int >(kMapLayoutConnected)),
                              kMapLayoutVanilla, kMapLayoutConnected);
+  S().autosave = std::clamp(root.value("autosave", static_cast< int >(kAutosaveAuto)),
+                            kAutosaveAuto, kAutosaveAll);
   if (root.contains("slots") && root["slots"].is_object()) {
     S().slots = root["slots"].get< std::map< std::string, std::string > >();
   }
@@ -241,6 +282,7 @@ void Deactivate() {
   s.memoText.clear();
   s.templeLocation = -1;
   s.pendingNewGame = false;
+  s.autosavePending = false;
   s.traversedDoors.clear();
   s.traversedDocks.clear();
   s.traversedSlot.clear();
@@ -399,6 +441,135 @@ void SyncArtifactLayers() {
 
 std::string SlotKey() {
   return fmt::format("{:016X}-{}", gpGameState->GetCardSerial(), gpGameState->GetFileIdx());
+}
+
+// Autosave backups of a save slot: the slot's save from before each autosave, as the card held
+// it, named by when they were kept.
+fs::path BackupDirectory(const std::string& slot) { return S().root / "autosave" / slot; }
+
+std::vector< fs::path > BackupFiles(const std::string& slot) {
+  std::vector< fs::path > files;
+  std::error_code ec;
+  for (const auto& entry : fs::directory_iterator(BackupDirectory(slot), ec)) {
+    if (entry.path().extension() == ".sav") {
+      files.push_back(entry.path());
+    }
+  }
+  // Names are zero-padded times, so newest first is reverse name order.
+  std::sort(files.begin(), files.end(), std::greater<>());
+  return files;
+}
+
+void KeepBackup(const std::vector< uint8_t >& save) {
+  const std::string slot = SlotKey();
+  std::error_code ec;
+  fs::create_directories(BackupDirectory(slot), ec);
+  const auto now = std::chrono::duration_cast< std::chrono::milliseconds >(
+                       std::chrono::system_clock::now().time_since_epoch())
+                       .count();
+  const fs::path path = BackupDirectory(slot) / fmt::format("{:020}.sav", now);
+  {
+    std::ofstream file(path, std::ios::binary | std::ios::trunc);
+    file.write(reinterpret_cast< const char* >(save.data()),
+               static_cast< std::streamsize >(save.size()));
+    if (!file) {
+      Log.warn("Could not write autosave backup {}", path.string());
+      return;
+    }
+  }
+  const std::vector< fs::path > files = BackupFiles(slot);
+  for (size_t i = kAutosaveBackups; i < files.size(); ++i) {
+    fs::remove(files[i], ec);
+  }
+}
+
+// The game over screen's Continue: kRM_StateSetter rebuilds the game state from the backup the
+// last save left behind (CMain::RefreshGameState), then loads it.
+void ReloadLastSave() {
+  S().quickReloadPending = true;
+  gpGameState->WorldTransitionManager()->DisableTransition();
+  gpMain->SetRestartMode(CMain::kRM_StateSetter);
+  gpStateManager->QuitGame();
+}
+
+// The seed location of a pickup, or -1 for a pickup the seed didn't place: the energy and ammo
+// that enemies drop and pickup generators spawn.
+int PickupLocation(const CStateManager& mgr, unsigned int editorId) {
+  const auto& s = S();
+  CAssetId world = mgr.GetWorld()->GetWorldAssetId();
+  editorId = merged::ToSourceEditorId(editorId, world);
+  const auto it = s.pickupByObject.find(ObjectKey(world, editorId));
+  return it != s.pickupByObject.end() ? it->second : -1;
+}
+
+// Major Only autosaves after every upgrade, Energy Tank and artifact, but not after expansions,
+// refills or nothing. Power Bomb and its expansions give the same item, so this goes by what the
+// seed placed at the pickup.
+bool IsMajorPickup(const CStateManager& mgr, int itemType, unsigned int editorId) {
+  const auto& s = S();
+  if (itemType >= CPlayerState::kIT_Truth && itemType <= CPlayerState::kIT_Newborn) {
+    return true;
+  }
+  const int location = PickupLocation(mgr, editorId);
+  return location >= 0 && s.pickups.FindStandard(s.active->locations[location].name) != nullptr;
+}
+
+// Standing or rolling on the ground. A spider ball on a track counts as on the ground wherever the
+// track goes, so it doesn't count here.
+bool IsOnGround(const CPlayer& player) {
+  if (player.GetPlayerMovementState() != NPlayer::kMS_OnGround) {
+    return false;
+  }
+  return player.GetMorphballTransitionState() != CPlayer::kMS_Morphed ||
+         player.GetMorphBall()->GetSpiderBallState() != CMorphBall::kSBS_Active;
+}
+
+// The MREA of the room the player is in, or 0 outside gameplay.
+uint32_t CurrentAreaAssetId(const CStateManager& mgr) {
+  const CWorld* world = mgr.GetWorld();
+  const TAreaId area = mgr.GetNextAreaId();
+  return world != nullptr && world->DoesAreaExist(area)
+             ? world->GetAreaAlways(area).GetAreaAssetId()
+             : 0;
+}
+
+float PlayerYaw(const CPlayer& player) {
+  const CVector3f forward = player.GetTransform().GetForward();
+  return std::atan2(-forward.GetX(), forward.GetY());
+}
+
+// Where an autosave made now loads the player: where they came into the room. Nothing to load
+// them where they are.
+std::optional< save_anywhere::SpawnPoint > AutosaveSpawn(const CStateManager& mgr) {
+  const auto& entry = S().entry;
+  if (!entry || entry->area != CurrentAreaAssetId(mgr)) {
+    return std::nullopt;
+  }
+  if (entry->dock < 0) {
+    return save_anywhere::SpawnPoint{*entry->transform, entry->morphed};
+  }
+  const CGameArea& area = mgr.GetWorld()->GetAreaAlways(mgr.GetNextAreaId());
+  if (std::optional< CTransform4f > xf =
+          DockArrivalTransform(mgr, area, entry->dock, entry->morphed, entry->yaw)) {
+    return save_anywhere::SpawnPoint{*xf, entry->morphed};
+  }
+  Log.warn("Entry dock {} of 0x{:08X} wasn't found; autosaving where Samus is", entry->dock,
+           entry->area);
+  return std::nullopt;
+}
+
+void WriteAutosave(const CStateManager& mgr) {
+  std::vector< uint8_t > previous;
+  const std::string error = save_anywhere::SaveSilently(&previous, AutosaveSpawn(mgr));
+  if (!error.empty()) {
+    Log.warn("Autosave failed: {}", error);
+    return;
+  }
+  Log.info("Autosaved");
+  save_indicator::Show();
+  if (!previous.empty()) {
+    KeepBackup(previous);
+  }
 }
 
 void JoinWorker() {
@@ -571,6 +742,75 @@ void SetMapLayout(int mode) {
   SaveSession();
 }
 
+int GetAutosave() { return S().autosave; }
+
+void SetAutosave(int mode) {
+  S().autosave = std::clamp(mode, kAutosaveAuto, kAutosaveAll);
+  SaveSession();
+}
+
+int GetEffectiveAutosave() {
+  const auto& s = S();
+  if (s.autosave != kAutosaveAuto) {
+    return s.autosave;
+  }
+  return s.active && !s.active->docks.empty() ? kAutosaveMajor : kAutosaveOff;
+}
+
+std::vector< AutosaveBackup > ListAutosaveBackups() {
+  std::vector< AutosaveBackup > result;
+  if (!S().active || gpGameState == nullptr) {
+    return result;
+  }
+  for (const fs::path& path : BackupFiles(SlotKey())) {
+    // LoadGameFileState reads through a stream that claims more than a slot holds.
+    std::vector< uint8_t > data(4096);
+    std::ifstream file(path, std::ios::binary);
+    file.read(reinterpret_cast< char* >(data.data()), CMemoryCardDriver::kFileSlotSize);
+    if (file.gcount() != CMemoryCardDriver::kFileSlotSize) {
+      continue;
+    }
+    const CGameState::GameFileStateInfo info = CGameState::LoadGameFileState(data.data());
+    AutosaveBackup backup;
+    backup.file = path;
+    backup.playTime = info.mPlayTime;
+    backup.energyTanks = static_cast< int >(info.mEnergyTanks);
+    backup.itemPercent = static_cast< int >(info.mItemPercent);
+    for (const warp::World& world : warp::GetWorlds()) {
+      if (world.mlvl == info.mMlvlId) {
+        backup.region = world.name;
+      }
+    }
+    result.push_back(std::move(backup));
+  }
+  return result;
+}
+
+bool CanRestoreAutosaveBackup() {
+  return S().active && gpGameState != nullptr && gpStateManager != nullptr &&
+         gpStateManager->IsFullyInitialized();
+}
+
+std::string RestoreAutosaveBackup(const fs::path& path) {
+  if (!CanRestoreAutosaveBackup()) {
+    return "There's no randomized game in progress.";
+  }
+  std::vector< uint8_t > data(CMemoryCardDriver::kFileSlotSize);
+  std::ifstream file(path, std::ios::binary);
+  file.read(reinterpret_cast< char* >(data.data()), CMemoryCardDriver::kFileSlotSize);
+  if (file.gcount() != CMemoryCardDriver::kFileSlotSize) {
+    return "The backup couldn't be read.";
+  }
+  // Quick Reload loads whatever the backup buffer holds, which is a save slot's bytes.
+  rstl::vector< uchar >& backup = gpGameState->BackupBuf();
+  backup.assign(CMemoryCardDriver::kFileSlotSize);
+  std::memcpy(backup.data(), data.data(), data.size());
+  Log.info("Restoring autosave backup {}", path.filename().string());
+  S().restoredBackupPending = true;
+  ReloadLastSave();
+  return {};
+}
+
 bool StartGeneration() {
   auto& s = S();
   if (GetGenerationStatus().state == GenerationState::Running) {
@@ -672,13 +912,8 @@ bool OnShortcutInput(bool r, bool z, bool dpadLeft, bool dpadRight) {
   }
 
   if (reloadCompleted && s.quickReload) {
-    // The game over screen's Continue: kRM_StateSetter rebuilds the game state from the backup
-    // the last save left behind (CMain::RefreshGameState), then loads it.
     Log.info("Quick reload: reloading the last save");
-    s.quickReloadPending = true;
-    gpGameState->WorldTransitionManager()->DisableTransition();
-    gpMain->SetRestartMode(CMain::kRM_StateSetter);
-    gpStateManager->QuitGame();
+    ReloadLastSave();
     return true;
   }
 
@@ -710,6 +945,15 @@ void MarkDockTraversed(unsigned int areaAssetId, int dock) {
       s.traversedDocks.insert(DockKey(areaAssetId, dock)).second) {
     SaveTraversed();
   }
+}
+
+void MarkRoomEntered(unsigned int areaAssetId, int dock, bool morphed, float yaw) {
+  Session::RoomEntry entry;
+  entry.area = areaAssetId;
+  entry.dock = dock;
+  entry.morphed = morphed;
+  entry.yaw = yaw;
+  S().entry = entry;
 }
 
 bool IsDockTraversed(unsigned int areaAssetId, int dock) {
@@ -762,7 +1006,15 @@ void OnGameLoad() {
   }
   auto& s = S();
   const std::string key = SlotKey();
+  // An autosave still waiting belongs to the game that was left. A restored backup is saved once
+  // it's loaded, so that it's what the card holds.
+  s.autosavePending = s.restoredBackupPending;
+  s.restoredBackupPending = false;
+  s.sincePickup = kAutosavePickupSettleTime;
   if (gpGameState->GetInitPowerupsAtFirstSpawn()) {
+    // A new game in the slot: the backups were of the game it replaces.
+    std::error_code ec;
+    fs::remove_all(BackupDirectory(key), ec);
     if (s.armedSeed.empty() || !ActivateByHash(s.armedSeed)) {
       Deactivate();
       if (s.slots.erase(key) != 0) {
@@ -865,6 +1117,9 @@ void WarpToStart() {
 void OnWorldInitialized(CStateManager& mgr) {
   ApplyCrossWorldArrival(mgr);
   auto& s = S();
+  s.lastEnergy = -1.f;
+  s.unhurtTime = 0.f;
+  s.entry.reset();
   if (s.active && s.pendingStartTeleport) {
     s.pendingStartTeleport = false;
     TeleportToStart(mgr);
@@ -1034,10 +1289,55 @@ bool GetAutoEnabledElevator(unsigned int areaAssetId, unsigned int& relay) {
   return true;
 }
 
-void OnPickupCollected(CStateManager&, int itemType) {
-  if (S().active && itemType >= CPlayerState::kIT_Truth && itemType <= CPlayerState::kIT_Newborn) {
+void OnPickupCollected(CStateManager& mgr, int itemType, unsigned int editorId) {
+  auto& s = S();
+  if (!s.active) {
+    return;
+  }
+  if (itemType >= CPlayerState::kIT_Truth && itemType <= CPlayerState::kIT_Newborn) {
     SyncArtifactLayers();
   }
+  const int autosave = GetEffectiveAutosave();
+  const bool artifact =
+      itemType >= CPlayerState::kIT_Truth && itemType <= CPlayerState::kIT_Newborn;
+  if ((autosave == kAutosaveAll && (artifact || PickupLocation(mgr, editorId) >= 0)) ||
+      (autosave == kAutosaveMajor && IsMajorPickup(mgr, itemType, editorId))) {
+    s.autosavePending = true;
+    s.sincePickup = 0.f;
+    Log.info("Autosave queued for item {} (object 0x{:08X})", itemType, editorId);
+  }
+}
+
+void UpdateAutosave(CStateManager& mgr, float dt) {
+  auto& s = S();
+  if (!s.active || mgr.GetPlayer() == nullptr) {
+    return;
+  }
+  const CPlayer& player = *mgr.GetPlayer();
+  const float energy = mgr.GetPlayerState()->GetHealthInfo().GetHP();
+  s.unhurtTime = energy < s.lastEnergy ? 0.f : s.unhurtTime + dt;
+  s.lastEnergy = energy;
+  s.sincePickup += dt;
+  // A room come into other than by a door (a load, an elevator, a cross-world door) is entered
+  // where Samus is when it is first seen.
+  const uint32_t area = CurrentAreaAssetId(mgr);
+  if (area != 0 && (!s.entry || s.entry->area != area)) {
+    Session::RoomEntry entry;
+    entry.area = area;
+    entry.morphed = player.GetMorphballTransitionState() == CPlayer::kMS_Morphed;
+    entry.yaw = PlayerYaw(player);
+    entry.transform = player.GetTransform();
+    s.entry = entry;
+  }
+  // The first frame it can be saved: game running with nothing in the way, on the ground, unhurt
+  // for a moment, and the pickup settled.
+  if (!s.autosavePending || s.unhurtTime < kAutosaveUnhurtTime ||
+      s.sincePickup < kAutosavePickupSettleTime || !IsOnGround(player) ||
+      !save_anywhere::WhyCantSave().empty()) {
+    return;
+  }
+  s.autosavePending = false;
+  WriteAutosave(mgr);
 }
 
 bool StripPickupInputLocks() { return S().active.has_value(); }

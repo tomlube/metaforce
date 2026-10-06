@@ -197,7 +197,7 @@ void CScriptPickup::Touch(CActor& act, CStateManager& mgr) {
     mgr.PlayerState()->InitializePowerUp(itemType, mCapacity);
     mgr.PlayerState()->IncrPickUp(itemType, mAmount);
 #if defined(TARGET_PC)
-    metaforce::randomizer::OnPickupCollected(mgr, itemType);
+    metaforce::randomizer::OnPickupCollected(mgr, itemType, GetEditorId().Value());
 #endif
     mgr.DeleteObjectRequest(GetUniqueId());
 #if defined(TARGET_PC)

@@ -863,6 +863,15 @@ const CGameState::GameFileStateInfo* CMemoryCardDriver::GetGameFileStateInfo(int
   return &mFileSlots[saveIdx]->mFileInfo;
 };
 
+#if defined(TARGET_PC)
+const u8* CMemoryCardDriver::GetFileSlotData(int saveIdx) const {
+  if (mFileSlots[saveIdx].null()) {
+    return nullptr;
+  }
+  return mFileSlots[saveIdx]->mSaveBuffer.data();
+}
+#endif
+
 bool CMemoryCardDriver::GetCardFreeBytes() {
   if (CMemoryCardSys::GetNumFreeBytes(mCardPort, mCardFreeBytes, mCardFreeFiles) !=
       kCR_READY) {

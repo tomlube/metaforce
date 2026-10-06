@@ -1272,6 +1272,7 @@ void CStateManager::Update(float dt) {
   if (mGameState == kGS_Running && !isDead) {
     metaforce::portals::UpdatePlayerCrossing(*this);
     metaforce::randomizer::UpdateCrossWorldDoors(*this, dt);
+    metaforce::randomizer::UpdateAutosave(*this, dt);
     metaforce::cheats::Update(*this);
   }
 #endif

@@ -461,6 +461,13 @@ void OnPlayerCrossedDock(CStateManager& mgr, int area, int dock) {
     MarkDockDoor(mgr, other, gameDock.GetOtherDockNumber(ref));
     MarkDockTraversed(world->GetAreaAlways(other).GetAreaAssetId(),
                       gameDock.GetOtherDockNumber(ref));
+    if (const CPlayer* player = mgr.GetPlayer()) {
+      const CVector3f forward = player->GetTransform().GetForward();
+      MarkRoomEntered(world->GetAreaAlways(other).GetAreaAssetId(),
+                      gameDock.GetOtherDockNumber(ref),
+                      player->GetMorphballTransitionState() == CPlayer::kMS_Morphed,
+                      std::atan2(-forward.GetX(), forward.GetY()));
+    }
   }
 }
 

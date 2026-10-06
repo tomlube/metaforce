@@ -42,6 +42,7 @@
 #if defined(TARGET_PC)
 #include "Metaforce/Display.hpp"
 #include "Metaforce/SaveAnywhere.hpp"
+#include "Metaforce/SaveIndicator.hpp"
 #endif
 
 // Profiling labels retained in the retail string pool.
@@ -373,6 +374,11 @@ void CInGameGuiManager::Draw(const CStateManager& mgr) const {
     mPauseScreen->Draw();
   }
   mCamFilter.Draw();
+#if defined(TARGET_PC)
+  if (notInCine && deathTime <= 0.f && IsInGameplayStateNotTransitioning()) {
+    metaforce::save_indicator::Draw();
+  }
+#endif
 
   if (deathTime > 0.f) {
     const float deathDuration =
@@ -450,6 +456,9 @@ void CInGameGuiManager::PreDraw(CStateManager& mgr, bool isCameraActive) {
 void CInGameGuiManager::Update(const CStateManager& mgr, float dt, CArchitectureQueue& queue,
                                bool cameraActive) {
   EnsureStates(mgr);
+#if defined(TARGET_PC)
+  metaforce::save_indicator::Update(dt);
+#endif
   if (mOnScreenTexAlpha == 0.f) {
     mOnScreenTexTok = nullptr;
   }

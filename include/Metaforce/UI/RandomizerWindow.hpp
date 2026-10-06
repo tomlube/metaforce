@@ -35,6 +35,8 @@ private:
   void add_seed_list(borealis::ui::Pane& pane);
   void refresh_seeds();
   void show_seed_actions(const std::string& hash);
+  void add_backup_list(borealis::ui::Pane& pane);
+  void show_backup_actions(const randomizer::AutosaveBackup& backup);
   void show_message(const Rml::String& title, const Rml::String& body, bool danger = false);
 
   Rml::Element* mStatusText = nullptr;
@@ -57,6 +59,7 @@ private:
   borealis::ui::List* mStartList = nullptr;
   bool mStartListDirty = false;
   std::vector< randomizer::SeedSummary > mSeeds;
+  std::vector< randomizer::AutosaveBackup > mBackups;
   randomizer::GenerationState mShownState = randomizer::GenerationState::Idle;
   float mShownProgress = -1.f;
   int mShownPoolSize = -1;

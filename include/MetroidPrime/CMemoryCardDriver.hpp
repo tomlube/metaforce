@@ -177,6 +177,12 @@ public:
   void ExportPersistentOptions();
   const CGameState::GameFileStateInfo* GetGameFileStateInfo(int);
   bool GetCardFreeBytes();
+#if defined(TARGET_PC)
+  // The saved game in slot `saveIdx` as read from the card, kFileSlotSize bytes, or null when the
+  // slot is empty.
+  static const int kFileSlotSize = 940;
+  const u8* GetFileSlotData(int saveIdx) const;
+#endif
 };
 
 CHECK_SIZEOF(CMemoryCardDriver, 0x1a0)

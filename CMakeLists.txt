@@ -730,6 +730,7 @@ set(GAME_FILES
       src/Metaforce/DockPortals.cpp
       src/Metaforce/MergedWorld.cpp
       src/Metaforce/SaveAnywhere.cpp
+      src/Metaforce/SaveIndicator.cpp
       src/Metaforce/GameOptionDefaults.cpp
       src/Metaforce/CModelSectionReader.cpp
       src/Metaforce/Input.cpp

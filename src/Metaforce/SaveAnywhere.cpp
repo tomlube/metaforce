@@ -2,9 +2,11 @@
 
 #include "Metaforce/MergedWorld.hpp"
 
+#include "Kyoto/CResFactory.hpp"
 #include "Kyoto/Math/CTransform4f.hpp"
 #include "Kyoto/Math/CVector3f.hpp"
 #include "MetroidPrime/CGameArea.hpp"
+#include "MetroidPrime/CMemoryCardDriver.hpp"
 #include "MetroidPrime/CStateManager.hpp"
 #include "MetroidPrime/CWorld.hpp"
 #include "MetroidPrime/Cameras/CCameraManager.hpp"
@@ -13,6 +15,7 @@
 #include "MetroidPrime/Player/CWorldState.hpp"
 
 #include <borealis/log.hpp>
+#include <fmt/format.h>
 #include <nlohmann/json.hpp>
 
 #include <bit>
@@ -53,6 +56,10 @@ struct Replaced {
   uint32_t desiredArea;   // its desired area
 };
 std::optional< Replaced > sReplaced;
+
+// Card driver updates SaveSilently allows for each step. The card is synchronous on PC, so a step
+// takes a handful; this only stops a driver that stopped making progress.
+constexpr int kMaxCardUpdates = 1000;
 
 uint64_t PlayTimeBits() { return std::bit_cast< uint64_t >(gpGameState->GetTotalPlayTime()); }
 
@@ -115,6 +122,57 @@ const CGameArea* CurrentArea(const CStateManager& mgr) {
   return world != nullptr && world->DoesAreaExist(area) ? &world->GetAreaAlways(area) : nullptr;
 }
 
+// `xf` in the current room, for a save made now.
+Spot SpotAt(const CStateManager& mgr, const CTransform4f& xf, bool morphed) {
+  Spot spot;
+  spot.world = metaforce::merged::GetSourceWorld(mgr.GetWorld()->GetWorldAssetId(),
+                                                 mgr.GetNextAreaId());
+  spot.area = CurrentArea(mgr)->GetAreaAssetId();
+  const CVector3f pos = xf.GetTranslation();
+  spot.pos[0] = pos.GetX();
+  spot.pos[1] = pos.GetY();
+  spot.pos[2] = pos.GetZ();
+  const CVector3f forward = xf.GetForward();
+  spot.yaw = std::atan2(-forward.GetX(), forward.GetY());
+  spot.morphed = morphed;
+  return spot;
+}
+
+// Where the player is, for a save made now.
+Spot CaptureSpot(const CStateManager& mgr) {
+  const CPlayer& player = *mgr.GetPlayer();
+  return SpotAt(mgr, player.GetTransform(),
+                player.GetMorphballTransitionState() == CPlayer::kMS_Morphed);
+}
+
+CAssetId ResourceId(const char* name) {
+  const SObjectTag* tag = gpResourceFactory->GetResourceIdByName(name);
+  return tag != nullptr ? tag->GetId() : kInvalidAssetId;
+}
+
+// Updates the card driver until it reaches `done` or stops somewhere else, and returns where it
+// stopped. Indexes the card's files when the card check finishes, as the save screen does.
+EState Settle(CMemoryCardDriver& card, EState done) {
+  for (int i = 0; i < kMaxCardUpdates; ++i) {
+    const EState state = card.GetState();
+    if (state == done) {
+      return state;
+    }
+    if (state == kS_CardCheckDone) {
+      card.IndexFiles();
+      if (card.GetState() == kS_CardCheckDone) {
+        return state;
+      }
+      continue;
+    }
+    if (state != kS_CardProbe && !CMemoryCardDriver::IsCardBusy(state)) {
+      return state;
+    }
+    card.Update();
+  }
+  return card.GetState();
+}
+
 } // namespace
 
 void Initialize(const fs::path& userPath) {
@@ -164,20 +222,48 @@ void RequestSave() {
     return;
   }
   CStateManager& mgr = *gpStateManager;
-  const CPlayer& player = *mgr.GetPlayer();
-  Spot spot;
-  spot.world = metaforce::merged::GetSourceWorld(mgr.GetWorld()->GetWorldAssetId(),
-                                                 mgr.GetNextAreaId());
-  spot.area = CurrentArea(mgr)->GetAreaAssetId();
-  const CVector3f pos = player.GetTranslation();
-  spot.pos[0] = pos.GetX();
-  spot.pos[1] = pos.GetY();
-  spot.pos[2] = pos.GetZ();
-  const CVector3f forward = player.GetTransform().GetForward();
-  spot.yaw = std::atan2(-forward.GetX(), forward.GetY());
-  spot.morphed = player.GetMorphballTransitionState() == CPlayer::kMS_Morphed;
-  sPending = spot;
+  sPending = CaptureSpot(mgr);
   mgr.EnterSaveGameScreen();
+}
+
+std::string SaveSilently(std::vector< uint8_t >* previous,
+                         const std::optional< SpawnPoint >& spawn) {
+  if (previous != nullptr) {
+    previous->clear();
+  }
+  if (std::string reason = WhyCantSave(); !reason.empty()) {
+    return reason;
+  }
+  const int slot = static_cast< int >(gpGameState->GetFileIdx());
+  CMemoryCardDriver card(CMemoryCardSys::kCS_SlotA, ResourceId("TXTR_SaveBanner"),
+                         ResourceId("TXTR_SaveIcon0"), ResourceId("TXTR_SaveIcon1"), false);
+  card.StartCardProbe();
+  EState state = Settle(card, kS_Ready);
+  if (state != kS_Ready) {
+    return fmt::format("the memory card couldn't be read (state {}, error {})",
+                       static_cast< int >(state), static_cast< int >(card.GetError()));
+  }
+  // Like the save screen, never write to a card other than the one the game was loaded from.
+  if (card.GetCardSerial() != gpGameState->GetCardSerial()) {
+    return "the memory card isn't the one the game was loaded from";
+  }
+  if (previous != nullptr) {
+    if (const u8* data = card.GetFileSlotData(slot)) {
+      previous->assign(data, data + CMemoryCardDriver::kFileSlotSize);
+    }
+  }
+
+  sPending = spawn ? SpotAt(*gpStateManager, spawn->transform, spawn->morphed)
+                   : CaptureSpot(*gpStateManager);
+  card.BuildExistingFileSlot(slot);
+  card.StartFileCreateTransactional();
+  state = Settle(card, kS_DriverClosed);
+  sPending.reset();
+  if (state != kS_DriverClosed) {
+    return fmt::format("the memory card couldn't be written (state {}, error {})",
+                       static_cast< int >(state), static_cast< int >(card.GetError()));
+  }
+  return {};
 }
 
 void OnSaveScreenClosed() { sPending.reset(); }
