@@ -35,6 +35,20 @@ if (CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "GNU" OR (MSVC AND CMAKE_CXX_CO
     add_compile_options(-fsigned-char)
 endif ()
 
+# __FILE__ ends up in panic and assert messages, which players send in with their logs. Make it
+# relative so the build machine's paths stay out of shipped binaries. The build directory goes
+# first: MSVC uses the first prefix that matches, and it usually sits inside the source directory.
+if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    file(TO_NATIVE_PATH "${CMAKE_BINARY_DIR}/" METAFORCE_TRIM_BINARY_DIR)
+    file(TO_NATIVE_PATH "${CMAKE_SOURCE_DIR}/" METAFORCE_TRIM_SOURCE_DIR)
+    add_compile_options("$<$<COMPILE_LANGUAGE:C,CXX>:/d1trimfile:${METAFORCE_TRIM_BINARY_DIR}>"
+                        "$<$<COMPILE_LANGUAGE:C,CXX>:/d1trimfile:${METAFORCE_TRIM_SOURCE_DIR}>")
+elseif (CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "GNU")
+    add_compile_options(
+          "$<$<COMPILE_LANGUAGE:C,CXX,OBJC,OBJCXX>:-fmacro-prefix-map=${CMAKE_SOURCE_DIR}/=>"
+          "$<$<COMPILE_LANGUAGE:C,CXX,OBJC,OBJCXX>:-fmacro-prefix-map=${CMAKE_BINARY_DIR}/=>")
+endif ()
+
 option(ENABLE_SANITIZERS "Enable AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
 if (ENABLE_SANITIZERS)
     if (CMAKE_C_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC" AND
@@ -729,6 +743,7 @@ set(GAME_FILES
       src/Metaforce/FusionBonus.cpp
       src/Metaforce/DockPortals.cpp
       src/Metaforce/MergedWorld.cpp
+      src/Metaforce/ObjectBudget.cpp
       src/Metaforce/SaveAnywhere.cpp
       src/Metaforce/SaveIndicator.cpp
       src/Metaforce/GameOptionDefaults.cpp

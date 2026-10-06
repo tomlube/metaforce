@@ -45,6 +45,8 @@ public:
   // Something asked the door to open, and it opens as soon as the room behind it is ready.
   // Closing or locking the door in the meantime calls that off.
   bool IsWaitingToOpen() const { return mConditionsMet; }
+  // Open, or still swinging shut.
+  bool IsOpenOrClosing() const { return mWasOpen; }
 #endif
   void SetDoClose(const bool close) { mDoClose = close; }
 

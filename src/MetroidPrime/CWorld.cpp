@@ -34,6 +34,7 @@
 #if defined(TARGET_PC)
 #include "Metaforce/MapLayout.hpp"
 #include "Metaforce/MergedWorld.hpp"
+#include "Metaforce/ObjectBudget.hpp"
 #include "Metaforce/Randomizer/Hooks.hpp"
 #endif
 
@@ -392,6 +393,10 @@ void CWorld::TravelToArea(const TAreaId& aid, CStateManager& mgr, EAreaTravelTyp
   bool otherLoading = false;
   CGameArea* otherLoadArea = nullptr;
   if (travelType == kATT_LoadAdjacent) {
+#if defined(TARGET_PC)
+    // The room randomizer can put enough big rooms around a hub to fill the object list.
+    metaforce::objectbudget::PickAdjacentAreas(mgr, *this, aid);
+#endif
     for (int i = 0; i < area->GetDockCount(); ++i) {
       const CGameArea::Dock& dock = area->GetDock(i);
       const int dockRefCount = dock.GetDockRefs().size();
@@ -401,6 +406,10 @@ void CWorld::TravelToArea(const TAreaId& aid, CStateManager& mgr, EAreaTravelTyp
         CGameArea* cArea = Area(dock.GetConnectedAreaId(i));
         if (!cArea->IsActive())
           continue;
+#if defined(TARGET_PC)
+        if (!metaforce::objectbudget::IsAdjacentAreaPicked(cArea->GetId()))
+          continue;
+#endif
         if (!otherLoading) {
           otherLoading = ScheduleAreaToLoad(cArea, mgr);
           if (!otherLoading)
