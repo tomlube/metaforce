@@ -93,10 +93,24 @@ const char* OcclusionName(const CGameArea& area) {
   return area.GetOcclusionState() == CGameArea::kOS_Visible ? "visible" : "occluded";
 }
 
+// Rooms where the player can stand on top of a door frame and walk out past the doorway's plane,
+// and how high above the doorway's bottom edge the player's feet may be and still be carried
+// through it there. The circle a doorway is tested with reaches well above a square doorway's top.
+struct CrossingHeightLimit {
+  CAssetId mrea;
+  float height;
+};
+const CrossingHeightLimit kCrossingHeightLimits[] = {
+    // Phendrana Drifts, Control Tower: both door frames' tops slope up and out past the doorway,
+    // 5.2 to 6.1 above its bottom edge. The doorway itself is 3.5 tall.
+    {0xB3C33249, 4.f},
+};
+
 struct DockFrame {
   CVector3f center;
   CVector3f normal; // points out of the dock's room
   float radius;     // farthest corner from the center
+  float bottom;     // lowest corner's height
 };
 
 bool GetDockFrame(const CGameArea& area, int dock, DockFrame& out) {
@@ -108,8 +122,10 @@ bool GetDockFrame(const CGameArea& area, int dock, DockFrame& out) {
     return false;
   }
   CVector3f sum = CVector3f::Zero();
+  out.bottom = verts[0].GetZ();
   for (int i = 0; i < verts.size(); ++i) {
     sum += verts[i];
+    out.bottom = std::min(out.bottom, verts[i].GetZ());
   }
   out.center = sum * (1.f / static_cast< float >(verts.size()));
   out.radius = 0.f;
@@ -123,6 +139,16 @@ bool GetDockFrame(const CGameArea& area, int dock, DockFrame& out) {
   }
   out.normal = normal.AsNormalized();
   return true;
+}
+
+bool IsAboveCrossingLimit(const CGameArea& area, const DockFrame& dockFrame,
+                          const CVector3f& pos) {
+  for (const CrossingHeightLimit& limit : kCrossingHeightLimits) {
+    if (limit.mrea == area.GetAreaAssetId()) {
+      return pos.GetZ() - dockFrame.bottom > limit.height;
+    }
+  }
+  return false;
 }
 
 bool IsMovedDock(const CWorld& world, TAreaId area, int dock) {
@@ -234,7 +260,8 @@ void UpdatePlayerCrossing(CStateManager& mgr) {
     const CVector3f offset = pos - dockFrame.center;
     const float planeDist = CVector3f::Dot(offset, dockFrame.normal);
     if (planeDist <= 0.f || planeDist > kPlayerCrossingDepth ||
-        (offset - dockFrame.normal * planeDist).Magnitude() > dockFrame.radius + kDoorwayMargin) {
+        (offset - dockFrame.normal * planeDist).Magnitude() > dockFrame.radius + kDoorwayMargin ||
+        IsAboveCrossingLimit(area, dockFrame, pos)) {
       continue;
     }
     const IGameArea::Dock& gameDock = area.GetDock(dock);
