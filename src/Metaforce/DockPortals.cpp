@@ -4,6 +4,7 @@
 #include "Metaforce/Randomizer/Hooks.hpp"
 
 #include "Kyoto/Graphics/CGraphics.hpp"
+#include "Kyoto/Math/CAABox.hpp"
 #include "Kyoto/Math/CFrustumPlanes.hpp"
 #include "Kyoto/Math/CRelAngle.hpp"
 #include "Kyoto/Math/CTransform4f.hpp"
@@ -47,6 +48,9 @@ constexpr float kCameraThroughDistance = 8.f;
 constexpr float kDoorwayMargin = 0.5f;
 // How far past a moved doorway's plane the player may be and still be carried through it.
 constexpr float kPlayerCrossingDepth = 3.f;
+// How far into a room from a moved doorway the triggers of the room behind it still reach the
+// player.
+constexpr float kTriggerReachDepth = 5.f;
 // How far past a doorway's plane a shot may start and still be carried through it, for shots
 // fired with the gun already through the doorway.
 constexpr float kProjectileCrossingDepth = 2.f;
@@ -241,6 +245,46 @@ void OnPlayerCrossedDock(CStateManager& mgr, TAreaId area, int dock) {
 } // namespace metaforce::portals
 
 namespace metaforce::portals {
+
+bool GetPlayerBoundsInArea(const CStateManager& mgr, TAreaId area, CAABox& bounds,
+                           CTransform4f& toPlayer) {
+  const CWorld* world = mgr.GetWorld();
+  const CPlayer* player = mgr.GetPlayer();
+  const TAreaId current = mgr.GetNextAreaId();
+  if (world == nullptr || player == nullptr || current == area || !world->DoesAreaExist(current)) {
+    return false;
+  }
+  const rstl::optional_object< CAABox > playerBounds = player->GetTouchBounds();
+  if (!playerBounds.valid()) {
+    return false;
+  }
+  const CGameArea& from = world->GetAreaAlways(current);
+  const CVector3f pos = player->GetTranslation();
+  for (int dock = 0; dock < from.GetDockCount(); ++dock) {
+    const IGameArea::Dock& gameDock = from.GetDock(dock);
+    if (gameDock.GetDockRefs().empty()) {
+      continue;
+    }
+    const int ref = gameDock.GetReferenceCount();
+    CTransform4f toArea = CTransform4f::Identity();
+    DockFrame dockFrame;
+    if (gameDock.GetConnectedAreaId(ref) != area ||
+        !GetDockTransform(*world, current, dock, toArea) || !GetDockFrame(from, dock, dockFrame) ||
+        !GetDockTransform(*world, area, gameDock.GetOtherDockNumber(ref), toPlayer)) {
+      continue;
+    }
+    // Just inside the player's room, in front of the doorway.
+    const CVector3f offset = pos - dockFrame.center;
+    const float planeDist = CVector3f::Dot(offset, dockFrame.normal);
+    if (planeDist > 0.f || planeDist < -kTriggerReachDepth ||
+        (offset - dockFrame.normal * planeDist).Magnitude() > dockFrame.radius + kDoorwayMargin) {
+      continue;
+    }
+    bounds = playerBounds->GetTransformedAABox(toArea);
+    return true;
+  }
+  return false;
+}
 
 void UpdatePlayerCrossing(CStateManager& mgr) {
   CWorld* world = mgr.World();

@@ -8,6 +8,20 @@
 #include "MetroidPrime/Player/CPlayer.hpp"
 #include "MetroidPrime/Weapons/CWeapon.hpp"
 
+#if defined(TARGET_PC)
+#include "Metaforce/DockPortals.hpp"
+
+#include <borealis/log.hpp>
+
+#include <cstdlib>
+
+namespace {
+constexpr borealis::Log Log{"CScriptTrigger"};
+// Set METAFORCE_TRIGGER_LOG=1 to log every frame a trigger pushes the player.
+const bool sLogForces = std::getenv("METAFORCE_TRIGGER_LOG") != nullptr;
+} // namespace
+#endif
+
 inline void CScriptTrigger::ActivatePlayer(CStateManager& mgr) {
   if (mPlayerTriggerProc != true) {
     mPlayerTriggerProc = true;
@@ -235,6 +249,20 @@ void CScriptTrigger::UpdateInhabitants(float dt, CStateManager& mgr) {
       if (playerValid) {
         rstl::optional_object< CAABox > touchBounds = GetTouchBounds();
         rstl::optional_object< CAABox > actTouchBounds = act->GetTouchBounds();
+#if defined(TARGET_PC)
+        // A player who went up through a moved doorway this trigger reaches through is still in
+        // it on the far side, as they would be through a vanilla door.
+        CTransform4f toPlayer = CTransform4f::Identity();
+        bool throughDock = false;
+        if (act == mgr.GetPlayer()) {
+          CAABox mapped = CAABox::Identity();
+          if (metaforce::portals::GetPlayerBoundsInArea(mgr, GetCurrentAreaId(), mapped,
+                                                        toPlayer)) {
+            actTouchBounds = mapped;
+            throughDock = true;
+          }
+        }
+#endif
         if (touchBounds.valid() && actTouchBounds.valid() &&
             touchBounds->DoBoundsOverlap(*actTouchBounds)) {
           sendInside = true;
@@ -257,7 +285,23 @@ void CScriptTrigger::UpdateInhabitants(float dt, CStateManager& mgr) {
                             actTouchBounds->GetVolume();
               }
 
+#if defined(TARGET_PC)
+              // The force is in this trigger's room; turn it into the player's.
+              const CVector3f force = toPlayer.Rotate(forceMult * mForceField);
+              if (sLogForces && act == mgr.GetPlayer()) {
+                const CVector3f pos = act->GetTranslation();
+                Log.info("[trigger] frame {}: trigger 0x{:08X} of area {} pushes the player in "
+                         "area {} at ({:.2f}, {:.2f}, {:.2f}) by ({:.2f}, {:.2f}, {:.2f}){}{}",
+                         mgr.GetUpdateFrameIndex(),
+                         mgr.GetEditorIdForUniqueId(GetUniqueId()).Value(),
+                         GetCurrentAreaId().Value(), mgr.GetNextAreaId().Value(), pos.GetX(),
+                         pos.GetY(), pos.GetZ(), force.GetX(), force.GetY(), force.GetZ(),
+                         (mFlags & kTFL_UseCollisionImpulses) ? " (impulse)" : "",
+                         throughDock ? " through a moved door" : "");
+              }
+#else
               const CVector3f force = forceMult * mForceField;
+#endif
               if ((mFlags & kTFL_UseCollisionImpulses)) {
                 pact->ApplyImpulseWR(force, CAxisAngle::Identity());
                 pact->UseCollisionImpulses();

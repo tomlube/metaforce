@@ -8,11 +8,12 @@
 
 #include "MetroidPrime/TGameTypes.hpp"
 
+class CAABox;
 class CActor;
 class CDamageInfo;
 class CFrustumPlanes;
-class CMaterialFilter;
 class CGameProjectile;
+class CMaterialFilter;
 class CStateManager;
 class CTransform4f;
 class CVector3f;
@@ -23,6 +24,15 @@ namespace metaforce::portals {
 // Takes points around `dock` of `area` to the matching place around the dock it currently leads
 // to. False when the two docks coincide (a vanilla door) or the dock leads nowhere.
 bool GetDockTransform(const CWorld& world, TAreaId area, int dock, CTransform4f& out);
+
+// CScriptTrigger: the player's touch bounds in the space of `area`, while the player is in another
+// room just inside a moved doorway leading to `area`, and in `toPlayer` the turn from `area`'s
+// space into the player's. Rooms joined by a vanilla door share their space, so a trigger reaching
+// through the doorway (like the lifts in Elder Chamber's ceiling) keeps holding the player on the
+// far side; through a moved door that part of the trigger is in another room's space. False when
+// the player is in `area` or not by such a doorway.
+bool GetPlayerBoundsInArea(const CStateManager& mgr, TAreaId area, CAABox& bounds,
+                           CTransform4f& toPlayer);
 
 // CScriptDock: the player crossed `dock` of `area`. Carries the player and cameras through if
 // the door was moved.
