@@ -15,6 +15,8 @@
 #include "Kyoto/Math/CTransform4f.hpp"
 #include "MetroidPrime/CEntityInfo.hpp"
 #include "MetroidPrime/CGameArea.hpp"
+#include "MetroidPrime/CMapWorld.hpp"
+#include "MetroidPrime/CMapWorldInfo.hpp"
 #include "MetroidPrime/CMain.hpp"
 #include "MetroidPrime/CMemoryCard.hpp"
 #include "MetroidPrime/CScriptLayerManager.hpp"
@@ -205,6 +207,8 @@ struct Session {
   std::unordered_set< uint64_t > traversedDoors;
   // Docks gone through, by DockKey(area MREA, dock), both sides of each.
   std::unordered_set< uint64_t > traversedDocks;
+  // Rooms the player has been in, by MREA, which stay on the map. Kept with the doors.
+  std::unordered_set< uint32_t > visitedAreas;
   std::string traversedSlot;
   // Blast shields broken, by DockKey(area MREA, dock): in the game being played, and as of its
   // last save. Only the saved ones go in TraversedFile(), so reloading brings back the others.
@@ -285,6 +289,7 @@ void Deactivate() {
   s.autosavePending = false;
   s.traversedDoors.clear();
   s.traversedDocks.clear();
+  s.visitedAreas.clear();
   s.traversedSlot.clear();
   s.brokenShields.clear();
   s.savedBrokenShields.clear();
@@ -300,6 +305,7 @@ void SaveTraversed() {
       {"seed", s.active->hash},
       {"doors", std::vector< uint64_t >(s.traversedDoors.begin(), s.traversedDoors.end())},
       {"docks", std::vector< uint64_t >(s.traversedDocks.begin(), s.traversedDocks.end())},
+      {"rooms", std::vector< uint32_t >(s.visitedAreas.begin(), s.visitedAreas.end())},
       {"blast_shields",
        std::vector< uint64_t >(s.savedBrokenShields.begin(), s.savedBrokenShields.end())}};
   std::error_code ec;
@@ -313,6 +319,7 @@ void LoadTraversed(const std::string& slot, bool newGame) {
   auto& s = S();
   s.traversedDoors.clear();
   s.traversedDocks.clear();
+  s.visitedAreas.clear();
   s.brokenShields.clear();
   s.savedBrokenShields.clear();
   s.traversedSlot = slot;
@@ -339,6 +346,13 @@ void LoadTraversed(const std::string& slot, bool newGame) {
     for (const json& dock : root["docks"]) {
       if (dock.is_number_unsigned()) {
         s.traversedDocks.insert(dock.get< uint64_t >());
+      }
+    }
+  }
+  if (root.contains("rooms") && root["rooms"].is_array()) {
+    for (const json& room : root["rooms"]) {
+      if (room.is_number_unsigned()) {
+        s.visitedAreas.insert(room.get< uint32_t >());
       }
     }
   }
@@ -1114,8 +1128,58 @@ void WarpToStart() {
             s.active->startWorld);
 }
 
+namespace {
+// Marks `area` of the loaded world visited on its map, and a room appended from another region
+// on that region's own map too, which the map of the other regions shows. True when the loaded
+// world's map changed.
+bool SetAreaVisited(CStateManager& mgr, TAreaId area) {
+  CMapWorldInfo& info = *mgr.MapWorldInfo();
+  const bool changed = !info.IsAreaVisited(area);
+  info.SetAreaVisited(area, true);
+  if (merged::IsForeignArea(area)) {
+    const CAssetId source = merged::GetSourceWorld(mgr.GetWorld()->GetWorldAssetId(), area);
+    gpGameState->StateForWorld(source).MapWorldInfo()->SetAreaVisited(
+        TAreaId(merged::GetSourceAreaIndex(area)), true);
+  }
+  return changed;
+}
+
+// Puts every room of the loaded world the player has been in back on the map. The save only
+// holds the rooms visited as of when it was made, and none of those appended from other regions.
+void RestoreVisitedAreas(CStateManager& mgr) {
+  const auto& s = S();
+  const CWorld* world = mgr.GetWorld();
+  if (!s.active || s.visitedAreas.empty() || world == nullptr) {
+    return;
+  }
+  bool changed = false;
+  for (int i = 0; i < world->GetNumAreas(); ++i) {
+    if (s.visitedAreas.count(world->GetAreaAlways(TAreaId(i)).GetAreaAssetId()) != 0) {
+      changed |= SetAreaVisited(mgr, TAreaId(i));
+    }
+  }
+  if (changed && world->GetMapWorld() != nullptr) {
+    world->GetMapWorld()->RecalculateWorldSphere(*mgr.MapWorldInfo(), *world);
+  }
+}
+} // namespace
+
+void OnAreaVisited(CStateManager& mgr, int area) {
+  auto& s = S();
+  const CWorld* world = mgr.GetWorld();
+  if (!s.active || s.traversedSlot.empty() || world == nullptr ||
+      !world->DoesAreaExist(TAreaId(area))) {
+    return;
+  }
+  SetAreaVisited(mgr, TAreaId(area));
+  if (s.visitedAreas.insert(world->GetAreaAlways(TAreaId(area)).GetAreaAssetId()).second) {
+    SaveTraversed();
+  }
+}
+
 void OnWorldInitialized(CStateManager& mgr) {
   ApplyCrossWorldArrival(mgr);
+  RestoreVisitedAreas(mgr);
   auto& s = S();
   s.lastEnergy = -1.f;
   s.unhurtTime = 0.f;

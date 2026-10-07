@@ -48,8 +48,14 @@ bool TakeQuickReload();
 // to the seed's starting location.
 void OnGameLoad();
 
-// End of CStateManager::InitializeState: gives a new game its starting items.
+// End of CStateManager::InitializeState: gives a new game its starting items, and puts the rooms
+// the player has been in back on the map.
 void OnWorldInitialized(CStateManager& mgr);
+
+// CStateManager::SetCurrentAreaId: the player is in `area` of the loaded world. Like the doors
+// gone through, the room stays on the map for the save slot from then on, whether or not the
+// game is saved after: dying or reloading doesn't take it off again.
+void OnAreaVisited(CStateManager& mgr, int area);
 
 // CAutoMapper: whether the map screen offers to warp to the seed's starting location, and the
 // warp itself. The game is left and reloaded at the start, keeping the player's progress.

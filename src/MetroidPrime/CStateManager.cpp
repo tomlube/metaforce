@@ -816,6 +816,9 @@ void CStateManager::SetCurrentAreaId(TAreaId aid) {
       CMapWorld* mapWorld = world->GetMapWorld();
       mapWorld->RecalculateWorldSphere(*mapWorldInfo, *world);
     }
+#if defined(TARGET_PC)
+    metaforce::randomizer::OnAreaVisited(*this, currentArea.Value());
+#endif
   }
 }
 
