@@ -24,9 +24,12 @@ namespace rando = metaforce::randomizer;
 
 namespace {
 
-constexpr int kStandardShuffled = 0;
-constexpr int kStandardStarting = 1;
-constexpr int kStandardRemoved = 2;
+// Dropdown entries of a major item: "Shuffled" through "Shuffled ×N" (one entry per copy
+// count), then "Starting Item" and "Removed".
+constexpr int kMaxStandardCopies = 3;
+constexpr int kStandardShuffled = 0; // + copies - 1
+constexpr int kStandardStarting = kMaxStandardCopies;
+constexpr int kStandardRemoved = kMaxStandardCopies + 1;
 
 // Order of the room randomizer's region toggles. Regions not listed here go after these, in
 // database order.
@@ -1003,24 +1006,35 @@ void RandomizerWindow::build_pool_tab(Rml::Element* content) {
       continue;
     }
     auto* state = &settings.standard[def.name];
-    const int defaultShuffled = std::max(def.defaultShuffled, 1);
-    const int defaultMode = def.defaultStarting > 0  ? kStandardStarting
-                            : def.defaultShuffled > 0 ? kStandardShuffled
-                                                      : kStandardRemoved;
-    auto mode = [state] {
-      if (state->starting > 0) {
+    // The dropdown entry for a pickup state: the copy count is part of it, so a preset that
+    // shuffles more than one of an item (Randovania's own does for Charge Beam) shows it.
+    const auto modeOf = [](const rando::StandardPickupState& s) {
+      if (s.starting > 0) {
         return kStandardStarting;
       }
-      return state->shuffled > 0 ? kStandardShuffled : kStandardRemoved;
+      if (s.shuffled <= 0) {
+        return kStandardRemoved;
+      }
+      return kStandardShuffled + std::min(s.shuffled, kMaxStandardCopies) - 1;
     };
+    const int defaultMode = modeOf({def.defaultShuffled, def.defaultStarting, def.defaultAmmo});
+    auto mode = [state, modeOf] { return modeOf(*state); };
+    std::vector< DropdownButton::Option > options;
+    for (int copies = 1; copies <= kMaxStandardCopies; ++copies) {
+      options.push_back({copies == 1 ? Rml::String("Shuffled")
+                                     : fmt::format("Shuffled ×{}", copies)});
+    }
+    options.push_back({"Starting Item"});
+    options.push_back({"Removed"});
     AddDropdown(leftPane, rightPane, def.name,
-                fmt::format("<b>Shuffled</b> places {} somewhere in the world.<br/><b>Starting "
-                            "Item</b> gives it to Samus from the start.<br/><b>Removed</b> "
-                            "leaves it out of the game.",
+                fmt::format("<b>Shuffled</b> places {} somewhere in the world, or several copies "
+                            "of it with <b>×2</b> and <b>×3</b>.<br/><b>Starting Item</b> gives "
+                            "it to Samus from the start.<br/><b>Removed</b> leaves it out of the "
+                            "game.",
                             EscapeRml(def.name)),
-                {{"Shuffled"}, {"Starting Item"}, {"Removed"}}, mode,
-                [state, defaultShuffled](int v) {
-                  state->shuffled = v == kStandardShuffled ? defaultShuffled : 0;
+                std::move(options), mode,
+                [state](int v) {
+                  state->shuffled = v < kStandardStarting ? v - kStandardShuffled + 1 : 0;
                   state->starting = v == kStandardStarting ? 1 : 0;
                 },
                 [mode, defaultMode] { return mode() != defaultMode; });
