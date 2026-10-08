@@ -143,6 +143,20 @@ void CMapArea::GetTriangles(std::vector< int >& indices) const {
   }
 }
 
+void CMapArea::CMapAreaSurface::AppendOutlineSegments(std::vector< uchar >& indices) const {
+  // Same walk over the outline strips as CMapAreaSurface::Draw.
+  const int* outline = mOutlineOffset;
+  const int count = CBasics::SwapBytes(*outline++);
+  for (int i = 0; i < count; ++i) {
+    const int vertices = CBasics::SwapBytes(*outline++);
+    const uchar* data = reinterpret_cast< const uchar* >(outline);
+    outline += ((vertices + 3) & ~3) / 4;
+    for (int v = 0; v + 1 < vertices; ++v) {
+      indices.insert(indices.end(), {data[v], data[v + 1]});
+    }
+  }
+}
+
 CMappableObject::CMappableObject(CResourceReader& in)
 : mType(ReadObjectType(in))
 , mVisibilityMode(ReadObjectVisibility(in))

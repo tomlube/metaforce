@@ -42,6 +42,10 @@ public:
               float lineWidth) const;
 
     static void SetupGXMaterial();
+#if defined(TARGET_PC)
+    // Appends each segment of the surface's outlines to `indices`, as pairs of vertex indices.
+    void AppendOutlineSegments(std::vector< uchar >& indices) const;
+#endif
 
     CVector3f GetNormal() const { return mNormal; }
     CVector3f GetCenterPosition() const { return mCentroid; }
@@ -82,6 +86,9 @@ public:
   static CTransform4f GetAreaMapTransform(const IWorld&, int);
   // The triangles of every surface, as indices into GetVertices, three per triangle.
   void GetTriangles(std::vector< int >& indices) const;
+  // Every surface's outlines in `color` as one draw, without the surfaces, for rooms past the map's
+  // draw distance. Expects CMapAreaSurface::SetupGXMaterial and the model matrix to be set.
+  void DrawOutlines(const CColor& color) const;
 #endif
 
 private:

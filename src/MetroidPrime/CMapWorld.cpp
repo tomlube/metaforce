@@ -24,6 +24,7 @@
 #include "Metaforce/MapLayout.hpp"
 #include "Metaforce/MergedWorld.hpp"
 #include "Metaforce/Randomizer/Hooks.hpp"
+#include "Metaforce/Randomizer/Randomizer.hpp"
 
 // The map objects of a room appended from another region keep that region's editor ids, but its
 // doors and their visited state go by ids in the loaded world. The map area itself is left alone:
@@ -366,8 +367,43 @@ void CMapWorld::Draw(const CMapWorldDrawParms& parms, int curArea, int otherArea
   } else {
     DoBFS(wld, curArea, areaDepth, depth1, depth2, true, bfsInfos);
   }
+#if defined(TARGET_PC)
+  if (inMapScreen && metaforce::randomizer::GetActiveSeed() != nullptr &&
+      metaforce::randomizer::GetMapDrawDistance() > 0) {
+    DrawFarOutlines(parms);
+  }
+#endif
   DrawAreas(parms, curArea, bfsInfos, inMapScreen);
 }
+
+#if defined(TARGET_PC)
+void CMapWorld::DrawFarOutlines(const CMapWorldDrawParms& parms) const {
+  // Rooms the BFS didn't reach are past the map draw distance: only their outlines, at the width
+  // and half alpha of the thick pass in CMapAreaSurface::Draw, one draw per room.
+  const IWorld& wld = parms.GetWorld();
+  const CMapWorldInfo& mwInfo = parms.GetMapWorldInfo();
+  gpRender->SetBlendMode_AlphaBlended();
+  CGraphics::SetLineWidth(rstl::max_val(1.f, parms.GetOutlineWidthScale()), kTO_One);
+  CMapArea::CMapAreaSurface::SetupGXMaterial();
+  for (int i = 0; i < static_cast< int >(mAreas.size()); ++i) {
+    if (mTraversed[i] || !IsMapAreaValid(wld, i, true)) {
+      continue;
+    }
+    CMapArea* area = GetMapArea(i);
+    if (!area->GetIsVisibleToAutoMapper(mwInfo.IsWorldVisible(i), mwInfo.IsAreaVisible(i))) {
+      continue;
+    }
+    const bool visited = mwInfo.IsAreaVisited(i);
+    const CColor& color = visited ? gpTweakAutoMapper->mOutlineColorVisited
+                                  : gpTweakAutoMapper->mOutlineColorUnvisited;
+    const float alpha =
+        visited ? parms.GetAlphaOutlineVisited() : parms.GetAlphaOutlineUnvisited();
+    gpRender->SetModelMatrix(parms.GetPlaneProjectionTransform() *
+                             area->GetAreaPostTransform(wld, i));
+    area->DrawOutlines(color.WithAlphaOf(alpha * 0.5f));
+  }
+}
+#endif
 
 void CMapWorld::DoBFS(const IWorld& wld, int startArea, int areaCount, float surfDepth,
                       float outlineDepth, bool checkLoad,

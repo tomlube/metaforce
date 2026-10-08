@@ -1,4 +1,5 @@
 #include "MetroidPrime/CMapArea.hpp"
+#include "rstl/math.hpp"
 
 #include "MetroidPrime/CMemoryDrawEnum.hpp"
 
@@ -192,6 +193,32 @@ void CMapArea::CMapAreaSurface::Draw(TMapVertices verts, const CColor& surfColor
     }
   }
 }
+
+#if defined(TARGET_PC)
+void CMapArea::DrawOutlines(const CColor& color) const {
+  std::vector< uchar > indices;
+  for (int i = 0; i < mSurfaceCount; ++i) {
+    mSurfaceStart[i].AppendOutlineSegments(indices);
+  }
+  if (indices.empty() || mVertexCount == 0) {
+    return;
+  }
+  const TMapVertices verts = GetVertices();
+  CGX::SetArray(GX_VA_POS, verts.data(), sizeof(CVector3f), verts.size_bytes(),
+                TARGET_LITTLE_ENDIAN);
+  CGX::SetTevKColor(GX_KCOLOR0, color.GetGXColor());
+  // A draw takes at most 65535 vertices; keep whole segments in each.
+  const size_t maxPerDraw = 65534;
+  for (size_t start = 0; start < indices.size(); start += maxPerDraw) {
+    const size_t count = rstl::min_val(maxPerDraw, indices.size() - start);
+    CGX::Begin(GX_LINES, GX_VTXFMT0, static_cast< ushort >(count));
+    for (size_t v = start; v < start + count; ++v) {
+      GXPosition1x8(indices[v]);
+    }
+    CGX::End();
+  }
+}
+#endif
 
 void CMapArea::CMapAreaSurface::SetupGXMaterial() {
   const GXVtxDescList list[2] = {

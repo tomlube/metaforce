@@ -153,6 +153,10 @@ public:
   bool IsMapAreaValid(const IWorld& wld, int areaIdx, bool checkLoad) const;
   void DrawAreas(const CMapWorldDrawParms& parms, int selArea,
                  const rstl::vector< CMapAreaBFSInfo >& bfsInfos, bool inMapScreen) const;
+#if defined(TARGET_PC)
+  // Outlines of the loaded rooms the last BFS didn't reach, for the map draw distance.
+  void DrawFarOutlines(const CMapWorldDrawParms& parms) const;
+#endif
   void RecalculateWorldSphere(const CMapWorldInfo& mwInfo, const IWorld& wld) const;
   CVector3f ConstrainToWorldVolume(const CVector3f& point, const CVector3f& lookVec) const;
   void ClearTraversedFlags() const;
