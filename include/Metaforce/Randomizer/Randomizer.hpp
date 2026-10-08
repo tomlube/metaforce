@@ -78,13 +78,13 @@ int GetMapLayout();
 void SetMapLayout(int mode);
 
 // Map Draw Distance: in a randomized game, the map screen draws at most this many rooms around the
-// selected room, out to the farthest ring of doors that fits, faded. Mixed regions put every room of
-// the game on one map, which is way too much to draw at once on most PCs. 0 draws them all. 30 by
-// default.
-inline constexpr int kMapDrawDistances[] = {15, 30, 50, 80, 0};
-inline constexpr const char* kMapDrawDistanceNames[] = {"15 Rooms", "30 Rooms", "50 Rooms",
-                                                        "80 Rooms", "Whole World"};
-inline constexpr int kMapDrawDistanceDefault = 30;
+// selected room, out to the farthest ring of doors that fits, faded; the rest are outlines only.
+// Mixed regions put every room of the game on one map, which is way too much to draw at once on
+// most PCs. 0 draws them all. 15 by default.
+inline constexpr int kMapDrawDistances[] = {1, 15, 30, 50, 80, 0};
+inline constexpr const char* kMapDrawDistanceNames[] = {"1 Room",   "15 Rooms", "30 Rooms",
+                                                        "50 Rooms", "80 Rooms", "Whole World"};
+inline constexpr int kMapDrawDistanceDefault = 15;
 int GetMapDrawDistance();
 void SetMapDrawDistance(int rooms);
 

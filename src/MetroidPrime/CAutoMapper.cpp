@@ -1986,7 +1986,8 @@ float CAutoMapper::GetMapAreaMaxDrawDepth(const CStateManager& mgr, int aid) con
   if (rooms > 0 && metaforce::randomizer::GetActiveSeed() != nullptr) {
     const int fit = mWorld->IGetMapWorld()->GetMapAreaDepthForAreaCount(*mWorld, aid, rooms);
     if (static_cast< float >(fit) < depth) {
-      depth = static_cast< float >(fit) - 0.5f;
+      // Only the selected room fits: draw it whole rather than faded.
+      depth = fit > 1 ? static_cast< float >(fit) - 0.5f : 1.f;
     }
   }
 #endif

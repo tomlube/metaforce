@@ -140,7 +140,7 @@ public:
   void SetAppendedMapAreas(int ownCount, const rstl::vector< CAssetId >& appended);
   CAssetId GetMapAreaRes(int aid) const { return mAreas[aid].GetAreaRes(); }
   // The deepest BFS depth from `aid` (1 being `aid` itself) whose areas, with every shallower one,
-  // number at most `maxAreas`. At least 2, so the area's neighbors are always counted in.
+  // number at most `maxAreas`. At least 1, `aid` itself.
   int GetMapAreaDepthForAreaCount(const IWorld& wld, int aid, int maxAreas) const;
 #endif
   void MoveMapAreaToList(CMapAreaData* data, EMapAreaList list);

@@ -405,8 +405,10 @@ void RandomizerWindow::build_seeds_tab(Rml::Element* content) {
   });
   SetHelp(leftPane, rightPane, drawDistance,
           "How many rooms around the selected room the map screen draws, nearest first by "
-          "doors. The farthest rooms fade out, and moving around the map brings the "
-          "rooms around the new selection in.<br/><br/>Mixed regions put every room of "
+          "doors. The farthest of them fade out and every room past them is drawn as an "
+          "outline only. Moving around the map brings the rooms around the new selection "
+          "in.<br/><br/><b>1 Room</b> draws only the selected room in full, for low end "
+          "PCs.<br/><br/>Mixed regions put every room of "
           "the game on one map. Drawing them all at once will be very slow on most PCs. "
           "<b>Whole World</b> does it anyway.");
 

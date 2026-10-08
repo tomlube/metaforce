@@ -310,7 +310,7 @@ int CMapWorld::GetMapAreaDepthForAreaCount(const IWorld& wld, int aid, int maxAr
   DoBFS(wld, aid, 9999, 9999.f, 9999.f, false, bfsInfos);
   // The walk lists the areas in order of depth, so a depth fits when its last area is among the
   // first `maxAreas`.
-  int depth = 2;
+  int depth = 1;
   for (int i = 0; i < bfsInfos.size(); ++i) {
     const bool lastOfDepth =
         i + 1 == bfsInfos.size() || bfsInfos[i + 1].GetDepth() != bfsInfos[i].GetDepth();
