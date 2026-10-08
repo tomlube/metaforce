@@ -290,6 +290,7 @@ jobs:
           path: |
             build/install/*.exe
             build/install/*.dll
+            build/install/*.pdb
             build/install/res/
           if-no-files-found: error
 
