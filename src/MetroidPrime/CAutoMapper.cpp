@@ -51,6 +51,8 @@
 #include "Metaforce/Randomizer/Hooks.hpp"
 #include "Metaforce/Randomizer/Randomizer.hpp"
 
+#include <dolphin/os.h>
+
 // Randomizer: the map screen's X button warps to the seed's start. The first press arms it for
 // this many seconds; a second press warps.
 static const float skWarpConfirmSeconds = 3.f;
@@ -1980,11 +1982,16 @@ float CAutoMapper::GetMapAreaMiniMapDrawDepth() { return 2.f; }
 float CAutoMapper::GetMapAreaMaxDrawDepth(const CStateManager& mgr, int aid) const {
   float depth = static_cast< float >(mWorld->IGetMapWorld()->GetCurrentMapAreaDepth(*mWorld, aid));
 #if defined(TARGET_PC)
-  // Randomizer: Map Draw Distance. The selected room is depth 1 and each door adds one; the half
-  // makes the farthest rooms drawn fade like the minimap's.
-  const int doors = metaforce::randomizer::GetMapDrawDistance();
-  if (doors > 0 && metaforce::randomizer::GetActiveSeed() != nullptr) {
-    depth = rstl::min_val(depth, static_cast< float >(doors) + 0.5f);
+  // Randomizer: Map Draw Distance. Rooms are drawn out to the farthest ring of doors that keeps
+  // their count within the setting; the half makes that ring fade like the minimap's edge.
+  const int rooms = metaforce::randomizer::GetMapDrawDistance();
+  if (rooms > 0 && metaforce::randomizer::GetActiveSeed() != nullptr) {
+    const int fit = mWorld->IGetMapWorld()->GetMapAreaDepthForAreaCount(*mWorld, aid, rooms);
+    OSReport("Map draw distance: %d rooms around area %d reach %d of %d rings of doors\n", rooms,
+             aid, fit, static_cast< int >(depth));
+    if (static_cast< float >(fit) < depth) {
+      depth = static_cast< float >(fit) - 0.5f;
+    }
   }
 #endif
   return depth;

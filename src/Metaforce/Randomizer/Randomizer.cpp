@@ -239,7 +239,7 @@ void SaveSession() {
       {"quick_reload", S().quickReload},
       {"quick_save", S().quickSave},
       {"map_layout", S().mapLayout},
-      {"map_draw_distance", S().mapDrawDistance},
+      {"map_draw_rooms", S().mapDrawDistance},
       {"autosave", S().autosave},
   };
   std::error_code ec;
@@ -262,7 +262,7 @@ void LoadSession() {
   S().quickSave = root.value("quick_save", true);
   S().mapLayout = std::clamp(root.value("map_layout", static_cast< int >(kMapLayoutConnected)),
                              kMapLayoutVanilla, kMapLayoutConnected);
-  S().mapDrawDistance = std::max(root.value("map_draw_distance", kMapDrawDistanceDefault), 0);
+  S().mapDrawDistance = std::max(root.value("map_draw_rooms", kMapDrawDistanceDefault), 0);
   S().autosave = std::clamp(root.value("autosave", static_cast< int >(kAutosaveAuto)),
                             kAutosaveAuto, kAutosaveAll);
   if (root.contains("slots") && root["slots"].is_object()) {
@@ -761,8 +761,8 @@ void SetMapLayout(int mode) {
 
 int GetMapDrawDistance() { return S().mapDrawDistance; }
 
-void SetMapDrawDistance(int doors) {
-  S().mapDrawDistance = std::max(doors, 0);
+void SetMapDrawDistance(int rooms) {
+  S().mapDrawDistance = std::max(rooms, 0);
   SaveSession();
 }
 

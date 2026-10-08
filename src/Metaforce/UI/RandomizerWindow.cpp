@@ -396,16 +396,16 @@ void RandomizerWindow::build_seeds_tab(Rml::Element* content) {
       .options = std::move(drawDistances),
       .getValue =
           [] {
-            const auto& doors = rando::kMapDrawDistances;
-            const auto it = std::find(std::begin(doors), std::end(doors), rando::GetMapDrawDistance());
-            return it == std::end(doors) ? 0 : static_cast< int >(it - std::begin(doors));
+            const auto& rooms = rando::kMapDrawDistances;
+            const auto it = std::find(std::begin(rooms), std::end(rooms), rando::GetMapDrawDistance());
+            return it == std::end(rooms) ? 0 : static_cast< int >(it - std::begin(rooms));
           },
       .setValue = [](int v) { rando::SetMapDrawDistance(rando::kMapDrawDistances[v]); },
       .isModified = [] { return rando::GetMapDrawDistance() != rando::kMapDrawDistanceDefault; },
   });
   SetHelp(leftPane, rightPane, drawDistance,
-          "How far from the selected room the map screen draws rooms, counted in doors. "
-          "The farthest rooms fade out, and moving around the map brings the "
+          "How many rooms around the selected room the map screen draws, nearest first by "
+          "doors. The farthest rooms fade out, and moving around the map brings the "
           "rooms around the new selection in.<br/><br/>Mixed regions put every room of "
           "the game on one map. Drawing them all at once will be very slow on most PCs. "
           "<b>Whole World</b> does it anyway.");

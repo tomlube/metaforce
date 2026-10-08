@@ -301,6 +301,26 @@ int CMapWorld::GetCurrentMapAreaDepth(const IWorld& wld, int aid) const {
   return bfsInfos.back().GetDepth();
 }
 
+#if defined(TARGET_PC)
+int CMapWorld::GetMapAreaDepthForAreaCount(const IWorld& wld, int aid, int maxAreas) const {
+  ClearTraversedFlags();
+  rstl::vector< CMapAreaBFSInfo > bfsInfos;
+  bfsInfos.reserve(mAreas.size());
+  DoBFS(wld, aid, 9999, 9999.f, 9999.f, false, bfsInfos);
+  // The walk lists the areas in order of depth, so a depth fits when its last area is among the
+  // first `maxAreas`.
+  int depth = 2;
+  for (int i = 0; i < bfsInfos.size(); ++i) {
+    const bool lastOfDepth =
+        i + 1 == bfsInfos.size() || bfsInfos[i + 1].GetDepth() != bfsInfos[i].GetDepth();
+    if (lastOfDepth && i + 1 <= maxAreas) {
+      depth = rstl::max_val(depth, bfsInfos[i].GetDepth());
+    }
+  }
+  return depth;
+}
+#endif
+
 rstl::vector< int > CMapWorld::GetVisibleAreas(const IWorld& wld,
                                                const CMapWorldInfo& mwInfo) const {
   rstl::vector< int > areas;
