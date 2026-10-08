@@ -51,8 +51,6 @@
 #include "Metaforce/Randomizer/Hooks.hpp"
 #include "Metaforce/Randomizer/Randomizer.hpp"
 
-#include <dolphin/os.h>
-
 // Randomizer: the map screen's X button warps to the seed's start. The first press arms it for
 // this many seconds; a second press warps.
 static const float skWarpConfirmSeconds = 3.f;
@@ -1987,8 +1985,6 @@ float CAutoMapper::GetMapAreaMaxDrawDepth(const CStateManager& mgr, int aid) con
   const int rooms = metaforce::randomizer::GetMapDrawDistance();
   if (rooms > 0 && metaforce::randomizer::GetActiveSeed() != nullptr) {
     const int fit = mWorld->IGetMapWorld()->GetMapAreaDepthForAreaCount(*mWorld, aid, rooms);
-    OSReport("Map draw distance: %d rooms around area %d reach %d of %d rings of doors\n", rooms,
-             aid, fit, static_cast< int >(depth));
     if (static_cast< float >(fit) < depth) {
       depth = static_cast< float >(fit) - 0.5f;
     }
