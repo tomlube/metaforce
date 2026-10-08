@@ -387,6 +387,29 @@ void RandomizerWindow::build_seeds_tab(Rml::Element* content) {
           "rooms take up the same space, the map outlines it.<br/><br/>Doors closing a loop of "
           "moved doors can't meet either way.");
 
+  std::vector< DropdownButton::Option > drawDistances;
+  for (const char* name : rando::kMapDrawDistanceNames) {
+    drawDistances.push_back({name});
+  }
+  auto& drawDistance = leftPane.add_child< DropdownButton >(DropdownButton::Props{
+      .key = "Map Draw Distance",
+      .options = std::move(drawDistances),
+      .getValue =
+          [] {
+            const auto& doors = rando::kMapDrawDistances;
+            const auto it = std::find(std::begin(doors), std::end(doors), rando::GetMapDrawDistance());
+            return it == std::end(doors) ? 0 : static_cast< int >(it - std::begin(doors));
+          },
+      .setValue = [](int v) { rando::SetMapDrawDistance(rando::kMapDrawDistances[v]); },
+      .isModified = [] { return rando::GetMapDrawDistance() != rando::kMapDrawDistanceDefault; },
+  });
+  SetHelp(leftPane, rightPane, drawDistance,
+          "How far from the selected room the map screen draws rooms, counted in doors. "
+          "The farthest rooms fade out, and moving around the map brings the "
+          "rooms around the new selection in.<br/><br/>Mixed regions put every room of "
+          "the game on one map. Drawing them all at once will be very slow on most PCs. "
+          "<b>Whole World</b> does it anyway.");
+
   leftPane.add_section("Seeds");
   auto& seeds = leftPane.add_group_button({.text = "Generated Seeds"});
   leftPane.register_control(seeds, rightPane, [this](Pane& pane) {

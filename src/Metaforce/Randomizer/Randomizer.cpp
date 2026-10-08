@@ -165,6 +165,7 @@ struct Session {
   bool quickReload = true;
   bool quickSave = true;
   int mapLayout = kMapLayoutConnected;
+  int mapDrawDistance = kMapDrawDistanceDefault;
   int autosave = kAutosaveAuto;
   // Whether each shortcut chord was held on the last input seen, so holding one acts once.
   bool quickReloadHeld = false;
@@ -238,6 +239,7 @@ void SaveSession() {
       {"quick_reload", S().quickReload},
       {"quick_save", S().quickSave},
       {"map_layout", S().mapLayout},
+      {"map_draw_distance", S().mapDrawDistance},
       {"autosave", S().autosave},
   };
   std::error_code ec;
@@ -260,6 +262,7 @@ void LoadSession() {
   S().quickSave = root.value("quick_save", true);
   S().mapLayout = std::clamp(root.value("map_layout", static_cast< int >(kMapLayoutConnected)),
                              kMapLayoutVanilla, kMapLayoutConnected);
+  S().mapDrawDistance = std::max(root.value("map_draw_distance", kMapDrawDistanceDefault), 0);
   S().autosave = std::clamp(root.value("autosave", static_cast< int >(kAutosaveAuto)),
                             kAutosaveAuto, kAutosaveAll);
   if (root.contains("slots") && root["slots"].is_object()) {
@@ -753,6 +756,13 @@ int GetMapLayout() { return S().mapLayout; }
 
 void SetMapLayout(int mode) {
   S().mapLayout = std::clamp(mode, kMapLayoutVanilla, kMapLayoutConnected);
+  SaveSession();
+}
+
+int GetMapDrawDistance() { return S().mapDrawDistance; }
+
+void SetMapDrawDistance(int doors) {
+  S().mapDrawDistance = std::max(doors, 0);
   SaveSession();
 }
 
