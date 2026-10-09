@@ -20,8 +20,8 @@ using Clock = std::chrono::steady_clock;
 
 // The retail skip fades for a second before it jumps; this fades out faster since the
 // fast-forward itself takes a moment.
-constexpr float kFadeOutTime = 0.5f;
-constexpr float kFadeInTime = 1.0f;
+constexpr float kFadeOutTime = 1.0f;
+constexpr float kFadeInTime = 0.5f;
 // Real time spent on extra updates each frame, and a ceiling on the updates themselves.
 constexpr auto kFrameBudget = std::chrono::milliseconds(12);
 constexpr int kMaxStepsPerFrame = 120;
