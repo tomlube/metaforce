@@ -97,7 +97,7 @@ add_subdirectory(extern/musyx EXCLUDE_FROM_ALL)
 
 set(GAME_LIBS
       aurora::core aurora::gx aurora::vi aurora::pad aurora::mtx aurora::os aurora::dvd aurora::thp aurora::card aurora::main
-      borealis::cli borealis::crash borealis::data borealis::disc borealis::file_select borealis::io borealis::log borealis::presentation borealis::ui
+      borealis::cli borealis::config borealis::crash borealis::data borealis::disc borealis::file_select borealis::io borealis::log borealis::presentation borealis::ui
       musyx ZLIB::ZLIB TracyClient fmt::fmt nlohmann_json::nlohmann_json)
 
 set(GAME_FILES
@@ -295,7 +295,7 @@ set(GAME_FILES
       src/MetroidPrime/CActor.cpp
       src/MetroidPrime/Weapons/CPhazonBeam.cpp
       src/MetroidPrime/Weapons/CIceImpact.cpp
-      src/MetroidPrime/Weapons/CIceProjectile.cpp
+      src/MetroidPrime/Weapons/CIceAttackProjectile.cpp
       src/MetroidPrime/Weapons/CGunWeapon.cpp
       src/MetroidPrime/Weapons/CWeapon.cpp
       src/MetroidPrime/Weapons/CPlasmaBeam.cpp
@@ -733,39 +733,43 @@ set(GAME_FILES
       extern/rstl/src/rstl/rstl_map.cpp
       extern/rstl/src/rstl/rstl_allocator.cpp
       extern/rstl/src/rstl/RstlExtras.cpp
+      extern/rstl/src/rstl/CStringExtras.cpp
       extern/rstl/src/rstl/rstl_strings.cpp
-      src/Metaforce/ARAMToken.cpp
       src/Metaforce/Alloc.cpp
+      src/Metaforce/ARAMToken.cpp
       src/Metaforce/Audio.cpp
-      src/Metaforce/Display.cpp
+      src/Metaforce/CImGuiIOWin.cpp
+      src/Metaforce/CModelSectionReader.cpp
       src/Metaforce/Cheats.cpp
       src/Metaforce/CutsceneSkip.cpp
-      src/Metaforce/FusionBonus.cpp
+      src/Metaforce/Display.cpp
       src/Metaforce/DockPortals.cpp
-      src/Metaforce/MergedWorld.cpp
-      src/Metaforce/ObjectBudget.cpp
-      src/Metaforce/SaveAnywhere.cpp
-      src/Metaforce/SaveIndicator.cpp
+      src/Metaforce/FusionBonus.cpp
       src/Metaforce/GameOptionDefaults.cpp
-      src/Metaforce/CModelSectionReader.cpp
       src/Metaforce/Input.cpp
       src/Metaforce/MapData.cpp
       src/Metaforce/MapLayout.cpp
       src/Metaforce/MenuPointer.cpp
       src/Metaforce/PathData.cpp
-      src/Metaforce/Runtime.cpp
-      src/Metaforce/Stubs.cpp
-      src/Metaforce/Warp.cpp
-      src/Metaforce/CImGuiIOWin.cpp
+      src/Metaforce/MergedWorld.cpp
+      src/Metaforce/ObjectBudget.cpp
       src/Metaforce/ResourceNameDatabase.cpp
+      src/Metaforce/Runtime.cpp
       src/Metaforce/ScriptObjectDebug.cpp
+      src/Metaforce/SaveAnywhere.cpp
+      src/Metaforce/SaveIndicator.cpp
+      src/Metaforce/Settings.cpp
+      src/Metaforce/Stubs.cpp
+      src/Metaforce/UI/BindingModal.cpp
       src/Metaforce/UI/CheatsWindow.cpp
       src/Metaforce/UI/ControllerConfigWindow.cpp
+      src/Metaforce/UI/DeviceDropdown.cpp
       src/Metaforce/UI/MenuBar.cpp
       src/Metaforce/UI/RandomizerWindow.cpp
       src/Metaforce/UI/SettingsWindow.cpp
       src/Metaforce/UI/UI.cpp
       src/Metaforce/UI/WarpWindow.cpp
+      src/Metaforce/Warp.cpp
       src/Metaforce/Randomizer/CrossWorldDoors.cpp
       src/Metaforce/Randomizer/DoorLocks.cpp
       src/Metaforce/Randomizer/DoorStyles.cpp
@@ -785,7 +789,7 @@ if (ANDROID)
 else ()
     add_executable(metaforce ${GAME_FILES})
 endif ()
-target_compile_definitions(metaforce PRIVATE TARGET_PC=1 VERSION=0 NONMATCHING=1)
+target_compile_definitions(metaforce PRIVATE TARGET_PC=1 VERSION=1 NONMATCHING=1)
 target_include_directories(metaforce PRIVATE include extern/rstl/include)
 target_link_libraries(metaforce PRIVATE ${GAME_LIBS})
 include(extern/aurora/cmake/AuroraCopyRuntimeDLLs.cmake)

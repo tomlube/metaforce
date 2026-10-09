@@ -914,6 +914,7 @@ CEntity* ScriptLoader::LoadPickup(CStateManager& mgr, CInputStream& in, int prop
   float possibility = in.Get< float >();
   float lifeTime = in.Get< float >();
   float fadeInTime = in.Get< float >();
+  bool negativeExtent;
   CAssetId staticModel = in.Get< CAssetId >();
   CAnimationParameters aParms = LoadAnimationParameters(in);
   CActorParameters actParms = LoadActorParameters(in);
@@ -988,7 +989,6 @@ CEntity* ScriptLoader::LoadPickup(CStateManager& mgr, CInputStream& in, int prop
   const CTransform4f& xf = head.mActorHead.mTransform;
   CAABox aabb = GetCollisionBox(mgr, info.GetAreaId(), extent, offset);
 
-  bool negativeExtent;
   if (extent.GetX() < 0.f)
     negativeExtent = true;
   else if (extent.GetY() < 0.f)
@@ -2453,7 +2453,11 @@ CEntity* ScriptLoader::LoadParasite(CStateManager& mgr, CInputStream& in, int pr
       playerObstructionMinDist, 0.f, disableMove, CWallWalker::kWT_Parasite,
       CDamageVulnerability::NormalVulnerability(), CDamageInfo(CWeaponMode::Power(), 0.f, 0.f, 0.f),
       CSfxManager::kInternalInvalidSfxId, CSfxManager::kInternalInvalidSfxId,
-      CSfxManager::kInternalInvalidSfxId, kInvalidAssetId, kInvalidAssetId, 0.f, actParms);
+      CSfxManager::kInternalInvalidSfxId, kInvalidAssetId, kInvalidAssetId, 0.f,
+#if VERSION >= VERSION_GM8P_00
+      1.f,
+#endif
+      actParms);
 }
 
 CEntity* ScriptLoader::LoadRipper(CStateManager& mgr, CInputStream& in, int propCount,
@@ -2979,7 +2983,7 @@ CEntity* ScriptLoader::LoadWorldTeleporter(CStateManager& mgr, CInputStream& in,
   bool showText = propCount >= 15 ? in.ReadBool() : false;
   CAssetId fontId = propCount >= 16 ? static_cast< CAssetId >(in.ReadLong()) : kInvalidAssetId;
   CAssetId stringId = propCount >= 17 ? static_cast< CAssetId >(in.ReadLong()) : kInvalidAssetId;
-  bool fadeWhite = propCount >= 18 ? in.ReadBool() : false;
+  const bool fadeWhite = propCount >= 18 ? in.ReadBool() : false;
 
   float charFadeInTime;
   if (propCount >= 19) {
@@ -3759,7 +3763,11 @@ CEntity* ScriptLoader::LoadActorContraption(CStateManager& mgr, CInputStream& in
 
 CEntity* ScriptLoader::LoadOcculus(CStateManager& mgr, CInputStream& in, int propCount,
                                    const CEntityInfo& info) {
+#if VERSION >= VERSION_GM8P_00
+  if (propCount < 15 || propCount > 16)
+#else
   if (propCount != 15)
+#endif
     return nullptr;
 
   SScaledActorHead head(in, mgr);
@@ -3783,6 +3791,9 @@ CEntity* ScriptLoader::LoadOcculus(CStateManager& mgr, CInputStream& in, int pro
   CDamageVulnerability dVuln(in);
   float forwardMoveWeight = in.ReadFloat();
   CDamageInfo dInfo(in);
+#if VERSION >= VERSION_GM8P_00
+  float touchBoundsScale = propCount > 15 ? in.ReadFloat() : 1.f;
+#endif
 
   return rs_new CParasite(
       mgr.AllocateUniqueId(), head.mActorHead.mName, CPatterned::kFT_Zero, info,
@@ -3795,6 +3806,9 @@ CEntity* ScriptLoader::LoadOcculus(CStateManager& mgr, CInputStream& in, int pro
       CWallWalker::kWT_Oculus, dVuln, dInfo, static_cast< uint >(CSfxManager::kInternalInvalidSfxId),
       static_cast< uint >(CSfxManager::kInternalInvalidSfxId),
       static_cast< uint >(CSfxManager::kInternalInvalidSfxId), kInvalidAssetId, kInvalidAssetId, 0.f,
+#if VERSION >= VERSION_GM8P_00
+      touchBoundsScale,
+#endif
       actParms);
 }
 
@@ -3836,7 +3850,11 @@ CEntity* ScriptLoader::LoadGeemer(CStateManager& mgr, CInputStream& in, int prop
       0.f, 0.f, 1.f, forwardMoveWeight, 0.f, 0.f, playerObstructionMinDist, haltDelay, false,
       CWallWalker::kWT_Geemer, CDamageVulnerability::NormalVulnerability(),
       CDamageInfo(CWeaponMode::Power(), 0.f, 0.f, 0.f), haltSfx, getUpSfx, crouchSfx,
-      kInvalidAssetId, kInvalidAssetId, 0.f, actParms);
+      kInvalidAssetId, kInvalidAssetId, 0.f,
+#if VERSION >= VERSION_GM8P_00
+      1.f,
+#endif
+      actParms);
 }
 
 CEntity* ScriptLoader::LoadAtomicAlpha(CStateManager& mgr, CInputStream& in, int propCount,
@@ -4020,7 +4038,11 @@ CEntity* ScriptLoader::LoadIceZoomer(CStateManager& mgr, CInputStream& in, int p
       0.f, 0.f, 1.f, forwardMoveWeight, 0.f, 0.f, playerObstructionMinDist, 0.f, false,
       CWallWalker::kWT_IceZoomer, dVuln, CDamageInfo(CWeaponMode::Power(), 0.f, 0.f, 0.f),
       CSfxManager::kInternalInvalidSfxId, CSfxManager::kInternalInvalidSfxId,
-      CSfxManager::kInternalInvalidSfxId, modelRes, skinRes, iceZoomerJointHP, actParms);
+      CSfxManager::kInternalInvalidSfxId, modelRes, skinRes, iceZoomerJointHP,
+#if VERSION >= VERSION_GM8P_00
+      1.f,
+#endif
+      actParms);
 }
 
 CEntity* ScriptLoader::LoadRidley(CStateManager& mgr, CInputStream& in, int propCount,

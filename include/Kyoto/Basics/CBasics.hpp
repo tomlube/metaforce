@@ -6,6 +6,9 @@
 namespace CBasics {
 bool Init();
 char* Stringize(const char* fmt, ...);
+// Inferred name for Trilogy's cache-aware copy routine next to CBasics::Init.
+void CopyMem(void* dest, const void* src, uint size);
+void ZeroMem(void* dest, uint size);
 
 #if TARGET_LITTLE_ENDIAN
 namespace detail {

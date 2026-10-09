@@ -1,16 +1,16 @@
 #include "Metaforce/FusionBonus.hpp"
 
-#include "Metaforce/UI/RuntimeConfig.hpp"
+#include "Metaforce/Settings.hpp"
 
 #include "MetroidPrime/Player/CGameState.hpp"
 #include "MetroidPrime/Player/CSystemState.hpp"
 
 namespace metaforce::fusion {
 
-bool SuitEnabled() { return ui::GetRuntimeConfig().game.fusionSuit.getValue(); }
+bool SuitEnabled() { return GetSettings().game.fusionSuit.get(); }
 
 void SetSuitEnabled(bool enabled) {
-  ui::GetRuntimeConfig().game.fusionSuit.setValue(enabled);
+  GetSettings().game.fusionSuit.set(enabled);
   if (gpGameState == nullptr) {
     return;
   }

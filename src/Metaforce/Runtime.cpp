@@ -7,12 +7,12 @@
 #include "Kyoto/Basics/COsContext.hpp"
 #include "Kyoto/CResFactory.hpp"
 #include "Kyoto/CSimplePool.hpp"
-#include "Metaforce/CImGuiIOWin.hpp"
+#include "Metaforce/Input.hpp"
 #include "Metaforce/Limiter.hpp"
 #include "Metaforce/ResourceNameDatabase.hpp"
 #include "Metaforce/Randomizer/Randomizer.hpp"
 #include "Metaforce/SaveAnywhere.hpp"
-#include "Metaforce/UI/RuntimeConfig.hpp"
+#include "Metaforce/Settings.hpp"
 #include "Metaforce/UI/UI.hpp"
 #include "Metaforce/Version.hpp"
 #include "MetroidPrime/CArchitectureMessage.hpp"
@@ -39,6 +39,7 @@
 #include <borealis/app_info.hpp>
 #include <borealis/aurora_log.h>
 #include <borealis/cli.hpp>
+#include <borealis/config.hpp>
 #include <borealis/crash.hpp>
 #include <borealis/data.hpp>
 #include <borealis/file_select.hpp>
@@ -46,7 +47,7 @@
 #include <borealis/log.hpp>
 #include <borealis/presentation.hpp>
 
-#include <SDL3/SDL_keycode.h>
+#include <SDL3/SDL_events.h>
 #include <SDL3/SDL_timer.h>
 #include <dolphin/pad.h>
 #include <dolphin/vi.h>
@@ -372,33 +373,6 @@ bool OpenDisc(const std::string& location) {
   discAccess = {};
   return false;
 }
-
-void LoadDefaultKeyBindings() {
-  u32 bindingCount = 0;
-  if (PADGetKeyButtonBindings(PAD_CHAN0, &bindingCount) != nullptr) {
-    return;
-  }
-
-  PADKeyButtonBinding buttons[PAD_BUTTON_COUNT] = {
-      {SDL_SCANCODE_SPACE, PAD_BUTTON_A},      {SDL_SCANCODE_LSHIFT, PAD_BUTTON_B},
-      {SDL_SCANCODE_F, PAD_BUTTON_X},          {SDL_SCANCODE_R, PAD_BUTTON_Y},
-      {SDL_SCANCODE_RETURN, PAD_BUTTON_START}, {SDL_SCANCODE_TAB, PAD_TRIGGER_Z},
-      {SDL_SCANCODE_Q, PAD_TRIGGER_L},         {SDL_SCANCODE_E, PAD_TRIGGER_R},
-      {SDL_SCANCODE_UP, PAD_BUTTON_UP},        {SDL_SCANCODE_DOWN, PAD_BUTTON_DOWN},
-      {SDL_SCANCODE_LEFT, PAD_BUTTON_LEFT},    {SDL_SCANCODE_RIGHT, PAD_BUTTON_RIGHT},
-  };
-  PADKeyAxisBinding axes[PAD_AXIS_COUNT] = {
-      {SDL_SCANCODE_D, PAD_AXIS_LEFT_X_POS, 1},  {SDL_SCANCODE_A, PAD_AXIS_LEFT_X_NEG, 1},
-      {SDL_SCANCODE_W, PAD_AXIS_LEFT_Y_POS, 1},  {SDL_SCANCODE_S, PAD_AXIS_LEFT_Y_NEG, 1},
-      {SDL_SCANCODE_L, PAD_AXIS_RIGHT_X_POS, 1}, {SDL_SCANCODE_J, PAD_AXIS_RIGHT_X_NEG, 1},
-      {SDL_SCANCODE_I, PAD_AXIS_RIGHT_Y_POS, 1}, {SDL_SCANCODE_K, PAD_AXIS_RIGHT_Y_NEG, 1},
-      {SDL_SCANCODE_Q, PAD_AXIS_TRIGGER_L, 0},   {SDL_SCANCODE_E, PAD_AXIS_TRIGGER_R, 0},
-  };
-
-  PADSetKeyButtonBindings(PAD_CHAN0, buttons);
-  PADSetKeyAxisBindings(PAD_CHAN0, axes);
-  PADSetKeyboardActive(PAD_CHAN0, TRUE);
-}
 } // namespace
 
 int Initialize(int argc, char** argv) {
@@ -428,6 +402,13 @@ int Initialize(int argc, char** argv) {
   try {
     args = options.parse(argc, argv);
     standardOptions = borealis::cli::parse(args);
+    if (const auto status = borealis::config::apply_overrides(standardOptions.configOverrides);
+        !status) {
+      throw cxxopts::exceptions::parsing(status.message);
+    }
+    if (args.count("lock-aspect")) {
+      borealis::config::cli_overlay().set(GetSettings().video.lockAspectRatio, true);
+    }
     const auto windowSize = args["window-size"].as< std::vector< unsigned int > >();
     if (windowSize.size() != 2 || windowSize[0] < 320 || windowSize[1] < 240 ||
         windowSize[0] > 16384 || windowSize[1] > 16384) {
@@ -497,7 +478,6 @@ int Initialize(int argc, char** argv) {
   borealis::crash::install();
   randomizer::Initialize(paths.userPath);
   options::Initialize(paths.userPath);
-  ui::LoadRuntimeConfig(paths.userPath);
   save_anywhere::Initialize(paths.userPath);
 
   if (dataStatus.code == borealis::data::ErrorCode::MigrationIncomplete) {
@@ -509,6 +489,10 @@ int Initialize(int argc, char** argv) {
   const auto cachePath = borealis::io::fs_path_to_string(paths.cachePath);
   Log.info("User directory: {}", userPath);
   Log.info("Cache directory: {}", cachePath);
+  borealis::config::load({
+      .path = paths.userPath / "config.json",
+      .version = 1,
+  });
 
   const auto windowSize = args["window-size"].as< std::vector< unsigned int > >();
   const AuroraConfig config{
@@ -517,6 +501,7 @@ int Initialize(int argc, char** argv) {
       .cachePath = cachePath.c_str(),
       .desiredBackend = args["backend"].as< AuroraBackend >(),
       .vsync = true,
+      .startFullscreen = GetSettings().video.fullscreen,
       .allowJoystickBackgroundEvents = true,
       .windowPosX = -1,
       .windowPosY = -1,
@@ -526,10 +511,8 @@ int Initialize(int argc, char** argv) {
       .logLevel = borealis::log::to_aurora_level(logOptions.level),
   };
   const auto auroraInfo = aurora_initialize(argc, argv, &config);
-  if (ui::GetRuntimeConfig().video.fullscreen) {
-    VISetWindowFullscreen(true);
-  }
-  aurora_set_background_input(ui::GetRuntimeConfig().input.allowBackgroundInput);
+  ConfigureDisplay(auroraInfo.window);
+  aurora_set_background_input(GetSettings().input.allowBackgroundInput);
   VISetWindowTitle(
       fmt::format("{} {}", AppInfo.appName, VersionAndBuildTimeText()).c_str());
 
@@ -566,18 +549,15 @@ int Initialize(int argc, char** argv) {
   if (picked) {
     WriteLastDisc(paths.userPath, discLocation);
   }
-  // --lock-aspect applies to this launch only and isn't saved.
-  ConfigureDisplay(auroraInfo.window, args.count("lock-aspect") != 0 ||
-                                          ui::GetRuntimeConfig().video.lockAspectRatio);
+
   borealis::presentation::set_preferred_frame_rate(60.f);
   COsContext::mProgressiveMode = true;
 
-  if (!PADInit()) {
-    Log.error("PADInit() failed");
+  if (!input::Initialize()) {
+    Log.error("Failed to initialize input");
     Shutdown();
     return 1;
   }
-  LoadDefaultKeyBindings();
   input::InitializeGameInput();
   if (!ui::Initialize()) {
     Log.warn("Failed to initialize the Metaforce interface");
@@ -588,6 +568,7 @@ int Initialize(int argc, char** argv) {
 void Shutdown() {
   randomizer::Shutdown();
   startup.reset();
+  borealis::config::flush();
   if (sndIsInstalled()) {
     sndQuit();
   }
@@ -595,8 +576,9 @@ void Shutdown() {
   aurora_dvd_close();
   discAccess = {};
   input::ShutdownGameInput();
-  ui::SaveRuntimeConfig();
   ui::Shutdown();
+  input::Shutdown();
+  ShutdownDisplay();
   aurora_shutdown();
   borealis::log::shutdown();
 }
@@ -617,15 +599,20 @@ bool BeginFrame() {
       return false;
     }
     if (event->type == AURORA_SDL_EVENT) {
+      if (event->sdl.type == SDL_EVENT_WILL_ENTER_BACKGROUND ||
+          event->sdl.type == SDL_EVENT_TERMINATING) {
+        borealis::config::flush();
+      }
       ui::HandleEvent(event->sdl);
     }
   }
+  input::Update();
+  borealis::config::update();
   if (!aurora_begin_frame()) {
     return false;
   }
   UpdateDisplayAspect();
   ui::Update();
-  ui::SaveRuntimeConfig();
   return true;
 }
 

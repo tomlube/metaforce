@@ -86,6 +86,6 @@ private:
   TUniqueId mPendingCloseSender;
 #endif
 };
-CHECK_SIZEOF(CScriptDoor, (VERSION >= VERSION_GM8E_02 ? 0x2c0 : 0x2b0))
+CHECK_CHILD_SIZEOF(CScriptDoor, CPhysicsActor, 0x58)
 
 #endif // _CSCRIPTDOOR

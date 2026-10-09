@@ -9,6 +9,7 @@
 #include "MetroidPrime/Player/CFidget.hpp"
 #include "MetroidPrime/Player/CPlayerCameraBob.hpp"
 #include "MetroidPrime/Player/CPlayerState.hpp"
+#include "MetroidPrime/Weapons/GunController/CGunMotion.hpp"
 #include "MetroidPrime/Weapons/WeaponCommon.hpp"
 
 #include "Kyoto/Audio/CSfxHandle.hpp"
@@ -106,6 +107,7 @@ public:
   void PreRender(CStateManager&, const CFrustumPlanes&, const CVector3f&);
   void TouchModel(const CStateManager&) const;
   CVector3f ConvertToScreenSpace(const CVector3f& pos, const CGameCamera&) const;
+  bool IsUpperRightArmVisible() const;
   void DrawArm(const CStateManager&, const CVector3f&, const CModelFlags&) const;
   void Render(const CStateManager&, const CVector3f&, const CModelFlags&) const;
   void GetLctrWithShake(CTransform4f& xfOut, const CModelData&, const rstl::string&, bool, bool);
@@ -118,6 +120,7 @@ public:
   void ProcessNormalState(int, int, CStateManager&, float);
   bool ExitMissile();
   void UpdateNormalShotCycle(float, CStateManager&);
+  void FirePrimary(float, CStateManager&);
   void FireSecondary(float, CStateManager&);
   void DropBomb(CPlayerGun::EBWeapon, CStateManager&);
   void ActivateCombo(CStateManager&);
@@ -158,6 +161,9 @@ public:
   void EnterFreeLook(CStateManager&);
   void EnterFidget(CStateManager&);
   void UpdateLeftArmTransform(const CModelData&, const CStateManager&);
+  void UpdateTransform(float dt, const CStateManager& mgr);
+  void UpdatePenetration(const CStateManager&);
+  void AdjustFiringTransformForPenetration(const CStateManager&, CTransform4f&) const;
   void ReturnArmAndGunToDefault(CStateManager&, bool);
   void UpdateAuxWeapons(float, const CTransform4f&, CStateManager&);
   void CancelLockOn();
@@ -219,7 +225,11 @@ public:
     return mChargePhase == kCP_NotCharging && int(mComboAmmoIdx) != 1;
   }
   bool IsCharging() const { return mCharging; }
+#if VERSION >= VERSION_R3IJ_00
+  void SetTransform(const CTransform4f& xf);
+#else
   void SetTransform(CTransform4f xf) { mXf = xf; }
+#endif
 #if defined(TARGET_PC)
   // Moves the gun's world-space state by `xf`, for doors that lead somewhere other than their
   // geometry. Leaves holster, charge and firing state alone.
@@ -234,6 +244,15 @@ public:
   CGrappleArm& GrappleArm() { return *mGrappleArm.get(); }
   CGrappleArm& GetGrappleArm() const { return *mGrappleArm.get(); }
   bool IsFidgeting() const { return mNotFidgeting; }
+  bool IsMorphing() const {
+    return mMorph.GetGunState() != CGunMorph::kGS_OutWipeDone || IsWeaponStateSet(0x8);
+  }
+  bool IsStruck() const {
+    return mDamageTimer > 0.f || mGunMotion->GunController().GetGunState() == kGS_Strike;
+  }
+  bool IsInDamageReaction() const {
+    return IsStruck() || mGunMotion->GunController().GetGunState() == kGS_BigStrike;
+  }
 
   void SetActorAttached(bool attached) { mActorAttached = attached; } // name?
 
@@ -353,6 +372,9 @@ private:
   uint x334_;
   ENextState mNextState;
   EPhazonBeamState mPhazonBeamState;
+#if VERSION >= VERSION_R3IJ_00
+  float mBigStrikeTime;
+#endif
   float mChargeBeamFactor;
   float mComboXferTimer;
   float mChargeCooldownTimer;
@@ -375,6 +397,9 @@ private:
   float mMuzzleEffectVisTimer;
   float mCooldown;
   float mDamageTimer;
+#if VERSION >= VERSION_R3IJ_00
+  float mDamageAimBlend;
+#endif
   float mDamageAmt;
   float mPhazonMorphT;
   float mMissileExitTimer;
@@ -426,6 +451,11 @@ private:
   rstl::single_ptr< CWorldShadow > mShadow;
   short mChargeRumbleHandle;
 
+#if VERSION >= VERSION_R3IJ_00
+  CVector2f mSmoothedPointer;
+  float mLeftArmAimBlend;
+  bool mFiringTransformPenetrating : 1;
+#endif
   bool mCoolingCharge : 1;
   bool mChargeEffectVisible : 1;
   bool mComboFiring : 1;
@@ -436,7 +466,7 @@ private:
   bool mInRestPose : 1;
 
   bool mNotFidgeting : 1;
-  bool x833_25_ : 1;
+  bool mBeamSelectionRequested : 1;
   bool x833_26_ : 1;
   bool x833_27_ : 1;
   bool mPhazonBeamActive : 1;
@@ -461,8 +491,14 @@ private:
   bool mPowerBombReady : 1;
   bool mInPhazonPool : 1;
   bool mActorAttached : 1;
-  // bool x835_32_unk : 1;
+#if VERSION >= VERSION_R3IJ_00
+  CVector3f mPreviousPlayerForward;
+#endif
 };
+#if VERSION >= VERSION_R3IJ_00
+CHECK_SIZEOF(CPlayerGun, 0x85c)
+#else
 CHECK_SIZEOF(CPlayerGun, 0x838)
+#endif
 
 #endif // _CPLAYERGUN

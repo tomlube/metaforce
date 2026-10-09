@@ -2,63 +2,24 @@
 
 #include <borealis/ui/window.hpp>
 
-#include <dolphin/pad.h>
-
-struct SDL_Gamepad;
-
 namespace borealis::ui {
 class Pane;
 }
 
 namespace metaforce::ui {
 
-// Ported from Dusklight's dusk::ui::ControllerConfigWindow.
+struct BindingTarget;
+
 class ControllerConfigWindow : public borealis::ui::Window {
 public:
   ControllerConfigWindow();
 
-  void update() override;
-  void hide(bool close) override;
-
 private:
-  enum class Page {
-    Controller,
-    Buttons,
-    Triggers,
-    Sticks,
-    Rumble,
-  };
+  enum class Page { Buttons, Triggers, Sticks };
 
-  void build_port_tab(Rml::Element* content, int port);
-  void render_page(borealis::ui::Pane& pane, int port, Page page);
-  void refresh_controller_page();
-  void poll_pending_binding();
-  void finish_pending_binding(int completedPort);
-  void unmap_pending_binding();
-  bool capture_active() const;
-  bool pending_input_neutral() const;
-  Rml::String pending_button_label() const;
-  Rml::String pending_axis_label() const;
-  void cancel_pending_binding();
-  void finish_pending_key_binding();
-  Rml::String pending_key_label() const;
-  void stop_rumble_test();
-
-  Page mPage = Page::Controller;
-  borealis::ui::Pane* mRightPane = nullptr;
-  int mActivePort = 0;
-  int mPendingPort = -1;
-  bool mPendingBindingArmed = false;
-  bool mSuppressNavigationUntilNeutral = false;
-  int mSuppressNavigationPort = -1;
-  PADButtonMapping* mPendingButtonMapping = nullptr;
-  PADAxisMapping* mPendingAxisMapping = nullptr;
-  int mPendingKeyButton = -1;
-  int mPendingKeyAxis = -1;
-  bool mRumbleTestActive = false;
-  int mRumbleTestPort = -1;
+  void RenderPage(borealis::ui::Pane& pane, Page page);
+  void AddBinding(borealis::ui::Pane& pane, BindingTarget target);
+  static Rml::String BindingLabel(BindingTarget target);
 };
-
-Rml::String native_button_name(SDL_Gamepad* gamepad, u32 buttonUntyped);
 
 } // namespace metaforce::ui

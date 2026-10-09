@@ -1,6 +1,6 @@
 #include "Metaforce/CutsceneSkip.hpp"
 
-#include "Metaforce/UI/RuntimeConfig.hpp"
+#include "Metaforce/Settings.hpp"
 
 #include "Kyoto/Audio/CAudioSys.hpp"
 #include "Kyoto/Audio/CMidiManager.hpp"
@@ -41,7 +41,7 @@ EPhase sPhase = kP_Idle;
 float sTime = 0.f;     // seconds into the current fade
 float sGameTime = 0.f; // seconds of game time fast-forwarded
 
-int Mode() { return ui::GetRuntimeConfig().game.cutsceneSkips.getValue(); }
+int Mode() { return GetSettings().game.cutsceneSkips.get(); }
 
 void RestoreVolume(unsigned short rampMs) {
   if (gpGameState != nullptr) {

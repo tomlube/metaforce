@@ -1,17 +1,54 @@
 #include "Metaforce/Input.hpp"
 
 #include "Metaforce/MenuPointer.hpp"
-#include "Metaforce/UI/RuntimeConfig.hpp"
+#include "Metaforce/Settings.hpp"
 
+#include <SDL3/SDL_gamepad.h>
+#include <SDL3/SDL_scancode.h>
 #include <aurora/binding.hpp>
 #include <aurora/input.hpp>
 
+#include <algorithm>
 #include <array>
+#include <limits>
 #include <memory>
 #include <numbers>
 
 namespace metaforce::input {
 namespace {
+bool sInitialized = false;
+uint32_t sDeviceSource = std::numeric_limits< uint32_t >::max();
+
+constexpr PADDefaultKeyBindings kDefaultKeyBindings{
+    .buttons =
+        {
+            {SDL_SCANCODE_SPACE, PAD_BUTTON_A},
+            {SDL_SCANCODE_LSHIFT, PAD_BUTTON_B},
+            {SDL_SCANCODE_F, PAD_BUTTON_X},
+            {SDL_SCANCODE_R, PAD_BUTTON_Y},
+            {SDL_SCANCODE_TAB, PAD_TRIGGER_Z},
+            {SDL_SCANCODE_RETURN, PAD_BUTTON_START},
+            {SDL_SCANCODE_UP, PAD_BUTTON_UP},
+            {SDL_SCANCODE_DOWN, PAD_BUTTON_DOWN},
+            {SDL_SCANCODE_LEFT, PAD_BUTTON_LEFT},
+            {SDL_SCANCODE_RIGHT, PAD_BUTTON_RIGHT},
+            {SDL_SCANCODE_Q, PAD_TRIGGER_L},
+            {SDL_SCANCODE_E, PAD_TRIGGER_R},
+        },
+    .axes =
+        {
+            {SDL_SCANCODE_W, PAD_AXIS_LEFT_Y_POS, 1},
+            {SDL_SCANCODE_S, PAD_AXIS_LEFT_Y_NEG, 1},
+            {SDL_SCANCODE_A, PAD_AXIS_LEFT_X_NEG, 1},
+            {SDL_SCANCODE_D, PAD_AXIS_LEFT_X_POS, 1},
+            {SDL_SCANCODE_I, PAD_AXIS_RIGHT_Y_POS, 1},
+            {SDL_SCANCODE_K, PAD_AXIS_RIGHT_Y_NEG, 1},
+            {SDL_SCANCODE_J, PAD_AXIS_RIGHT_X_NEG, 1},
+            {SDL_SCANCODE_L, PAD_AXIS_RIGHT_X_POS, 1},
+            {SDL_SCANCODE_Q, PAD_AXIS_TRIGGER_L, 1},
+            {SDL_SCANCODE_E, PAD_AXIS_TRIGGER_R, 1},
+        },
+};
 
 // Source and Quake's yaw/pitch scale (0.022 degrees per count) at sensitivity 2.
 constexpr float kRadiansPerCountAt100 = 0.044f * std::numbers::pi_v< float > / 180.f;
@@ -130,8 +167,121 @@ bool soft_lock_active(u8 triggerLeft) {
 
 } // namespace
 
+bool Initialize() {
+  if (!PADSetDefaultKeyBindings(0, &kDefaultKeyBindings) || !PADInit()) {
+    return false;
+  }
+  sInitialized = true;
+  Update();
+  return true;
+}
+
+void Shutdown() {
+  if (sInitialized) {
+    PADControlMotor(0, PAD_MOTOR_STOP_HARD);
+  }
+  sDeviceSource = std::numeric_limits< uint32_t >::max();
+  sInitialized = false;
+}
+
+void Update() {
+  if (!sInitialized) {
+    return;
+  }
+  const auto source = DeviceSource();
+  if (source != sDeviceSource) {
+    sDeviceSource = source;
+    PADSetKeyboardActive(0, source == 0);
+    if (source != 0) {
+      u32 count = 0;
+      (void)PADGetButtonMappings(0, &count);
+    }
+  }
+  if (source != 0) {
+    // I want trigger emulation to be implicit, so make sure this is on
+    if (auto* zones = PADGetDeadZones(0); zones && !zones->emulateTriggers) {
+      zones->emulateTriggers = true;
+    }
+  }
+}
+
+std::vector< InputDevice > Devices() {
+  std::vector< InputDevice > devices{{0, "Mouse & Keyboard"}};
+  for (u32 index = 0; index < PADCount(); ++index) {
+    auto* gamepad = PADGetSDLGamepadForIndex(index);
+    if (!gamepad) {
+      continue;
+    }
+    const char* name = PADGetNameForControllerIndex(index);
+    devices.push_back({SDL_GetGamepadID(gamepad), name ? name : "Unknown Controller"});
+  }
+  std::ranges::sort(devices.begin() + 1, devices.end(), {}, &InputDevice::source);
+  return devices;
+}
+
+uint32_t DeviceSource() {
+  if (auto* gamepad = SelectedGamepad()) {
+    return SDL_GetGamepadID(gamepad);
+  }
+  return 0;
+}
+
+void SelectDevice(uint32_t source) {
+  if (source != 0 && source == DeviceSource()) {
+    Update();
+    return;
+  }
+  int index = -1;
+  if (source != 0) {
+    for (u32 i = 0; i < PADCount(); ++i) {
+      if (auto* gamepad = PADGetSDLGamepadForIndex(i);
+          gamepad && SDL_GetGamepadID(gamepad) == source)
+      {
+        index = int(i);
+        break;
+      }
+    }
+    if (index < 0) {
+      return;
+    }
+  }
+  PADControlMotor(0, PAD_MOTOR_STOP_HARD);
+  if (source == 0) {
+    PADClearPort(0);
+  } else {
+    PADSetPortForIndex(u32(index), 0);
+  }
+  Update();
+}
+
+bool HasAxis(const PADAxisMapping& mapping) {
+  return mapping.nativeAxis.nativeAxis >= 0 &&
+         mapping.nativeAxis.nativeAxis < SDL_GAMEPAD_AXIS_COUNT;
+}
+
+bool KeyboardSelected() { return DeviceSource() == 0; }
+
+SDL_Gamepad* SelectedGamepad() {
+  const int index = PADGetIndexForPort(0);
+  if (index < 0) {
+    return nullptr;
+  }
+  return PADGetSDLGamepadForIndex(u32(index));
+}
+
+void ResetBindings() {
+  if (KeyboardSelected()) {
+    PADRestoreDefaultKeyBindings(0);
+  } else {
+    u32 count = 0;
+    (void)PADGetButtonMappings(0, &count);
+    PADRestoreDefaultMapping(0);
+  }
+  PADSerializeMappings();
+}
+
 void ApplySmartLockOn(PADStatus* status) {
-  const bool enabled = ui::GetRuntimeConfig().input.smartLockOn.getValue();
+  const bool enabled = GetSettings().input.smartLockOn.get();
   for (u32 port = 0; port < PAD_CHANMAX; ++port) {
     PADStatus& pad = status[port];
     if (pad.err != PAD_ERR_NONE) {
@@ -156,7 +306,7 @@ void ApplySmartLockOn(PADStatus* status) {
   }
 }
 
-bool ModernControlsEnabled() { return ui::GetRuntimeConfig().input.modernControls.getValue(); }
+bool ModernControlsEnabled() { return GetSettings().input.modernControls.get(); }
 
 bool FilterMapButton(bool zPressed, bool zHeld, bool dpadPressed, bool startPressed) {
   if (!ModernControlsEnabled()) {
@@ -221,8 +371,8 @@ unsigned char ConsumeVisorKeyPresses() {
 }
 
 bool MouseLookEnabled() {
-  const auto& input = ui::GetRuntimeConfig().input;
-  return input.modernControls.getValue() && input.mouseLook.getValue();
+  const auto& input = GetSettings().input;
+  return input.modernControls.get() && input.mouseLook.get();
 }
 
 void RequestMouseCapture() { sCaptureRequested = true; }
@@ -251,17 +401,17 @@ void ConsumeMouseDelta(float& x, float& y) {
 
 float MouseRadiansPerCount() {
   return kRadiansPerCountAt100 *
-         static_cast< float >(ui::GetRuntimeConfig().input.mouseSensitivity.getValue()) / 100.f;
+         static_cast< float >(GetSettings().input.mouseSensitivity.get()) / 100.f;
 }
 
-bool InvertMouseY() { return ui::GetRuntimeConfig().input.invertMouseY.getValue(); }
+bool InvertMouseY() { return GetSettings().input.invertMouseY.get(); }
 
 bool UncappedMouseTurnUnderR() {
-  return ui::GetRuntimeConfig().input.uncappedMouseTurnUnderR.getValue();
+  return GetSettings().input.uncappedMouseTurnUnderR.get();
 }
 
-bool SquareDiagonalLook() { return ui::GetRuntimeConfig().input.squareDiagonalLook.getValue(); }
+bool SquareDiagonalLook() { return GetSettings().input.squareDiagonalLook.get(); }
 
-bool AimAssistEnabled() { return ui::GetRuntimeConfig().input.aimAssist.getValue(); }
+bool AimAssistEnabled() { return GetSettings().input.aimAssist.get(); }
 
 } // namespace metaforce::input
