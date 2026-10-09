@@ -14,6 +14,7 @@
 #include "MetroidPrime/Player/CPlayer.hpp"
 #include "MetroidPrime/Player/CWorldState.hpp"
 
+#include <borealis/io.hpp>
 #include <borealis/log.hpp>
 #include <fmt/format.h>
 #include <nlohmann/json.hpp>
@@ -64,11 +65,12 @@ constexpr int kMaxCardUpdates = 1000;
 uint64_t PlayTimeBits() { return std::bit_cast< uint64_t >(gpGameState->GetTotalPlayTime()); }
 
 void Load() {
-  std::ifstream file(sFile, std::ios::binary);
-  if (!file) {
+  const borealis::io::ReadResult file =
+      borealis::io::read_file(borealis::io::fs_path_to_string(sFile));
+  if (file.status != borealis::io::Status::Ok) {
     return;
   }
-  const json root = json::parse(file, nullptr, false);
+  const json root = json::parse(file.data, nullptr, false);
   if (!root.is_array()) {
     Log.warn("Ignoring malformed {}", sFile.string());
     return;

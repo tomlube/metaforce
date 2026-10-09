@@ -310,9 +310,12 @@ std::filesystem::path LastDiscFile(const std::filesystem::path& userPath) {
 }
 
 std::string ReadLastDisc(const std::filesystem::path& userPath) {
-  std::ifstream file(LastDiscFile(userPath), std::ios::binary);
-  std::string location;
-  std::getline(file, location);
+  const borealis::io::ReadResult file =
+      borealis::io::read_file(borealis::io::fs_path_to_string(LastDiscFile(userPath)));
+  std::string location(file.data.begin(), file.data.end());
+  if (const size_t newline = location.find('\n'); newline != std::string::npos) {
+    location.resize(newline);
+  }
   return location;
 }
 

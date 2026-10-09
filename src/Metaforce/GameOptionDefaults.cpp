@@ -3,6 +3,7 @@
 #include "MetroidPrime/Player/CGameOptions.hpp"
 #include "MetroidPrime/Player/CGameState.hpp"
 
+#include <borealis/io.hpp>
 #include <borealis/log.hpp>
 #include <nlohmann/json.hpp>
 
@@ -24,11 +25,12 @@ int PercentToAlpha(int percent) { return (std::clamp(percent, 0, 100) * 255 + 50
 int PercentToVolume(int percent) { return (std::clamp(percent, 0, 100) * 127 + 50) / 100; }
 
 void Load() {
-  std::ifstream file(sFile, std::ios::binary);
-  if (!file) {
+  const borealis::io::ReadResult file =
+      borealis::io::read_file(borealis::io::fs_path_to_string(sFile));
+  if (file.status != borealis::io::Status::Ok) {
     return;
   }
-  const json root = json::parse(file, nullptr, false);
+  const json root = json::parse(file.data, nullptr, false);
   if (!root.is_object()) {
     Log.warn("Ignoring malformed {}", sFile.string());
     return;

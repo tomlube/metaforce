@@ -7,13 +7,13 @@
 #include "Kyoto/CResFactory.hpp"
 
 #include <SDL3/SDL_filesystem.h>
+#include <borealis/io.hpp>
 #include <borealis/log.hpp>
 #include <zlib.h>
 
 #include <array>
 #include <cctype>
 #include <filesystem>
-#include <fstream>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -375,12 +375,12 @@ AssetData ReadAssetFile(std::string_view directory, std::string_view name) {
   if (const char* resources = SDL_GetBasePath()) {
     path = std::filesystem::path(resources) / path;
   }
-  std::ifstream file(path, std::ios::binary);
-  if (!file) {
+  borealis::io::ReadResult file = borealis::io::read_file(borealis::io::fs_path_to_string(path));
+  if (file.status != borealis::io::Status::Ok) {
     Log.error("Missing randomizer asset {}", path.string());
     return std::nullopt;
   }
-  return std::vector< uint8_t >(std::istreambuf_iterator< char >(file), {});
+  return std::move(file.data);
 }
 
 bool ReplaceModelTextures(std::vector< uint8_t >& data, const uint32_t* textures, int count) {

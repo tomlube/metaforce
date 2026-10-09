@@ -6,6 +6,7 @@
 #include "Kyoto/Audio/CSfxManager.hpp"
 #include "MetroidPrime/SFX/UI.h"
 
+#include <borealis/io.hpp>
 #include <borealis/log.hpp>
 #include <borealis/ui/input.hpp>
 #include <borealis/ui/ui.hpp>
@@ -121,12 +122,13 @@ const json& section_of(const json& root, const char* name) {
 
 void LoadRuntimeConfig(const std::filesystem::path& userPath) {
   sConfigFile = userPath / "settings.json";
-  std::ifstream file(sConfigFile, std::ios::binary);
-  if (!file) {
+  const borealis::io::ReadResult file =
+      borealis::io::read_file(borealis::io::fs_path_to_string(sConfigFile));
+  if (file.status != borealis::io::Status::Ok) {
     gRuntimeConfigDirty = false;
     return;
   }
-  const json root = json::parse(file, nullptr, false);
+  const json root = json::parse(file.data, nullptr, false);
   if (!root.is_object()) {
     ConfigLog.warn("Ignoring malformed {}", sConfigFile.string());
     gRuntimeConfigDirty = false;

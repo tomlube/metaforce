@@ -1,5 +1,6 @@
 #include "Metaforce/Randomizer/Settings.hpp"
 
+#include <borealis/io.hpp>
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
@@ -10,12 +11,13 @@ using json = nlohmann::json;
 
 bool PickupDatabase::Load(const std::filesystem::path& path, std::string& error) {
   try {
-    std::ifstream file(path, std::ios::binary);
-    if (!file) {
+    const borealis::io::ReadResult file =
+        borealis::io::read_file(borealis::io::fs_path_to_string(path));
+    if (file.status != borealis::io::Status::Ok) {
       error = "Could not open " + path.string();
       return false;
     }
-    const json root = json::parse(file);
+    const json root = json::parse(file.data);
     standard.clear();
     ammo.clear();
     artifacts.clear();
@@ -179,11 +181,12 @@ bool Settings::Save(const std::filesystem::path& path) const {
 }
 
 bool Settings::Load(const std::filesystem::path& path) {
-  std::ifstream file(path, std::ios::binary);
-  if (!file) {
+  const borealis::io::ReadResult file =
+      borealis::io::read_file(borealis::io::fs_path_to_string(path));
+  if (file.status != borealis::io::Status::Ok) {
     return false;
   }
-  const json root = json::parse(file, nullptr, false);
+  const json root = json::parse(file.data, nullptr, false);
   return !root.is_discarded() && FromJson(root);
 }
 

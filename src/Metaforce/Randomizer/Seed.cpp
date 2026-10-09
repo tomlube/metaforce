@@ -1,5 +1,6 @@
 #include "Metaforce/Randomizer/Seed.hpp"
 
+#include <borealis/io.hpp>
 #include <fmt/format.h>
 
 #include <algorithm>
@@ -177,12 +178,13 @@ bool Seed::Save(const std::filesystem::path& directory, std::string& error) cons
 }
 
 std::optional< Seed > Seed::Load(const std::filesystem::path& file, std::string& error) {
-  std::ifstream in(file, std::ios::binary);
-  if (!in) {
+  const borealis::io::ReadResult in =
+      borealis::io::read_file(borealis::io::fs_path_to_string(file));
+  if (in.status != borealis::io::Status::Ok) {
     error = "Could not open " + file.string();
     return std::nullopt;
   }
-  const json root = json::parse(in, nullptr, false);
+  const json root = json::parse(in.data, nullptr, false);
   if (root.is_discarded()) {
     error = "Malformed seed file " + file.string();
     return std::nullopt;

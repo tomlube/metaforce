@@ -32,6 +32,7 @@
 #include "MetroidPrime/SFX/UI.h"
 
 #include <SDL3/SDL_filesystem.h>
+#include <borealis/io.hpp>
 #include <borealis/log.hpp>
 #include <fmt/format.h>
 #include <nlohmann/json.hpp>
@@ -249,11 +250,12 @@ void SaveSession() {
 }
 
 void LoadSession() {
-  std::ifstream file(SessionFile(), std::ios::binary);
-  if (!file) {
+  const borealis::io::ReadResult file =
+      borealis::io::read_file(borealis::io::fs_path_to_string(SessionFile()));
+  if (file.status != borealis::io::Status::Ok) {
     return;
   }
-  const json root = json::parse(file, nullptr, false);
+  const json root = json::parse(file.data, nullptr, false);
   if (root.is_discarded()) {
     return;
   }
@@ -331,11 +333,15 @@ void LoadTraversed(const std::string& slot, bool newGame) {
     fs::remove(TraversedFile(slot), ec);
     return;
   }
-  std::ifstream file(TraversedFile(slot), std::ios::binary);
-  if (!file || !s.active) {
+  if (!s.active) {
     return;
   }
-  const json root = json::parse(file, nullptr, false);
+  const borealis::io::ReadResult file =
+      borealis::io::read_file(borealis::io::fs_path_to_string(TraversedFile(slot)));
+  if (file.status != borealis::io::Status::Ok) {
+    return;
+  }
+  const json root = json::parse(file.data, nullptr, false);
   if (root.is_discarded() || root.value("seed", "") != s.active->hash ||
       !root.contains("doors") || !root["doors"].is_array()) {
     return;
@@ -663,11 +669,12 @@ std::vector< SeedSummary > ListSeeds() {
   std::error_code ec;
   for (const auto& entry : fs::directory_iterator(SeedsRoot(), ec)) {
     const fs::path file = entry.path() / "seed.json";
-    std::ifstream in(file, std::ios::binary);
-    if (!in) {
+    const borealis::io::ReadResult in =
+        borealis::io::read_file(borealis::io::fs_path_to_string(file));
+    if (in.status != borealis::io::Status::Ok) {
       continue;
     }
-    const json root = json::parse(in, nullptr, false);
+    const json root = json::parse(in.data, nullptr, false);
     if (root.is_discarded()) {
       continue;
     }
@@ -788,12 +795,14 @@ std::vector< AutosaveBackup > ListAutosaveBackups() {
   }
   for (const fs::path& path : BackupFiles(SlotKey())) {
     // LoadGameFileState reads through a stream that claims more than a slot holds.
-    std::vector< uint8_t > data(4096);
-    std::ifstream file(path, std::ios::binary);
-    file.read(reinterpret_cast< char* >(data.data()), CMemoryCardDriver::kFileSlotSize);
-    if (file.gcount() != CMemoryCardDriver::kFileSlotSize) {
+    const borealis::io::ReadResult file =
+        borealis::io::read_file(borealis::io::fs_path_to_string(path));
+    if (file.status != borealis::io::Status::Ok ||
+        file.data.size() < CMemoryCardDriver::kFileSlotSize) {
       continue;
     }
+    std::vector< uint8_t > data(4096);
+    std::memcpy(data.data(), file.data.data(), CMemoryCardDriver::kFileSlotSize);
     const CGameState::GameFileStateInfo info = CGameState::LoadGameFileState(data.data());
     AutosaveBackup backup;
     backup.file = path;
@@ -819,12 +828,13 @@ std::string RestoreAutosaveBackup(const fs::path& path) {
   if (!CanRestoreAutosaveBackup()) {
     return "There's no randomized game in progress.";
   }
-  std::vector< uint8_t > data(CMemoryCardDriver::kFileSlotSize);
-  std::ifstream file(path, std::ios::binary);
-  file.read(reinterpret_cast< char* >(data.data()), CMemoryCardDriver::kFileSlotSize);
-  if (file.gcount() != CMemoryCardDriver::kFileSlotSize) {
+  borealis::io::ReadResult file = borealis::io::read_file(borealis::io::fs_path_to_string(path));
+  if (file.status != borealis::io::Status::Ok ||
+      file.data.size() < CMemoryCardDriver::kFileSlotSize) {
     return "The backup couldn't be read.";
   }
+  std::vector< uint8_t > data = std::move(file.data);
+  data.resize(CMemoryCardDriver::kFileSlotSize);
   // Quick Reload loads whatever the backup buffer holds, which is a save slot's bytes.
   rstl::vector< uchar >& backup = gpGameState->BackupBuf();
   backup.assign(CMemoryCardDriver::kFileSlotSize);

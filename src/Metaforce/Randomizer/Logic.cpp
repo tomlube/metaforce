@@ -1,9 +1,9 @@
 #include "Metaforce/Randomizer/Logic.hpp"
 
+#include <borealis/io.hpp>
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
-#include <fstream>
 #include <iterator>
 
 namespace metaforce::randomizer {
@@ -110,12 +110,13 @@ Requirement MakeAnd(Requirement a, Requirement b) {
 
 bool Database::Load(const std::filesystem::path& path, std::string& error) {
   try {
-    std::ifstream file(path, std::ios::binary);
-    if (!file) {
+    const borealis::io::ReadResult file =
+        borealis::io::read_file(borealis::io::fs_path_to_string(path));
+    if (file.status != borealis::io::Status::Ok) {
       error = "Could not open " + path.string();
       return false;
     }
-    const json root = json::parse(file);
+    const json root = json::parse(file.data);
     if (root.at("version").get< int >() != kLogicVersion) {
       error = "Unsupported logic database version";
       return false;
