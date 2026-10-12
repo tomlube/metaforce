@@ -428,12 +428,25 @@ void RandomizerWindow::add_room_rando_panel(Pane& pane) {
       .setValue = [](bool v) { rando::SetRoomNames(v); },
       .isModified = [] { return rando::GetRoomNames(); },
   });
+  auto& regionTint = pane.add_child< NumberButton >(NumberButton::Props{
+      .key = "Region Tint",
+      .getValue = [] { return rando::GetRegionTint(); },
+      .setValue = [](int v) { rando::SetRegionTint(v); },
+      .isModified = [] { return rando::GetRegionTint() != 0; },
+      .min = 0,
+      .max = 100,
+      .step = 5,
+  });
 
   auto& helpPane = pane.add_child< Pane >(Pane::Type::Uncontrolled);
   SetHelp(pane, helpPane, roomNames,
           "In a randomized game, shows the name of a room in the bottom left corner for a few "
           "seconds the first time you enter it. Handy for newer players who don't want to constantly check the map.<br/><br/>Rooms "
           "you've already entered in that save don't show up again.");
+  SetHelp(pane, helpPane, regionTint,
+          "Tints each room on the map toward the color of the region it belongs to, by this "
+          "percentage.<br/><br/>Tallon is green, Chozo is yellow, Magmoor is red, "
+          "Phendrana is blue, and Mines is purple.");
   SetHelp(pane, helpPane, mapLayout,
           "How the map is drawn when the room randomizer moved doors.<br/><br/><b>Vanilla</b> "
           "draws every room where it is in the game, so the room behind a moved door is "

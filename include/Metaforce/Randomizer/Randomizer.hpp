@@ -103,6 +103,11 @@ void SetMapDrawDistance(int rooms);
 bool GetRoomNames();
 void SetRoomNames(bool enabled);
 
+// Region Tint: rooms on the map lean toward the color of the region they came from, by this many
+// percent. 0 is off, which is the default. Steps of 5.
+int GetRegionTint();
+void SetRegionTint(int percent);
+
 // Autosave: in a randomized game, saves to the game's slot after a pickup, on the first frame
 // the game could be saved from the save screen, Samus is on the ground and she hasn't lost energy
 // for a moment. Major Only saves after upgrades, Energy Tanks and artifacts; All Pickups after

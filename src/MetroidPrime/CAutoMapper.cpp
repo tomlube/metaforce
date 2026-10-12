@@ -60,6 +60,10 @@ static float sWarpArmedAt = -1.f;
 // its 40 pixel pane, so it starts this far from the pane's left edge.
 static const int skKeyHintLeft = -55;
 
+// Randomizer: spaces between the X warp and the hold-A warp's hint on the Key/Legend line. Tune
+// this to push the hold hint further right or left.
+static const int skHoldWarpPadSpaces = 14;
+
 static bool IsWarpArmed() {
   if (sWarpArmedAt < 0.f) {
     return false;
@@ -69,6 +73,25 @@ static bool IsWarpArmed() {
     elapsed += 900.f;
   }
   return elapsed < skWarpConfirmSeconds;
+}
+
+// Randomizer: holding A on the map screen warps to the highlighted room. A tap still opens the
+// world map, so the hold is only a warp once it has lasted this long. Set while A is held.
+static const float skWarpHoldSeconds = 0.8f;
+static float sWarpHoldStartedAt = -1.f;
+
+static float SecondsSince(float start) {
+  float elapsed = CGraphics::GetSecondsMod900() - start;
+  if (elapsed < 0.f) {
+    elapsed += 900.f;
+  }
+  return elapsed;
+}
+
+// The asset id of the room highlighted on the map, which the room warp is keyed by.
+static CAssetId HighlightedRoomAsset(const IWorld& world, TAreaId area) {
+  const IGameArea* gameArea = world.IGetAreaAlways(area);
+  return gameArea != nullptr ? gameArea->IGetAreaAssetId() : CAssetId(0);
 }
 #endif
 
@@ -725,14 +748,35 @@ void CAutoMapper::ProcessControllerInput(const CFinalInput& input, const CStateM
 
 void CAutoMapper::ProcessMapScreenInput(const CFinalInput& input, const CStateManager& mgr) {
   CMatrix3f camRot(mRenderState0.mCamOrientation.BuildTransform());
+#if defined(TARGET_PC)
+  if (mState != kAMS_MapScreen) {
+    sWarpHoldStartedAt = -1.f;
+  }
+#endif
   if (mState == kAMS_MapScreen) {
-    if (input.PA() && x328_ == 0) {
+#if defined(TARGET_PC)
+    // Randomizer: holding A warps to the highlighted room. Since a tap still opens the world map,
+    // that waits for A to be let go, and only opens it when the hold was too short to warp.
+    if (sWarpHoldStartedAt < 0.f && input.PA() && x328_ == 0 && mWorld != nullptr &&
+        metaforce::randomizer::CanWarpToRoom(HighlightedRoomAsset(*mWorld, mCurAreaId))) {
+      sWarpHoldStartedAt = CGraphics::GetSecondsMod900();
+    }
+    if (sWarpHoldStartedAt >= 0.f) {
+      if (!input.DA()) {
+        const bool tapped = SecondsSince(sWarpHoldStartedAt) < skWarpHoldSeconds;
+        sWarpHoldStartedAt = -1.f;
+        if (tapped && x328_ == 0 && HasCurrentMapUniverseWorld(mgr)) {
+          BeginMapperStateTransition(kAMS_MapScreenUniverse, mgr);
+        }
+      } else if (SecondsSince(sWarpHoldStartedAt) >= skWarpHoldSeconds && mWorld != nullptr) {
+        sWarpHoldStartedAt = -1.f;
+        metaforce::randomizer::WarpToRoom(HighlightedRoomAsset(*mWorld, mCurAreaId));
+      }
+    } else if (input.PA() && x328_ == 0) {
       if (HasCurrentMapUniverseWorld(mgr)) {
         BeginMapperStateTransition(kAMS_MapScreenUniverse, mgr);
       }
-    }
-#if defined(TARGET_PC)
-    else if (input.PX() && x328_ == 0 && metaforce::randomizer::CanWarpToStart()) {
+    } else if (input.PX() && x328_ == 0 && metaforce::randomizer::CanWarpToStart()) {
       if (IsWarpArmed()) {
         sWarpArmedAt = -1.f;
         metaforce::randomizer::WarpToStart();
@@ -741,6 +785,12 @@ void CAutoMapper::ProcessMapScreenInput(const CFinalInput& input, const CStateMa
       }
       CSfxManager::SfxStart(0x5a6, 127, 64, false, CSfxManager::kMedPriority, false,
                             CSfxManager::kAllAreas);
+    }
+#else
+    if (input.PA() && x328_ == 0) {
+      if (HasCurrentMapUniverseWorld(mgr)) {
+        BeginMapperStateTransition(kAMS_MapScreenUniverse, mgr);
+      }
     }
 #endif
   } else if (mState == kAMS_MapScreenUniverse && input.PA()) {
@@ -1446,20 +1496,37 @@ void CAutoMapper::Update(float dt, const CStateManager& mgr) {
       // X button fills its texture's height, so it isn't cropped the way the Y button is.
       CGuiTextPane* yicon =
           static_cast< CGuiTextPane* >(mFrmeInitialized->FindWidget("textpane_yicon"));
-      const bool showWarp = mState == kAMS_MapScreen && metaforce::randomizer::CanWarpToStart();
+      const bool showStartWarp =
+          mState == kAMS_MapScreen && metaforce::randomizer::CanWarpToStart();
+      const bool showRoomWarp = mState == kAMS_MapScreen && mWorld != nullptr &&
+                                metaforce::randomizer::CanWarpToRoom(
+                                    HighlightedRoomAsset(*mWorld, mCurAreaId));
       rstl::wstring string(gpStringTable->GetString(0x2b));
       CVector3f offset = CVector3f::Zero();
-      if (showWarp) {
+      if (showStartWarp) {
         string.append(L"    &image=", -1);
         string.append(CStringExtras::ConvertToUNICODE(
             rstl::string(CBasics::Stringize("%8.8X", gpTweakPlayerRes->mXButton[0]))));
         string.append(IsWarpArmed() ? L";  Confirm Warp" : L";  Warp to Start", -1);
+      }
+      if (showRoomWarp) {
+        // The line is left justified, so spaces push the hold hint over to the right.
+        for (int i = 0; i < skHoldWarpPadSpaces; ++i) {
+          string.append(L" ", -1);
+        }
+        string.append(L"&image=", -1);
+        string.append(CStringExtras::ConvertToUNICODE(
+            rstl::string(CBasics::Stringize("%8.8X", gpTweakPlayerRes->mAButton[0]))));
+        string.append(L"; Warp to room", -1);
+      }
+      if (showStartWarp || showRoomWarp) {
         offset = CVector3f(skKeyHintLeft * yicon->GetWidth() /
                                yicon->GetTextSupport().GetTextBoundingWidth(),
                            0.f, 0.f);
       }
-      yicon->TextSupport().SetJustification(showWarp ? kJustification_Left
-                                                     : kJustification_Center);
+      yicon->TextSupport().SetJustification(showStartWarp || showRoomWarp
+                                                ? kJustification_Left
+                                                : kJustification_Center);
       yicon->TextSupport().SetText(string);
       yicon->SetO2PTransform(yicon->GetTransform() * CTransform4f::Translate(offset));
     }

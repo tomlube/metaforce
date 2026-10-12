@@ -24,7 +24,64 @@
 #include "Metaforce/MapLayout.hpp"
 #include "Metaforce/MergedWorld.hpp"
 #include "Metaforce/Randomizer/Hooks.hpp"
+#include "Metaforce/Randomizer/Logic.hpp"
 #include "Metaforce/Randomizer/Randomizer.hpp"
+#include <map>
+#include <string>
+
+// The region a room came from, by its editor asset id, from the randomizer database. Rebuilt when
+// the database changes.
+static const std::string* GetRoomRegion(CAssetId area) {
+  static const metaforce::randomizer::Database* sDb = nullptr;
+  static std::map< CAssetId, std::string > sRegionOfArea;
+  const metaforce::randomizer::Database* db = metaforce::randomizer::GetDatabase();
+  if (db == nullptr) {
+    return nullptr;
+  }
+  if (db != sDb) {
+    sDb = db;
+    sRegionOfArea.clear();
+    for (const metaforce::randomizer::Area& dbArea : db->Areas()) {
+      if (dbArea.region >= 0 && dbArea.region < static_cast< int >(db->Regions().size())) {
+        sRegionOfArea[dbArea.assetId] = db->Regions()[dbArea.region].name;
+      }
+    }
+  }
+  const auto it = sRegionOfArea.find(area);
+  return it == sRegionOfArea.end() ? nullptr : &it->second;
+}
+
+// Rooms lean toward the color of the region they come from, by the Region Tint percentage, so the
+// map shows where a room belongs even when the randomizer draws it on another region's map. Only
+// RGB is blended, so the alpha the map already chose is kept.
+static CColor TintByRegion(const CColor& color, CAssetId area) {
+  const int percent = metaforce::randomizer::GetRegionTint();
+  if (percent <= 0) {
+    return color;
+  }
+  struct SRegionTint {
+    const char* region;
+    uchar r, g, b;
+  };
+  static const SRegionTint kTints[] = {
+      {"Tallon Overworld", 80, 200, 80},   // green
+      {"Chozo Ruins", 230, 200, 60},       // yellow
+      {"Magmoor Caverns", 230, 80, 60},    // red
+      {"Phendrana Drifts", 80, 140, 255},  // blue
+      {"Phazon Mines", 170, 90, 230},      // purple
+  };
+  const std::string* region = GetRoomRegion(area);
+  if (region == nullptr) {
+    return color;
+  }
+  for (const SRegionTint& tint : kTints) {
+    if (*region == tint.region) {
+      return CColor::Lerp(color, CColor(tint.r, tint.g, tint.b, color.GetAlphau8()),
+                          static_cast< float >(percent) / 100.f);
+    }
+  }
+  return color;
+}
 
 // The map objects of a room appended from another region keep that region's editor ids, but its
 // doors and their visited state go by ids in the loaded world. The map area itself is left alone:
@@ -394,8 +451,9 @@ void CMapWorld::DrawFarOutlines(const CMapWorldDrawParms& parms) const {
       continue;
     }
     const bool visited = mwInfo.IsAreaVisited(i);
-    const CColor& color = visited ? gpTweakAutoMapper->mOutlineColorVisited
-                                  : gpTweakAutoMapper->mOutlineColorUnvisited;
+    const CColor baseColor = visited ? gpTweakAutoMapper->mOutlineColorVisited
+                                     : gpTweakAutoMapper->mOutlineColorUnvisited;
+    const CColor color = TintByRegion(baseColor, wld.IGetAreaAlways(i)->IGetAreaAssetId());
     const float alpha =
         visited ? parms.GetAlphaOutlineVisited() : parms.GetAlphaOutlineUnvisited();
     gpRender->SetModelMatrix(parms.GetPlaneProjectionTransform() *
@@ -495,6 +553,11 @@ void CMapWorld::DrawAreas(const CMapWorldDrawParms& parms, int selArea,
                                   : gpTweakAutoMapper->mSurfColorUnvisited;
     CColor outlineColor = visited ? gpTweakAutoMapper->mOutlineColorVisited
                                   : gpTweakAutoMapper->mOutlineColorUnvisited;
+#if defined(TARGET_PC)
+    const CAssetId roomAsset = parms.GetWorld().IGetAreaAlways(areaIdx)->IGetAreaAssetId();
+    surfaceColor = TintByRegion(surfaceColor, roomAsset);
+    outlineColor = TintByRegion(outlineColor, roomAsset);
+#endif
     CColor surfaceSelect = visited ? gpTweakAutoMapper->mSurfaceSelectColorVisited
                                    : gpTweakAutoMapper->mSurfaceSelectColorUnvisited;
     CColor outlineSelect = visited ? gpTweakAutoMapper->mOutlineSelectColorVisited

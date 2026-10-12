@@ -62,6 +62,12 @@ void OnAreaVisited(CStateManager& mgr, int area);
 bool CanWarpToStart();
 void WarpToStart();
 
+// CAutoMapper: holding A on the map warps to the highlighted room. The room is found by its area
+// asset id (mrea) in the warp catalog, so rooms appended from another region still warp to their
+// own world. False for the room Samus is already in, or one the catalog doesn't list.
+bool CanWarpToRoom(unsigned int mrea);
+void WarpToRoom(unsigned int mrea);
+
 // ScriptLoader::LoadPickup. editorId is the object's editor id without layer bits.
 bool GetPickupOverride(unsigned int worldId, unsigned int editorId, PickupOverride& out);
 

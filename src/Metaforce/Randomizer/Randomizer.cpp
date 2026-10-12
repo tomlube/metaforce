@@ -178,6 +178,7 @@ struct Session {
   int mapDrawDistance = kMapDrawDistanceDefault;
   int autosave = kAutosaveAuto;
   bool roomNames = false;
+  int regionTint = 0;
   // Whether each shortcut chord was held on the last input seen, so holding one acts once.
   bool quickReloadHeld = false;
   bool quickSaveHeld = false;
@@ -262,6 +263,7 @@ void SaveSession() {
       {"map_draw_rooms", S().mapDrawDistance},
       {"autosave", S().autosave},
       {"room_names", S().roomNames},
+      {"region_tint", S().regionTint},
   };
   std::error_code ec;
   fs::create_directories(S().root, ec);
@@ -290,6 +292,7 @@ void LoadSession() {
   S().autosave = std::clamp(root.value("autosave", static_cast< int >(kAutosaveAuto)),
                             kAutosaveAuto, kAutosaveAll);
   S().roomNames = root.value("room_names", false);
+  S().regionTint = std::clamp(root.value("region_tint", 0), 0, 100);
   if (root.contains("slots") && root["slots"].is_object()) {
     S().slots = root["slots"].get< std::map< std::string, std::string > >();
   }
@@ -789,6 +792,13 @@ void SetRoomNames(bool enabled) {
   SaveSession();
 }
 
+int GetRegionTint() { return S().regionTint; }
+
+void SetRegionTint(int percent) {
+  S().regionTint = std::clamp(percent, 0, 100);
+  SaveSession();
+}
+
 bool GetItemWarp() { return S().itemWarp; }
 
 void SetItemWarp(bool enabled) {
@@ -1194,6 +1204,46 @@ void WarpToStart() {
   }
   Log.error("The start area 0x{:08X} of world 0x{:08X} wasn't found", s.active->startArea,
             s.active->startWorld);
+}
+
+// The catalog's room with asset id `mrea`, and the world that lists it. Asset ids are unique across
+// the catalog, while a room's index in the loaded world isn't: rooms appended from another region
+// take indices the loaded world doesn't list.
+static const warp::Area* FindRoom(unsigned int mrea, const warp::World*& world) {
+  for (const warp::World& w : warp::GetWorlds()) {
+    for (const warp::Area& a : w.areas) {
+      if (a.mrea == mrea) {
+        world = &w;
+        return &a;
+      }
+    }
+  }
+  return nullptr;
+}
+
+bool CanWarpToRoom(unsigned int mrea) {
+  uint32_t curMlvl = 0;
+  int curArea = 0;
+  if (!S().active.has_value() || !warp::CanWarp()) {
+    return false;
+  }
+  const warp::World* world = nullptr;
+  const warp::Area* area = FindRoom(mrea, world);
+  if (area == nullptr) {
+    return false;
+  }
+  return !(warp::GetCurrentLocation(curMlvl, curArea) && curMlvl == world->mlvl &&
+           curArea == area->index);
+}
+
+void WarpToRoom(unsigned int mrea) {
+  if (!CanWarpToRoom(mrea)) {
+    return;
+  }
+  const warp::World* world = nullptr;
+  const warp::Area* area = FindRoom(mrea, world);
+  Log.info("Warping to room 0x{:08X}: area {} of world 0x{:08X}", mrea, area->index, world->mlvl);
+  warp::RequestWarp(world->mlvl, area->index, std::nullopt);
 }
 
 namespace {
