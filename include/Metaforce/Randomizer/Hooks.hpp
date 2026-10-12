@@ -198,10 +198,6 @@ void SpawnDoorLocks(CStateManager& mgr, int area);
 // region and editor id the door was read from, like IsDoorTraversed.
 bool GetDoorMapType(unsigned int worldId, unsigned int editorId, int& type);
 
-// SGameFileSlot::InitializeFromGameState: the game is being saved, so the blast shields broken
-// since the last save stay broken.
-void OnGameSaved();
-
 // CResLoader: assets the randomizer adds to the game (door lock styles and randomprime's pickup
 // models), served as if they were in a pak. GetCustomAssetType is the asset's FourCC, 0 for ids
 // that aren't custom assets. GetCustomAsset builds the asset on first use and keeps it; false

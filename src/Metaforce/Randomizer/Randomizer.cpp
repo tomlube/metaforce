@@ -235,8 +235,8 @@ struct Session {
   // Rooms the player has been in, by MREA, which stay on the map. Kept with the doors.
   std::unordered_set< uint32_t > visitedAreas;
   std::string traversedSlot;
-  // Blast shields broken, by DockKey(area MREA, dock): in the game being played, and as of its
-  // last save. Only the saved ones go in TraversedFile(), so reloading brings back the others.
+  // Blast shields broken, by DockKey(area MREA, dock): in the game being played, and as written
+  // to TraversedFile(), which is every one broken so far.
   std::unordered_set< uint64_t > brokenShields;
   std::unordered_set< uint64_t > savedBrokenShields;
 
@@ -1070,14 +1070,9 @@ bool IsBlastShieldDestroyed(uint32_t area, int dock) {
 }
 
 void MarkBlastShieldDestroyed(uint32_t area, int dock) {
-  if (S().active) {
-    S().brokenShields.insert(DockKey(area, dock));
-  }
-}
-
-void OnGameSaved() {
   auto& s = S();
-  if (s.active && s.savedBrokenShields != s.brokenShields) {
+  if (s.active && s.brokenShields.insert(DockKey(area, dock)).second) {
+    // Written at once, like the doors gone through, so no reload brings a broken shield back.
     s.savedBrokenShields = s.brokenShields;
     SaveTraversed();
   }

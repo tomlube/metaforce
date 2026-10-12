@@ -846,7 +846,6 @@ void SGameFileSlot::InitializeFromGameState() {
   }
 #if defined(TARGET_PC)
   metaforce::save_anywhere::AfterGameSaved();
-  metaforce::randomizer::OnGameSaved();
 #endif
   mFileInfo = CGameState::LoadGameFileState(mSaveBuffer.data());
 }
