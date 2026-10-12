@@ -17,6 +17,7 @@
 
 #if defined(TARGET_PC)
 #include "Metaforce/FusionBonus.hpp"
+#include "Metaforce/Randomizer/Hooks.hpp"
 #endif
 
 union SGameTime {
@@ -328,10 +329,19 @@ CGameState::GameFileStateInfo CGameState::LoadGameFileState(const void* data) {
   result.mEnergyTanks = player.GetItemCapacity(CPlayerState::kIT_EnergyTanks);
   result.mTimestamp = timestamp;
   uint itemPercent;
-  if (result.mMlvlId == 0x158efe17)
+  if (result.mMlvlId == 0x158efe17) {
     itemPercent = 0;
-  else
-    itemPercent = player.CalculateItemCollectionRate() * 100 / player.GetTotalPickupCount();
+  } else {
+    int rate = player.CalculateItemCollectionRate();
+    const int total = player.GetTotalPickupCount();
+#if defined(TARGET_PC)
+    // A randomized game's starting artifacts count only once everything else is collected.
+    if (rate < total) {
+      rate = rstl::max_val(0, rate - metaforce::randomizer::WithheldItemPercentUnits());
+    }
+#endif
+    itemPercent = rate * 100 / total;
+  }
   result.mItemPercent = itemPercent;
   float scanPercent;
   if (player.GetTotalLogScans() == 0)

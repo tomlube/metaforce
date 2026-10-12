@@ -118,6 +118,11 @@ bool GetAutoEnabledElevator(unsigned int areaAssetId, unsigned int& relay);
 // one that takes Samus's upgrades after the frigate) would take them away again.
 bool AllowSpawnPointInventoryReset();
 
+// CGameState::LoadGameFileState: how many of the counted items the active seed hands out at the
+// start (its unshuffled artifacts) are left out of a save's item percentage until every other
+// counted item is collected. 0 when no randomized game is active.
+int WithheldItemPercentUnits();
+
 // CHintOptions::Update and CAutoMapper: false turns the hint system off. Its hints follow the
 // vanilla item route, which means nothing in a randomized game, and the Z prompt can softlock.
 bool AllowHintSystem();

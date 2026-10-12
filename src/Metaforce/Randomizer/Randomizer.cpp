@@ -1565,6 +1565,21 @@ bool StripPickupInputLocks() { return S().active.has_value(); }
 
 bool AllowSpawnPointInventoryReset() { return !S().active; }
 
+int WithheldItemPercentUnits() {
+  const auto& s = S();
+  if (!s.active) {
+    return 0;
+  }
+  int units = 0;
+  for (const auto& item : s.active->startingItems) {
+    const int type = item.grant.itemType;
+    if (type >= CPlayerState::kIT_Truth && type <= CPlayerState::kIT_Newborn) {
+      units += item.grant.capacity;
+    }
+  }
+  return units;
+}
+
 bool AllowHintSystem() { return !S().active; }
 
 bool AllowLayerChange(unsigned int areaSaveId, unsigned int layer) {
