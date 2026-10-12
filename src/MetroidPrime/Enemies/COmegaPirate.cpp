@@ -24,6 +24,13 @@
 #include "MetroidPrime/TCastTo.hpp"
 #include "MetroidPrime/Weapons/CAuxWeapon.hpp"
 #include "rstl/StringExtras.hpp"
+#if defined(TARGET_PC)
+#include "Metaforce/Settings.hpp"
+#include <borealis/log.hpp>
+namespace {
+constexpr borealis::Log Log{"COmegaPirate"};
+} // namespace
+#endif
 
 #include "MetroidPrime/ScriptObjects/CScriptEffect.hpp"
 #include "MetroidPrime/ScriptObjects/CScriptSound.hpp"
@@ -200,6 +207,21 @@ void COmegaPirate::AcceptScriptMsg(EScriptObjectMessage msg, TUniqueId uid, CSta
             const CMaterialList includes = GetMaterialFilter().GetIncludeList();
             platform->SetMaterialFilter(CMaterialFilter::MakeIncludeExclude(includes, excludes));
             mPlatformVuln = *platform->GetDamageVulnerability();
+#if defined(TARGET_PC)
+            // PAL Power Bomb Changes: the armor plates ignore Power Bombs by default. mPlatformVuln
+            // is the damage profile restored whenever the plates become active, so this covers the
+            // whole fight. Destroyed plates stay immune.
+            if (metaforce::GetSettings().game.palPowerBombChanges.get()) {
+              mPlatformVuln.SetUnchargedVulnerability(kWT_PowerBomb, kVN_Normal);
+              // The plate's live vulnerability is only replaced when the boss activates it, so
+              // apply the change now as well.
+              platform->SetDamageVulnerability(mPlatformVuln);
+            }
+            Log.info("[PB-DEBUG] armor plate {:08X} connected: pb vuln={}",
+                     platform->GetUniqueId().Value(),
+                     static_cast< int >(mPlatformVuln.GetVulnerability(
+                         CWeaponMode::PowerBomb(), CDamageVulnerability::kRD_Yes)));
+#endif
             mPlatformColor = platform->GetModelFlags().GetColor();
           } else if (CScriptSound* sound = TCastToPtr< CScriptSound >(mgr.ObjectById(connId))) {
             mScriptSounds.push_back(
@@ -822,7 +844,15 @@ void COmegaPirate::Suck(CStateManager& mgr, EStateMsg msg, float) {
     for (uint i = 0; i < count; ++i) {
       if (CScriptPlatform* platform =
               static_cast< CScriptPlatform* >(mgr.ObjectById(mScriptPlatforms[i].first))) {
-        platform->SetDamageVulnerability(CDamageVulnerability::ImmuneVulnerability());
+        CDamageVulnerability inactiveVuln = CDamageVulnerability::ImmuneVulnerability();
+#if defined(TARGET_PC)
+        // PAL Power Bomb Changes: the plates should take Power Bombs even while inactive, not only
+        // when the boss activates them. Everything else stays immune.
+        if (metaforce::GetSettings().game.palPowerBombChanges.get()) {
+          inactiveVuln.SetUnchargedVulnerability(kWT_PowerBomb, kVN_Normal);
+        }
+#endif
+        platform->SetDamageVulnerability(inactiveVuln);
         platform->RemoveMaterial(kMT_Orbit, mgr);
         platform->RemoveMaterial(kMT_Target, mgr);
         platform->SetDisableXRayAlpha(true);
@@ -1002,6 +1032,12 @@ void COmegaPirate::DoubleSnap(CStateManager& mgr, EStateMsg msg, float) {
               static_cast< CScriptPlatform* >(mgr.ObjectById(mScriptPlatforms[i].first))) {
         platform->SetActive(true);
         platform->SetDamageVulnerability(mPlatformVuln);
+#if defined(TARGET_PC)
+        Log.info("[PB-DEBUG] armor plate {:08X} activated: pb vuln={}",
+                 platform->GetUniqueId().Value(),
+                 static_cast< int >(platform->GetDamageVulnerability()->GetVulnerability(
+                     CWeaponMode::PowerBomb(), CDamageVulnerability::kRD_Yes)));
+#endif
         platform->AddMaterial(kMT_Orbit, mgr);
         platform->AddMaterial(kMT_Target, mgr);
         platform->SetDisableXRayAlpha(false);

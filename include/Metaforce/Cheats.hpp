@@ -12,6 +12,9 @@ struct Toggles {
   bool infiniteHealth = false;
   bool infiniteMissiles = false;
   bool infinitePowerBombs = false;
+  bool noFireDelay = false; // beams, Missiles and Power Bombs don't wait between shots
+  bool uncappedMissiles = false; // Missiles aren't limited to three in flight at once
+  bool phazonBeamAnywhere = false; // C-stick Up switches Power Beam <-> Phazon Beam outside phazon
   bool moonJump = false; // holding jump in the air keeps rising
   bool oneHitKill = false; // anything Samus can hurt dies to one hit
   bool unlockedDash = false; // the kiosk demo's dash: L orbiting an empty point can dash too

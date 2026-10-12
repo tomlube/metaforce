@@ -1,4 +1,10 @@
 #include "types.h"
+#if defined(TARGET_PC)
+#include <borealis/log.hpp>
+namespace {
+constexpr borealis::Log Log{"CStateManager"};
+} // namespace
+#endif
 
 #if VERSION >= VERSION_R3IJ_00
 
@@ -1576,6 +1582,13 @@ bool CStateManager::ApplyLocalDamage(const CVector3f& pos, const CVector3f& dir,
 #endif
   const float newHp = oldHp - useDamage;
   hInfo->SetHP(newHp);
+#if defined(TARGET_PC)
+  if (weaponMode.GetType() == kWT_PowerBomb) {
+    Log.info("[PB-DEBUG] local damage actor {:08X}: dmg={} hp {} -> {}",
+             damagee.GetUniqueId().Value(),
+             useDamage, oldHp, newHp);
+  }
+#endif
   const bool significant = !(fabs(newHp - oldHp) < 0.00001f);
 
   if (player != nullptr) {
@@ -1737,6 +1750,14 @@ void CStateManager::ApplyRadiusDamage(const CActor& damager, const CVector3f& po
 
   const CDamageVulnerability* vuln = rad > 0.f ? damagee.GetDamageVulnerability(pos, delta, info)
                                                : damagee.GetDamageVulnerability();
+#if defined(TARGET_PC)
+  if (info.GetWeaponMode().GetType() == kWT_PowerBomb) {
+    Log.info("[PB-DEBUG] radius hit actor {:08X}: vuln={} hurts={}", damagee.GetUniqueId().Value(),
+             static_cast< int >(vuln->GetVulnerability(info.GetWeaponMode(),
+                                                       CDamageVulnerability::kRD_Yes)),
+             vuln->WeaponHurts(info.GetWeaponMode(), CDamageVulnerability::kRD_Yes));
+  }
+#endif
 
   if (vuln->WeaponHurts(info.GetWeaponMode(), CDamageVulnerability::kRD_Yes)) {
     float localDamage = info.GetRadiusDamage(*vuln);
@@ -1784,7 +1805,13 @@ void CStateManager::ProcessRadiusDamage(const CActor& damager, CActor& damagee,
       const TUniqueId actorId = actor->GetUniqueId();
       if (damagerId != actorId && radiusSender != actorId && damageeId != actorId) {
         TestBombHittingWater(damager, pos, *actor);
-        if (TestRayDamage(pos, *actor, nearList)) {
+        const bool rayClear = TestRayDamage(pos, *actor, nearList);
+#if defined(TARGET_PC)
+        if (info.GetWeaponMode().GetType() == kWT_PowerBomb) {
+          Log.info("[PB-DEBUG] ray test actor {:08X}: clear={}", actor->GetUniqueId().Value(), rayClear);
+        }
+#endif
+        if (rayClear) {
           ApplyRadiusDamage(damager, pos, *actor, info);
         }
       }

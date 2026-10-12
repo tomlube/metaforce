@@ -26,6 +26,7 @@ Settings sSettings{
         {
             .cutsceneSkips{"game.cutsceneSkips", 0, {.min = 0, .max = 2}},
             .fusionSuit{"game.fusionSuit", false},
+            .palPowerBombChanges{"game.palPowerBombChanges", false},
         },
     .ui =
         {

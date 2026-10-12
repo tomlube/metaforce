@@ -2,6 +2,12 @@
 
 #include "Kyoto/Math/CMath.hpp"
 
+#if defined(TARGET_PC)
+#include "Metaforce/Cheats.hpp"
+#include "Metaforce/Input.hpp"
+#include "MetroidPrime/Player/CGameState.hpp"
+#endif
+
 #if VERSION >= VERSION_R3IJ_00
 
 #include "Collision/CRayCastResult.hpp"
@@ -3936,7 +3942,14 @@ void CPlayerGun::FireSecondary(float dt, CStateManager& mgr) {
   switch (mComboAmmoIdx) {
   case 1: {
     mRemainingMissiles = playerState->GetItemAmount(CPlayerState::kIT_Missiles);
-    if (mgr.GetWeaponIdCount(mPlayerId, kWT_Missile) < 3 && int(mRemainingMissiles) != 0) {
+    if (
+#if defined(TARGET_PC)
+        (metaforce::cheats::GetToggles().uncappedMissiles ||
+         mgr.GetWeaponIdCount(mPlayerId, kWT_Missile) < 3) &&
+#else
+        mgr.GetWeaponIdCount(mPlayerId, kWT_Missile) < 3 &&
+#endif
+        int(mRemainingMissiles) != 0) {
       playerState->DecrPickUp(CPlayerState::kIT_Missiles,
                               mComboFiring ? playerState->GetMissileCostForAltAttack() : 1);
       fired = true;
@@ -3980,6 +3993,13 @@ void CPlayerGun::FireSecondary(float dt, CStateManager& mgr) {
       PlayAnim(NWeaponTypes::kGAT_MissileShoot, false);
       mNextState = int(mRemainingMissiles) > 0 ? kNS_MissileReload : kNS_MissileShotDone;
       DisableWeaponState(0x4);
+#if defined(TARGET_PC)
+      if (metaforce::cheats::GetToggles().noFireDelay) {
+        // Skip the reload before the next missile; the launcher is ready again right away.
+        mNextState = kNS_MissileShotDone;
+        EnableWeaponState(0x4);
+      }
+#endif
     }
   } else {
     NWeaponTypes::play_sfx(mItemEmptySound[mComboAmmoIdx], mUnderwater, false, 0x4a);
@@ -4287,6 +4307,47 @@ void CPlayerGun::HandleWeaponChange(const CFinalInput& input, CStateManager& mgr
   if (ControlMapper::GetPressInput(ControlMapper::kC_Morph, input)) {
     StopContinuousBeam(mgr, true);
   }
+#if defined(TARGET_PC)
+  {
+    // Phazon Beam cheat. The flags below are what the phazon pool sets, so HandlePhazonBeamChange
+    // runs the normal enter and exit morphs. Up enters and Down exits, both edge-detected. The
+    // D-pad counts too when beams sit on it: the swapped visor/beam layout, or Z held with modern
+    // controls.
+    static bool phazonAnywhereOn = false;
+    static bool upHeld = false;
+    static bool downHeld = false;
+    const bool cheatOn = metaforce::cheats::GetToggles().phazonBeamAnywhere;
+    const bool beamsOnDPad = metaforce::input::ModernControlsEnabled()
+                                 ? input.DZ()
+                                 : gpGameState->GameOptions().GetSwapBeamControls();
+    // Read the C-stick axis directly. The look commands go through the control mapping, which can
+    // put them on the left stick.
+    const bool up = input.ARAUp() > 0.65f || (beamsOnDPad && input.DDPUp());
+    const bool down = input.ARADown() > 0.65f || (beamsOnDPad && input.DDPDown());
+    if (cheatOn) {
+      if (up && !upHeld && mEquippedBeamId == CPlayerState::kBI_Power) {
+        phazonAnywhereOn = true;
+      }
+      if (down && !downHeld && phazonAnywhereOn) {
+        phazonAnywhereOn = false;
+        mCanFirePhazon = false;
+      }
+      if (phazonAnywhereOn && mEquippedBeamId != CPlayerState::kBI_Power && !mPhazonBeamActive) {
+        phazonAnywhereOn = false;
+        mCanFirePhazon = false;
+      }
+    } else if (phazonAnywhereOn) {
+      phazonAnywhereOn = false;
+      mCanFirePhazon = false;
+    }
+    upHeld = up;
+    downHeld = down;
+    if (cheatOn && phazonAnywhereOn) {
+      mCanFirePhazon = true;
+      mInPhazonBeam = true;
+    }
+  }
+#endif
   if (!IsWeaponStateSet(0x8)) {
     if (!mInPhazonBeam) {
       HandleBeamChange(input, mgr);
@@ -4552,6 +4613,11 @@ void CPlayerGun::UpdateWeaponFire(float dt, CPlayerState& playerState, CStateMan
 
   if (!mCoolingCharge && !mInBigStrike) {
     float coolDown = mCurrentBeam->GetWeaponInfo().mCoolDown;
+#if defined(TARGET_PC)
+    if (metaforce::cheats::GetToggles().noFireDelay) {
+      coolDown = 0.f;
+    }
+#endif
     if ((pressedStates & 0x1) == 0) {
       if (mCooldown >= coolDown) {
         mCooldown = coolDown;
@@ -4598,8 +4664,14 @@ void CPlayerGun::UpdateWeaponFire(float dt, CPlayerState& playerState, CStateMan
       } else {
         mPowerBombReady = playerState.HasPowerUp(CPlayerState::kIT_PowerBombs) &&
                                  playerState.GetItemAmount(CPlayerState::kIT_PowerBombs) > 0 &&
+#if defined(TARGET_PC)
+                                 (metaforce::cheats::GetToggles().noFireDelay ||
+                                  (mgr.CanCreateProjectile(mPlayerId, kWT_PowerBomb, 1) &&
+                                   mgr.CanCreateProjectile(mPlayerId, kWT_Bomb, 1)));
+#else
                                  mgr.CanCreateProjectile(mPlayerId, kWT_PowerBomb, 1) &&
                                  mgr.CanCreateProjectile(mPlayerId, kWT_Bomb, 1);
+#endif
         if ((pressedStates & 0x2) != 0 && mPowerBombReady)
           DropBomb(kBW_PowerBomb, mgr);
       }

@@ -1,5 +1,9 @@
 #include "MetroidPrime/Weapons/CPlasmaBeam.hpp"
 
+#if defined(TARGET_PC)
+#include "Metaforce/Cheats.hpp"
+#endif
+
 #include "MetroidPrime/CGameArea.hpp"
 #include "MetroidPrime/CStateManager.hpp"
 #include "MetroidPrime/CWorld.hpp"
@@ -92,6 +96,12 @@ void CPlasmaBeam::Fire(const bool underwater, const float dt,
       CGunWeapon::Fire(underwater, dt, chargeState, xf, mgr, homingTarget, chargeFactor1,
                        chargeFactor2);
       mFireShotDelayTimer += 0.33f;
+#if defined(TARGET_PC)
+      if (metaforce::cheats::GetToggles().noFireDelay) {
+        // Plasma's own 0.33 s shot timer, separate from the beam cooldown in CTweakPlayerGun.
+        mFireShotDelayTimer = 0.f;
+      }
+#endif
       mFireShotDelay = 0.33f;
       fired = true;
     }

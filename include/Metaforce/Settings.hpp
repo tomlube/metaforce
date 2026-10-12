@@ -33,6 +33,7 @@ struct Settings {
     // metaforce::cutscenes::ESkipMode
     Var< int > cutsceneSkips;
     Var< bool > fusionSuit;
+    Var< bool > palPowerBombChanges;
   } game;
 
   struct Interface {

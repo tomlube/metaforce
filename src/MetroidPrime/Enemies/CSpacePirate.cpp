@@ -35,6 +35,9 @@
 #include "MetroidPrime/TCastTo.hpp"
 #include "MetroidPrime/Weapons/CGameProjectile.hpp"
 #include "rstl/algorithm.hpp"
+#if defined(TARGET_PC)
+#include "Metaforce/Settings.hpp"
+#endif
 #include <float.h>
 
 static const rstl::string skParts[] = {
@@ -536,6 +539,14 @@ CSpacePirate::CSpacePirate(TUniqueId uid, const rstl::string& name, const CEntit
   mElbowSeg = animData->GetLocatorSegId(rstl::string_l("R_elbow"));
   mWristSeg = animData->GetLocatorSegId(rstl::string_l("R_wrist"));
   mSwooshSeg = animData->GetLocatorSegId(rstl::string_l("Swoosh_LCTR"));
+
+#if defined(TARGET_PC)
+  // PAL Power Bomb Changes: Beam Troopers normally ignore Power Bombs. This copy is per-instance,
+  // so only troopers spawned while the option is on are affected.
+  if (mTrooper && metaforce::GetSettings().game.palPowerBombChanges.get()) {
+    GetDamageVulnerability()->SetUnchargedVulnerability(kWT_PowerBomb, kVN_Normal);
+  }
+#endif
 
   if (!mOnlyAttackInRange) {
     const CPASAnimParmData jump(pas::kAS_Jump, CPASAnimParm::FromEnum(0),

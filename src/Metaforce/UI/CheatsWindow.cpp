@@ -291,6 +291,18 @@ void CheatsWindow::build_cheats_tab(Rml::Element* content) {
   AddToggle(leftPane, rightPane, "Infinite Power Bombs",
             "Power Bombs refill as they're used. Needs Power Bombs (any Power Bomb capacity).",
             &cheats::Toggles::infinitePowerBombs);
+  AddToggle(leftPane, rightPane, "No Fire Delay",
+            "Power, Ice, Wave and Plasma Beams, Missiles and Power Bombs fire without waiting "
+            "between shots. Charge Beam shots keep their delay.",
+            &cheats::Toggles::noFireDelay);
+  AddToggle(leftPane, rightPane, "Uncapped Missiles",
+            "Missiles aren't limited to three in flight at once. Fire as many as you have.",
+            &cheats::Toggles::uncappedMissiles);
+  AddToggle(leftPane, rightPane, "Phazon Beam Anywhere",
+            "With the Power Beam equipped, pressing Up on the C-stick switches to the Phazon Beam "
+            "wherever you are, and Down on the C-stick switches back. The D-pad works too when "
+            "beams are on it. No Phazon Suit needed.",
+            &cheats::Toggles::phazonBeamAnywhere);
   AddToggle(leftPane, rightPane, "One Hit Kill",
             "Anything Samus's weapons can hurt dies to a single hit, bosses included. What a "
             "weapon can't hurt still shrugs it off, and boss phases still play out.",
