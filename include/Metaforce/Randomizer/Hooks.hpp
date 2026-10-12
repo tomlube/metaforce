@@ -183,6 +183,10 @@ void OnPickupCollected(CStateManager& mgr, int itemType, unsigned int editorId);
 // the autosave a pickup asked for once the game can be saved.
 void UpdateAutosave(CStateManager& mgr, float dt);
 
+// CStateManager::Update, alongside UpdateAutosave: leaves for the room Item Warp picked for a
+// pickup, once the pickup's acquisition has played out.
+void UpdateItemWarp(float dt);
+
 // CScriptPickup::Touch: true to take the "disable input" flag off the player hints the pickup's
 // acquisition sequence turns on. With the message box skipped, those hints only drop the
 // player's held inputs for a moment.

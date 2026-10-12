@@ -47,6 +47,7 @@
 #include <fstream>
 #include <functional>
 #include <map>
+#include <random>
 #include <mutex>
 #include <thread>
 #include <unordered_map>
@@ -139,6 +140,9 @@ constexpr float kAutosaveUnhurtTime = 2.f;
 // later: saved before then, the save has the item and the pickup both, and loading it puts the
 // pickup back to be collected again.
 constexpr float kAutosavePickupSettleTime = 1.f;
+// Item Warp waits this long (seconds) after the pickup, so its acquisition jingle and message play
+// out before Samus leaves the room.
+constexpr float kItemWarpDelay = 2.5f;
 // Saves kept for each save slot from before its autosaves replaced them.
 constexpr size_t kAutosaveBackups = 5;
 
@@ -165,6 +169,8 @@ struct Session {
   std::map< std::string, std::string > slots; // save slot key -> seed hash
   bool quickReload = true;
   bool quickSave = true;
+  bool itemWarp = false;
+  bool itemWarpAll = false;
   int mapLayout = kMapLayoutConnected;
   int mapDrawDistance = kMapDrawDistanceDefault;
   int autosave = kAutosaveAuto;
@@ -177,6 +183,13 @@ struct Session {
   bool autosavePending = false;
   // How long since the last pickup the autosave is waiting on.
   float sincePickup = 0.f;
+  // The room Item Warp takes Samus to after a pickup, and how long until it does.
+  struct ItemWarpTarget {
+    uint32_t mlvl = 0;
+    int area = 0;
+  };
+  std::optional< ItemWarpTarget > itemWarpTarget;
+  float itemWarpTime = 0.f;
   // An autosave backup is being loaded, and is to be saved once it has.
   bool restoredBackupPending = false;
   // Samus's energy on the last frame, and how long since it last went down.
@@ -239,6 +252,8 @@ void SaveSession() {
       {"slots", S().slots},
       {"quick_reload", S().quickReload},
       {"quick_save", S().quickSave},
+      {"item_warp", S().itemWarp},
+      {"item_warp_all", S().itemWarpAll},
       {"map_layout", S().mapLayout},
       {"map_draw_rooms", S().mapDrawDistance},
       {"autosave", S().autosave},
@@ -262,6 +277,8 @@ void LoadSession() {
   S().armedSeed = root.value("armed", "");
   S().quickReload = root.value("quick_reload", true);
   S().quickSave = root.value("quick_save", true);
+  S().itemWarp = root.value("item_warp", false);
+  S().itemWarpAll = root.value("item_warp_all", false);
   S().mapLayout = std::clamp(root.value("map_layout", static_cast< int >(kMapLayoutConnected)),
                              kMapLayoutVanilla, kMapLayoutConnected);
   S().mapDrawDistance = std::max(root.value("map_draw_rooms", kMapDrawDistanceDefault), 0);
@@ -759,6 +776,20 @@ void SetQuickSave(bool enabled) {
   SaveSession();
 }
 
+bool GetItemWarp() { return S().itemWarp; }
+
+void SetItemWarp(bool enabled) {
+  S().itemWarp = enabled;
+  SaveSession();
+}
+
+bool GetItemWarpAll() { return S().itemWarpAll; }
+
+void SetItemWarpAll(bool enabled) {
+  S().itemWarpAll = enabled;
+  SaveSession();
+}
+
 int GetMapLayout() { return S().mapLayout; }
 
 void SetMapLayout(int mode) {
@@ -782,6 +813,10 @@ void SetAutosave(int mode) {
 
 int GetEffectiveAutosave() {
   const auto& s = S();
+  // Item Warp takes the pickup's room away from under the save, so autosaves would make it easy.
+  if (s.itemWarp) {
+    return kAutosaveOff;
+  }
   if (s.autosave != kAutosaveAuto) {
     return s.autosave;
   }
@@ -1373,6 +1408,77 @@ bool GetAutoEnabledElevator(unsigned int areaAssetId, unsigned int& relay) {
   return true;
 }
 
+namespace {
+uint64_t Fnv1a(std::string_view str) {
+  uint64_t hash = 0xcbf29ce484222325ull;
+  for (const char c : str) {
+    hash ^= static_cast< unsigned char >(c);
+    hash *= 0x100000001b3ull;
+  }
+  return hash;
+}
+
+// Regions Item Warp never sends you to. The Frigate and Impact Crater have no items to collect
+// before the end of the game, and the End of Game region is the credits.
+constexpr const char* kItemWarpExcludedRegions[] = {"Frigate Orpheon", "Impact Crater",
+                                                    "End of Game"};
+
+// Whether Item Warp may send you to the world `mlvl`, a region's asset id in the logic database.
+bool ItemWarpWorld(uint32_t mlvl) {
+  const Database* db = GetDatabase();
+  if (db == nullptr) {
+    return true;
+  }
+  for (const Region& region : db->Regions()) {
+    if (region.assetId != mlvl) {
+      continue;
+    }
+    for (const char* excluded : kItemWarpExcludedRegions) {
+      if (region.name == excluded) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+// Item Warp's default pickups: the major ones, and missile and power bomb expansions, but not the
+// refills enemies drop. Autosave's Major Only mode doesn't count expansions, so this is separate.
+bool IsItemWarpDefault(const CStateManager& mgr, int itemType, unsigned int editorId) {
+  if (IsMajorPickup(mgr, itemType, editorId)) {
+    return true;
+  }
+  const auto& s = S();
+  const int location = PickupLocation(mgr, editorId);
+  if (location < 0) {
+    return false;
+  }
+  const AmmoPickupDef* ammo = s.pickups.FindAmmo(s.active->locations[location].name);
+  return ammo != nullptr && !ammo->refill;
+}
+
+// The room Item Warp takes Samus to for a pickup: one of the rooms it may send her to, picked by
+// the seed, the world and the pickup, so each pickup of a seed always leads to the same room.
+std::optional< Session::ItemWarpTarget > ChooseItemWarp(uint32_t worldId,
+                                                        unsigned int editorId) {
+  std::vector< Session::ItemWarpTarget > rooms;
+  for (const warp::World& world : warp::GetWorlds()) {
+    if (!ItemWarpWorld(world.mlvl)) {
+      continue;
+    }
+    for (const warp::Area& area : world.areas) {
+      rooms.push_back({world.mlvl, area.index});
+    }
+  }
+  if (rooms.empty()) {
+    return std::nullopt;
+  }
+  const std::string key = fmt::format("{}:{:08X}:{:08X}", S().active->hash, worldId, editorId);
+  std::mt19937_64 rng(Fnv1a(key));
+  return rooms[rng() % rooms.size()];
+}
+} // namespace
+
 void OnPickupCollected(CStateManager& mgr, int itemType, unsigned int editorId) {
   auto& s = S();
   if (!s.active) {
@@ -1380,6 +1486,14 @@ void OnPickupCollected(CStateManager& mgr, int itemType, unsigned int editorId) 
   }
   if (itemType >= CPlayerState::kIT_Truth && itemType <= CPlayerState::kIT_Newborn) {
     SyncArtifactLayers();
+  }
+  uint32_t worldId = 0;
+  int area = 0;
+  // By default the pickups that matter for progress; refills and drops only with Refills and Drops.
+  const bool wanted = s.itemWarpAll || IsItemWarpDefault(mgr, itemType, editorId);
+  if (s.itemWarp && wanted && warp::GetCurrentLocation(worldId, area)) {
+    s.itemWarpTarget = ChooseItemWarp(worldId, editorId);
+    s.itemWarpTime = kItemWarpDelay;
   }
   const int autosave = GetEffectiveAutosave();
   const bool artifact =
@@ -1422,6 +1536,29 @@ void UpdateAutosave(CStateManager& mgr, float dt) {
   }
   s.autosavePending = false;
   WriteAutosave(mgr);
+}
+
+void UpdateItemWarp(float dt) {
+  auto& s = S();
+  if (!s.itemWarpTarget) {
+    return;
+  }
+  if (!s.itemWarp || !s.active) {
+    s.itemWarpTarget.reset();
+    return;
+  }
+  // Holds the warp until the game can leave the room, like a warp the player asked for.
+  if (!warp::CanWarp()) {
+    return;
+  }
+  s.itemWarpTime -= dt;
+  if (s.itemWarpTime > 0.f) {
+    return;
+  }
+  const Session::ItemWarpTarget target = *s.itemWarpTarget;
+  s.itemWarpTarget.reset();
+  Log.info("Item Warp to area {} of world 0x{:08X}", target.area, target.mlvl);
+  warp::RequestWarp(target.mlvl, target.area, std::nullopt);
 }
 
 bool StripPickupInputLocks() { return S().active.has_value(); }

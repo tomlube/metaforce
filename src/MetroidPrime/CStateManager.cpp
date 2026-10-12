@@ -1349,6 +1349,7 @@ void CStateManager::Update(float dt) {
     metaforce::portals::UpdatePlayerCrossing(*this);
     metaforce::randomizer::UpdateCrossWorldDoors(*this, dt);
     metaforce::randomizer::UpdateAutosave(*this, dt);
+    metaforce::randomizer::UpdateItemWarp(dt);
     metaforce::cheats::Update(*this);
   }
 #endif

@@ -66,6 +66,16 @@ void SetQuickReload(bool enabled);
 bool GetQuickSave();
 void SetQuickSave(bool enabled);
 
+// Item Warp: in a randomized game, collecting a pickup takes Samus to a room the seed picks for
+// that pickup, a moment later. The room is the same every time for the same seed and pickup. Off
+// by default.
+bool GetItemWarp();
+void SetItemWarp(bool enabled);
+// Item Warp for expansions and drops too, not just upgrades, Energy Tanks and artifacts. Off by
+// default, and only used while Item Warp is on.
+bool GetItemWarpAll();
+void SetItemWarpAll(bool enabled);
+
 // Room Rando Map: how the map is drawn when the room randomizer moved doors. Vanilla draws every
 // room where it is in the game; Tidy lays the map out so rooms meet at their doors, putting rooms
 // that fit by none of their doors off on their own; Connected joins every room by one of its

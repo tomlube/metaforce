@@ -103,6 +103,10 @@ struct Settings {
   // be locked on to.
   bool unlockSaveStationDoors = true;
   bool blastShieldLockOn = true;
+  // Fully disabled logic: items are placed at random, and the seed isn't checked to be beatable.
+  // Rooms and door locks are still randomized, without checking they make sense. Only written to
+  // the settings when on, so seeds made with it off keep their hashes.
+  bool logicDisabled = false;
   std::map< std::string, StandardPickupState > standard;
   std::map< std::string, AmmoPickupState > ammo;
 

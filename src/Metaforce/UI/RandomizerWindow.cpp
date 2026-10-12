@@ -204,6 +204,10 @@ RandomizerWindow::RandomizerWindow() {
     reset_tab_elements();
     build_doors_tab(content);
   });
+  add_tab("Item Warp", [this](Rml::Element* content) {
+    reset_tab_elements();
+    build_item_warp_tab(content);
+  });
 }
 
 void RandomizerWindow::reset_tab_elements() {
@@ -348,6 +352,7 @@ void RandomizerWindow::build_seeds_tab(Rml::Element* content) {
       .options = std::move(autosaveModes),
       .getValue = [] { return rando::GetAutosave(); },
       .setValue = [](int v) { rando::SetAutosave(v); },
+      .isDisabled = [] { return rando::GetItemWarp(); },
       .isModified = [] { return rando::GetAutosave() != rando::kAutosaveAuto; },
   });
   SetHelp(leftPane, rightPane, autosave,
@@ -358,7 +363,8 @@ void RandomizerWindow::build_seeds_tab(Rml::Element* content) {
           "Only</b> saves after upgrades, Energy Tanks and artifacts. <b>All Pickups</b> saves "
           "after expansions too. <b>Auto</b> is Major Only for seeds with the room randomizer, "
           "where a wrong turn costs the most, and Off for the rest.<br/><br/>The save each "
-          "autosave replaces is kept; see <b>Autosave Backups</b>.");
+          "autosave replaces is kept; see <b>Autosave Backups</b>.<br/><br/>Off while <b>Item "
+          "Warp</b> is on.");
 
   auto& backups = leftPane.add_group_button({.text = "Autosave Backups"});
   leftPane.register_control(backups, rightPane, [this](Pane& pane) {
@@ -828,6 +834,54 @@ void RandomizerWindow::build_doors_tab(Rml::Element* content) {
   });
   SetHelp(leftPane, rightPane, lockOn,
           "Makes all Blast Shield locks targetable in Combat Visor.");
+}
+
+void RandomizerWindow::build_item_warp_tab(Rml::Element* content) {
+  auto& leftPane = add_child< Pane >(content, Pane::Type::Controlled);
+  auto& rightPane = add_child< Pane >(content, Pane::Type::Uncontrolled);
+
+  leftPane.add_section("Item Warp");
+  auto& itemWarp = leftPane.add_child< BoolButton >(BoolButton::Props{
+      .key = "Item Warp",
+      .getValue = [] { return rando::GetItemWarp(); },
+      .setValue = [](bool v) { rando::SetItemWarp(v); },
+      .isModified = [] { return rando::GetItemWarp(); },
+  });
+  SetHelp(leftPane, rightPane, itemWarp,
+          "When enabled, collecting a pickup takes you to a random room a few seconds later. "
+          "The room is determined by the seed, so the same item will always lead you to the same "
+          "room.<br/><br/>By default the items that warp you are any major upgrades, Energy Tanks, artifacts, as well as missile and "
+          "power bomb expansions. <br/><br/>This is inspired by the original Claris Item Warp randomizer.<br/><br/> "
+          "There is very limited logic to these, so seeds will often be unbeatable, or require excessive 'Warp to Start' abuse. ");
+
+  auto& allPickups = leftPane.add_child< BoolButton >(BoolButton::Props{
+      .key = "Refills and Drops",
+      .getValue = [] { return rando::GetItemWarpAll(); },
+      .setValue = [](bool v) { rando::SetItemWarpAll(v); },
+      .isDisabled = [] { return !rando::GetItemWarp(); },
+      .isModified = [] { return rando::GetItemWarpAll(); },
+  });
+  SetHelp(leftPane, rightPane, allPickups,
+          "Enabling this also takes you to a random room after collecting a health drop, or a missile/Power Bomb refill. ");
+
+  leftPane.add_section("Logic");
+  auto& settings = rando::GetSettings();
+  auto& disableLogic = leftPane.add_child< BoolButton >(BoolButton::Props{
+      .key = "Fully Disable Logic",
+      .getValue = [&settings] { return settings.logicDisabled; },
+      .setValue =
+          [&settings](bool v) {
+            settings.logicDisabled = v;
+            Save();
+          },
+      .isModified = [&settings] { return settings.logicDisabled; },
+  });
+  SetHelp(leftPane, rightPane, disableLogic,
+          "Places items completely at random, with no verification that the seed can be beaten. Rooms and "
+          "door locks are still randomized, without checking they make any logical sense.<br/><br/>This only applies "
+          "to seeds generated after you turn the setting on. Expect a high possibility that seeds are impossible "
+          "to finish, similar to the original randomizer.<br/><br/>It is advised to set your starting room to a hub with lots of doors. "
+          "Otherwise you will often run into softlocks almost immediately.");
 }
 
 void RandomizerWindow::build_logic_tab(Rml::Element* content) {

@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <numeric>
 #include <optional>
 #include <random>
 
@@ -158,7 +159,8 @@ public:
         continue;
       }
       std::vector< std::vector< std::string > > spheres;
-      if (!Playthrough(placement, &spheres)) {
+      // With logic disabled, nothing checks the seed can be beaten: it's taken as it was filled.
+      if (!mSettings.logicDisabled && !Playthrough(placement, &spheres)) {
         ++mPlaythroughFailures;
         continue;
       }
@@ -167,7 +169,7 @@ public:
                fmt::format("Attempt {}: placing door locks", attempt + 1));
         DistributeDoorLocks(rng, placement);
         spheres.clear();
-        if (!Playthrough(placement, &spheres)) {
+        if (!mSettings.logicDisabled && !Playthrough(placement, &spheres)) {
           ++mDoorLockFailures;
           continue;
         }
@@ -460,6 +462,25 @@ private:
 
   // Gives each door listed by AssignPreFillWeaknesses its lock, in random order, each one picked
   // with the locks placed before it in effect.
+  // Logic disabled: every lock the pair of doors allows, equally likely, whether or not the player
+  // could ever reach it. The same exclusions as ValidWeaknesses, without the reach checks.
+  std::vector< std::pair< int, double > > UnlogicedWeaknesses(int dock, int target) const {
+    std::vector< std::pair< int, double > > weighted{{mDoorTypes->unlocked, 1.0}};
+    std::vector< uint8_t > excluded(mDb.Weaknesses().size(), 0);
+    for (const int side : {dock, target}) {
+      for (const int weakness : mDb.GetNode(side).dock->incompatibleWeaknesses) {
+        excluded[weakness] = 1;
+      }
+    }
+    excluded[mDoorTypes->unlocked] = 1;
+    for (const int weakness : mDoorTypes->changeTo) {
+      if (mChangeTo[weakness] && !excluded[weakness]) {
+        weighted.emplace_back(weakness, 1.0);
+      }
+    }
+    return weighted;
+  }
+
   void DistributeDoorLocks(std::mt19937_64& rng, const std::vector< int >& placement) {
     mBlocked.assign(mDb.Nodes().size(), 0);
     std::vector< int > order = mDocksToAssign;
@@ -469,7 +490,9 @@ private:
       const int target = DockTarget(node);
       std::vector< std::pair< int, double > > weighted{{mDoorTypes->unlocked, 1.0}};
       if (!onlyUnlocked && target >= 0) {
-        if (auto reached = ReachDoor(placement, node, target)) {
+        if (mSettings.logicDisabled) {
+          weighted = UnlogicedWeaknesses(node, target);
+        } else if (auto reached = ReachDoor(placement, node, target)) {
           const bool fromTarget = reached->second == target;
           weighted = ValidWeaknesses(fromTarget ? target : node, fromTarget ? node : target,
                                      reached->first);
@@ -637,6 +660,10 @@ private:
       }
       // Save room doors and the doors whose locks get randomized depend on where doors lead.
       AssignPreFillWeaknesses();
+      // With logic disabled, the first layout is taken without checking the start can get anywhere.
+      if (mSettings.logicDisabled) {
+        return true;
+      }
       const int starts = mRandomStarts.empty() ? 1 : kStartsPerLayout;
       for (int i = 0; i < starts; ++i) {
         if (!mRandomStarts.empty()) {
@@ -842,8 +869,25 @@ private:
     }
   }
 
+  // Logic disabled: every item goes to a location picked at random.
+  bool FillRandomly(std::mt19937_64& rng, std::vector< int >& placement) {
+    std::vector< int > items(mPool.size());
+    std::iota(items.begin(), items.end(), 0);
+    if (items.size() != mLocations.size()) {
+      return false;
+    }
+    std::shuffle(items.begin(), items.end(), rng);
+    for (size_t i = 0; i < items.size(); ++i) {
+      placement[mLocations[i]] = items[i];
+    }
+    return true;
+  }
+
   bool Fill(std::mt19937_64& rng, std::vector< int >& placement) {
     placement.assign(mDb.PickupNodes().size(), -1);
+    if (mSettings.logicDisabled) {
+      return FillRandomly(rng, placement);
+    }
 
     std::vector< int > progression;
     std::vector< int > filler;

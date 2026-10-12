@@ -114,6 +114,10 @@ json Settings::ToJson() const {
       {"unlock_save_station_doors", unlockSaveStationDoors},
       {"blast_shield_lock_on", blastShieldLockOn},
   };
+  // Only written when on, so the hash of a seed made with logic on doesn't change.
+  if (logicDisabled) {
+    root["logic_disabled"] = true;
+  }
   json& standardJson = root["standard"] = json::object();
   for (const auto& [name, state] : standard) {
     standardJson[name] = {
@@ -148,6 +152,7 @@ bool Settings::FromJson(const json& root) {
     result.doorLockChangeTo = root.value("door_lock_change_to", DefaultDoorLockChangeTo());
     result.unlockSaveStationDoors = root.value("unlock_save_station_doors", true);
     result.blastShieldLockOn = root.value("blast_shield_lock_on", true);
+    result.logicDisabled = root.value("logic_disabled", false);
     for (const auto& [name, state] : root.at("standard").items()) {
       result.standard[name] = {state.value("shuffled", 0), state.value("starting", 0),
                                state.value("ammo", 0)};
