@@ -26,6 +26,7 @@
 #include "MetroidPrime/ScriptObjects/CScriptActor.hpp"
 #include "MetroidPrime/ScriptObjects/CScriptDamageableTrigger.hpp"
 #include "MetroidPrime/ScriptObjects/CScriptDoor.hpp"
+#include "MetroidPrime/ScriptObjects/CScriptEffect.hpp"
 #include "MetroidPrime/ScriptObjects/CScriptPointOfInterest.hpp"
 #include "MetroidPrime/ScriptObjects/CScriptStreamedMusic.hpp"
 
@@ -61,6 +62,10 @@ constexpr borealis::Log Log{"randomizer"};
 constexpr ushort kBreakSfx = 3621;
 constexpr const char* kBreakJingle = "/audio/evt_x_event_00.dsp";
 constexpr uint kBreakJingleVolume = 92;
+// The gibs a blast shield breaks into: randomprime's "gibbs effect", a particle that plays once
+// from the shield's place. randomprime leaves it out of its patched game for memory, which isn't
+// a worry here.
+constexpr CAssetId kGibsPart = 0xCDCBDF04;
 
 uint64_t ObjectKey(uint32_t world, uint32_t editorId) {
   return (static_cast< uint64_t >(world) << 32) | (editorId & 0x3FFFFFF);
@@ -269,8 +274,8 @@ class CDoorLockShield : public CEntity {
 public:
   CDoorLockShield(TUniqueId uid, const CEntityInfo& info, uint32_t mrea, int dock,
                   const CVector3f& position, TUniqueId actor, TUniqueId trigger, TUniqueId scan,
-                  TUniqueId jingle, TUniqueId door, const TUniqueId (&forces)[2],
-                  const TUniqueId (&doorShields)[2], bool vertical)
+                  TUniqueId jingle, TUniqueId gibs, TUniqueId door,
+                  const TUniqueId (&forces)[2], const TUniqueId (&doorShields)[2], bool vertical)
   : CEntity(uid, info, true, rstl::string_l("Randomizer Blast Shield"))
   , mMrea(mrea)
   , mDock(dock)
@@ -279,6 +284,7 @@ public:
   , mTrigger(trigger)
   , mScan(scan)
   , mJingle(jingle)
+  , mGibs(gibs)
   , mDoor(door)
   , mVertical(vertical) {
     mForces[0] = forces[0];
@@ -361,6 +367,9 @@ private:
     if (CEntity* jingle = mgr.ObjectById(mJingle)) {
       jingle->AcceptScriptMsg(kSM_Play, GetUniqueId(), mgr);
     }
+    if (CEntity* gibs = mgr.ObjectById(mGibs)) {
+      gibs->AcceptScriptMsg(kSM_Activate, GetUniqueId(), mgr);
+    }
     mgr.CameraManager()->AddCameraShaker(CCameraShakeData::HardBothAxesShake(0.5f, 0.2f), true);
     // A door without power keeps its triggers off; it opens normally once it has power.
     for (const TUniqueId force : mForces) {
@@ -379,6 +388,7 @@ private:
   TUniqueId mTrigger;
   TUniqueId mScan;
   TUniqueId mJingle;
+  TUniqueId mGibs;
   TUniqueId mDoor;
   TUniqueId mForces[2];
   TUniqueId mDoorShields[2];
@@ -469,6 +479,14 @@ void SpawnBlastShield(CStateManager& mgr, TAreaId area, uint32_t mrea, int dock,
       rstl::string_l(kBreakJingle), false, 0.f, 0.f, kBreakJingleVolume, false, true);
   mgr.AddObject(jingle);
 
+  // The gibs, where the shield stands and turned the same way. Inactive until the shield breaks,
+  // then played until its particles are done, and removed after that.
+  CScriptEffect* gibs = rs_new CScriptEffect(
+      mgr.AllocateUniqueId(), rstl::string_l("Randomizer Blast Shield Gibs"), info, xf,
+      placement->scale, kGibsPart, kInvalidAssetId, false, true, true, false, false, 0.f, 0.f,
+      0.f, 0.f, false, 0.f, 0.f, 0.f, true, true, true, lights, true);
+  mgr.AddObject(gibs);
+
   const TUniqueId forces[2] = {FindLoadedObject(mgr, area, door->forces[0]),
                                FindLoadedObject(mgr, area, door->forces[1])};
   const TUniqueId doorShields[2] = {FindLoadedObject(mgr, area, door->shields[0]),
@@ -476,6 +494,7 @@ void SpawnBlastShield(CStateManager& mgr, TAreaId area, uint32_t mrea, int dock,
   mgr.AddObject(rs_new CDoorLockShield(mgr.AllocateUniqueId(), info, mrea, dock,
                                        placement->position, actor->GetUniqueId(),
                                        trigger->GetUniqueId(), scan, jingle->GetUniqueId(),
+                                       gibs->GetUniqueId(),
                                        FindLoadedObject(mgr, area, door->door), forces,
                                        doorShields, door->vertical));
 }
