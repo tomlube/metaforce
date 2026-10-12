@@ -6,6 +6,9 @@
 #include "MetroidPrime/Cameras/CGameCamera.hpp"
 #include "MetroidPrime/Player/CTrilogyState.hpp"
 #include "MetroidPrime/TCastTo.hpp"
+#if defined(TARGET_PC)
+#include "Metaforce/Randomizer/Hooks.hpp"
+#endif
 
 #include "Kyoto/Math/CMath.hpp"
 #include "Kyoto/Streams/CInputStream.hpp"
@@ -521,12 +524,27 @@ void CPlayerState::InitializeScanTimes() {
 const float CPlayerState::GetScanTime(const CAssetId res) const {
   rstl::vector< rstl::pair< CAssetId, float > >::const_iterator it =
       rstl::find_by_key(mScanTimes, res);
+#if defined(TARGET_PC)
+  // A scan the game's list doesn't have, such as the randomizer's Phazon Beam scan, keeps its
+  // progress for the session only. Any other unknown scan has none.
+  if (it == mScanTimes.end()) {
+    float time = 0.f;
+    metaforce::randomizer::GetSessionScanTime(res, time);
+    return time;
+  }
+#endif
   return it->second;
 }
 
 void CPlayerState::SetScanTime(const CAssetId res, float time) {
   rstl::vector< rstl::pair< CAssetId, float > >::iterator it =
       rstl::find_by_key_nc(mScanTimes, res);
+#if defined(TARGET_PC)
+  if (it == mScanTimes.end()) {
+    metaforce::randomizer::SetSessionScanTime(res, time);
+    return;
+  }
+#endif
   it->second = time;
 }
 

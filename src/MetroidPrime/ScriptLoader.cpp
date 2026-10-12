@@ -923,6 +923,11 @@ CEntity* ScriptLoader::LoadPickup(CStateManager& mgr, CInputStream& in, int prop
   CAssetId pickupEffect = in.Get< CAssetId >();
 
 #if defined(TARGET_PC)
+  // The Phazon Beam's missile, shown inside its tank: a companion pickup made below.
+  bool hasCompanion = false;
+  CAssetId companionModel = kInvalidAssetId;
+  CVector3f companionScale;
+  CTransform4f companionXf = head.mActorHead.mTransform;
   metaforce::randomizer::PickupOverride randoPickup;
   if (metaforce::randomizer::GetPickupOverride(mgr.GetWorld()->GetWorldAssetId(),
                                                info.GetEditorId().Value(), randoPickup)) {
@@ -975,7 +980,59 @@ CEntity* ScriptLoader::LoadPickup(CStateManager& mgr, CInputStream& in, int prop
         staticModel = tmplModel;
         aParms = tmplAnim;
         actParms = tmplActor;
+        // The Phazon Beam takes its own copy of the Energy Tank's scan, with its own text.
+        unsigned int scan = 0;
+        if (metaforce::randomizer::GetPickupScanOverride(
+                mgr.GetWorld()->GetWorldAssetId(), info.GetEditorId().Value(),
+                tmplActor.GetScannable().GetScannableObject0(), scan)) {
+          actParms = actParms.Scannable(CScannableParameters(scan));
+        }
         pickupEffect = tmplEffect;
+
+        // The missile companion is centered in the tank the same way the tank was centered in
+        // the original model: the two centers land on the same point.
+        const unsigned char* companionData = nullptr;
+        unsigned int companionSize = 0;
+        if (metaforce::randomizer::GetPickupCompanion(mgr.GetWorld()->GetWorldAssetId(),
+                                                      info.GetEditorId().Value(), companionData,
+                                                      companionSize)) {
+          CMemoryInStream missile(companionData + 4, companionSize - 4);
+          SScaledActorHead missileHead(missile, mgr);
+          CVector3f missileExtent(missile);
+          CVector3f missileOffset(missile);
+          missile.Get< int >(); // item type
+          missile.Get< int >(); // capacity
+          missile.Get< int >(); // amount
+          missile.Get< float >(); // possibility
+          missile.Get< float >(); // lifetime
+          missile.Get< float >(); // fade in time
+          CAssetId missileModel = missile.Get< CAssetId >();
+          static_cast< void >(missileExtent);
+          static_cast< void >(missileOffset);
+          if (gpResourceFactory->GetResourceTypeById(missileModel) != 0) {
+            CVector3f tankLocal = CVector3f::Zero();
+            CVector3f missileLocal = CVector3f::Zero();
+            float tankCenter[3];
+            float missileCenter[3];
+            if (metaforce::randomizer::GetPickupModelCenter(staticModel, tankCenter)) {
+              tankLocal = CVector3f(tankCenter[0] * head.mScale.GetX(),
+                                    tankCenter[1] * head.mScale.GetY(),
+                                    tankCenter[2] * head.mScale.GetZ());
+            }
+            if (metaforce::randomizer::GetPickupModelCenter(missileModel, missileCenter)) {
+              missileLocal = CVector3f(missileCenter[0] * missileHead.mScale.GetX(),
+                                       missileCenter[1] * missileHead.mScale.GetY(),
+                                       missileCenter[2] * missileHead.mScale.GetZ());
+            }
+            const CTransform4f& tankXf = head.mActorHead.mTransform;
+            companionXf = tankXf;
+            companionXf.SetTranslation(tankXf.GetTranslation() +
+                                       tankXf.Rotate(tankLocal - missileLocal));
+            companionScale = missileHead.mScale;
+            companionModel = missileModel;
+            hasCompanion = true;
+          }
+        }
       }
     }
   }
@@ -1008,6 +1065,23 @@ CEntity* ScriptLoader::LoadPickup(CStateManager& mgr, CInputStream& in, int prop
 
   if (extent == CVector3f::Zero() || negativeExtent)
     aabb = data.GetBounds(xf.GetRotation());
+
+#if defined(TARGET_PC)
+  if (hasCompanion) {
+    // A visual-only pickup: its start delay never runs out, so touching it grants nothing. It is
+    // removed when the tank is collected (see OnPickupCollected).
+    const TUniqueId companionUid = mgr.AllocateUniqueId();
+    CScriptPickup* companion = rs_new CScriptPickup(
+        companionUid, rstl::string_l("Pickup Companion"),
+        CEntityInfo(info.GetAreaId(), CEntity::NullConnectionList, kInvalidEditorId), companionXf,
+        CModelData(CStaticRes(companionModel, companionScale)),
+        actParms.Scannable(CScannableParameters(kInvalidAssetId)), aabb, itemType, 0, 0,
+        kInvalidAssetId, 1.f, 0.f, 0.f, 1.0e9f, true);
+    mgr.AddObject(*companion);
+    metaforce::randomizer::SetPickupCompanion(mgr.GetWorld()->GetWorldAssetId(),
+                                              info.GetEditorId().Value(), companionUid.value);
+  }
+#endif
 
   return rs_new CScriptPickup(mgr.AllocateUniqueId(), head.mActorHead.mName, info, xf, data,
                               actParms, aabb, itemType, amount, capacity, pickupEffect, possibility,

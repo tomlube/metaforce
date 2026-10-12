@@ -77,6 +77,28 @@ bool GetPickupModelCenter(unsigned int cmdl, float out[3]);
 // CScriptHUDMemo SetToZero: replacement text for a randomized pickup's memo, or null.
 const wchar_t* GetHudMemoOverride(unsigned int worldId, unsigned int editorId);
 
+// CScriptHUDMemo SetToZero: true when a randomized pickup's memo opens the paused message box
+// instead, with `message` as its string table. Only the Phazon Beam does.
+bool GetPausedMemoOverride(unsigned int worldId, unsigned int editorId, unsigned int& message);
+
+// ScriptLoader::LoadPickup: the model of a second, visual-only pickup a randomized pickup shows
+// inside its own model (the Phazon Beam's missile), or false. SetPickupCompanion records the
+// companion's unique id, so collecting the pickup removes it.
+bool GetPickupCompanion(unsigned int worldId, unsigned int editorId, const unsigned char*& data,
+                        unsigned int& size);
+void SetPickupCompanion(unsigned int worldId, unsigned int editorId, unsigned short uid);
+
+// CPlayerState Get/SetScanTime for a scan the game's own list doesn't have: the Phazon Beam's.
+// Its progress is kept for the session only, since it isn't saved. False for any other scan, and
+// when no randomized game is active.
+bool GetSessionScanTime(unsigned int scan, float& time);
+bool SetSessionScanTime(unsigned int scan, float time);
+
+// ScriptLoader::LoadPickup: the scan a randomized pickup takes in place of the one its model
+// brings, or false to keep it. `tankScan` is the scan the model brings (the Energy Tank's).
+bool GetPickupScanOverride(unsigned int worldId, unsigned int editorId, unsigned int tankScan,
+                           unsigned int& scan);
+
 // ScriptLoader::LoadStreamedMusic: the jingle a randomized pickup's attainment audio should play,
 // the one its new item has in the unrandomized game, or null to keep the file it has.
 const char* GetPickupAudioOverride(unsigned int worldId, unsigned int editorId);

@@ -397,6 +397,19 @@
    "default_starting": 0,
    "default_ammo": [],
    "hidden": false
+  },
+  {
+   "name": "Phazon Beam",
+   "category": "beam",
+   "major": true,
+   "model": "Energy Tank",
+   "item_type": 27,
+   "progression": [],
+   "ammo": [],
+   "default_shuffled": 0,
+   "default_starting": 0,
+   "default_ammo": [],
+   "hidden": false
   }
  ],
  "ammo": [

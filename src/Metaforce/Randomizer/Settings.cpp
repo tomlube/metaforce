@@ -120,6 +120,11 @@ json Settings::ToJson() const {
   }
   json& standardJson = root["standard"] = json::object();
   for (const auto& [name, state] : standard) {
+    // Phazon Beam came after seeds were first made, so it's only written when it's in use. That
+    // keeps the hash of every older seed.
+    if (name == "Phazon Beam" && state.shuffled == 0 && state.starting == 0 && state.ammo == 0) {
+      continue;
+    }
     standardJson[name] = {
         {"shuffled", state.shuffled}, {"starting", state.starting}, {"ammo", state.ammo}};
   }

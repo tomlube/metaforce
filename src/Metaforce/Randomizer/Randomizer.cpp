@@ -2,6 +2,7 @@
 
 #include "Metaforce/MergedWorld.hpp"
 #include "Metaforce/Randomizer/CrossWorldDoors.hpp"
+#include "Metaforce/Randomizer/CustomAssets.hpp"
 #include "Metaforce/Randomizer/DoorLocks.hpp"
 #include "Metaforce/Randomizer/Generator.hpp"
 #include "Metaforce/Randomizer/Hooks.hpp"
@@ -213,6 +214,10 @@ struct Session {
 
   std::optional< Seed > active;
   std::unordered_map< uint64_t, int > pickupByObject;
+  // ObjectKey of a pickup -> the unique id of its companion object.
+  std::unordered_map< uint64_t, unsigned short > companionByObject;
+  // Progress of the Phazon Beam's scan, which isn't in the game's scan list and isn't saved.
+  std::unordered_map< uint32_t, float > sessionScanTimes;
   std::unordered_map< uint64_t, int > memoByObject;
   std::unordered_map< uint64_t, int > audioByObject;
   // DockKey(area, dock) -> index into active->docks
@@ -311,6 +316,8 @@ void Deactivate() {
   auto& s = S();
   s.active.reset();
   s.pickupByObject.clear();
+  s.companionByObject.clear();
+  s.sessionScanTimes.clear();
   s.memoByObject.clear();
   s.audioByObject.clear();
   s.dockByKey.clear();
@@ -1393,6 +1400,91 @@ const wchar_t* GetHudMemoOverride(unsigned int worldId, unsigned int editorId) {
   return it == s.memoByObject.end() ? nullptr : s.memoText[it->second].c_str();
 }
 
+bool GetPausedMemoOverride(unsigned int worldId, unsigned int editorId, unsigned int& message) {
+  const auto& s = S();
+  if (!s.active) {
+    return false;
+  }
+  editorId = merged::ToSourceEditorId(editorId, worldId);
+  const auto it = s.memoByObject.find(ObjectKey(worldId, editorId));
+  if (it == s.memoByObject.end() ||
+      s.active->locations[it->second].grant.itemType != CPlayerState::kIT_UnknownItem2) {
+    return false;
+  }
+  // The Phazon Beam opens the same message box an item does in the unrandomized game.
+  message = kPhazonBeamMessage;
+  return true;
+}
+
+bool GetSessionScanTime(unsigned int scan, float& time) {
+  const auto& s = S();
+  if (!s.active || scan != kPhazonBeamScan) {
+    return false;
+  }
+  const auto it = s.sessionScanTimes.find(scan);
+  time = it != s.sessionScanTimes.end() ? it->second : 0.f;
+  return true;
+}
+
+bool SetSessionScanTime(unsigned int scan, float time) {
+  auto& s = S();
+  if (!s.active || scan != kPhazonBeamScan) {
+    return false;
+  }
+  s.sessionScanTimes[scan] = time;
+  return true;
+}
+
+bool GetPickupScanOverride(unsigned int worldId, unsigned int editorId, unsigned int tankScan,
+                           unsigned int& scan) {
+  const auto& s = S();
+  if (!s.active || tankScan == 0) {
+    return false;
+  }
+  editorId = merged::ToSourceEditorId(editorId, worldId);
+  const auto it = s.pickupByObject.find(ObjectKey(worldId, editorId));
+  if (it == s.pickupByObject.end() ||
+      s.active->locations[it->second].grant.itemType != CPlayerState::kIT_UnknownItem2) {
+    return false;
+  }
+  // The Phazon Beam's scan is the Energy Tank's, which its pickup was built from, with its own
+  // text. Only this pickup takes it, so the Energy Tanks keep their scan.
+  SetPhazonBeamScanSource(tankScan);
+  scan = kPhazonBeamScan;
+  return true;
+}
+
+bool GetPickupCompanion(unsigned int worldId, unsigned int editorId, const unsigned char*& data,
+                        unsigned int& size) {
+  const auto& s = S();
+  if (!s.active) {
+    return false;
+  }
+  editorId = merged::ToSourceEditorId(editorId, worldId);
+  const auto it = s.pickupByObject.find(ObjectKey(worldId, editorId));
+  if (it == s.pickupByObject.end() ||
+      s.active->locations[it->second].grant.itemType != CPlayerState::kIT_UnknownItem2) {
+    return false;
+  }
+  // The Phazon Beam shows a missile inside its tank.
+  const PickupModelTemplate* missile = FindPickupModel("Missile");
+  if (missile == nullptr) {
+    return false;
+  }
+  data = missile->data;
+  size = static_cast< unsigned int >(missile->size);
+  return true;
+}
+
+void SetPickupCompanion(unsigned int worldId, unsigned int editorId, unsigned short uid) {
+  auto& s = S();
+  if (!s.active) {
+    return;
+  }
+  editorId = merged::ToSourceEditorId(editorId, worldId);
+  s.companionByObject[ObjectKey(worldId, editorId)] = uid;
+}
+
 const char* GetPickupAudioOverride(unsigned int worldId, unsigned int editorId) {
   const auto& s = S();
   if (!s.active) {
@@ -1562,6 +1654,18 @@ void OnPickupCollected(CStateManager& mgr, int itemType, unsigned int editorId) 
   auto& s = S();
   if (!s.active) {
     return;
+  }
+  // A pickup's companion object goes with it.
+  {
+    CAssetId world = mgr.GetWorld()->GetWorldAssetId();
+    const auto companion = s.companionByObject.find(
+        ObjectKey(world, merged::ToSourceEditorId(editorId, world)));
+    if (companion != s.companionByObject.end()) {
+      TUniqueId uid;
+      uid.value = companion->second;
+      mgr.DeleteObjectRequest(uid);
+      s.companionByObject.erase(companion);
+    }
   }
   if (itemType >= CPlayerState::kIT_Truth && itemType <= CPlayerState::kIT_Newborn) {
     SyncArtifactLayers();

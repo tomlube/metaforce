@@ -4316,7 +4316,10 @@ void CPlayerGun::HandleWeaponChange(const CFinalInput& input, CStateManager& mgr
     static bool phazonAnywhereOn = false;
     static bool upHeld = false;
     static bool downHeld = false;
-    const bool cheatOn = metaforce::cheats::GetToggles().phazonBeamAnywhere;
+    // The randomizer's Phazon Beam pickup fills the Unknown2 slot, and holding it works like the
+    // cheat.
+    const bool cheatOn = metaforce::cheats::GetToggles().phazonBeamAnywhere ||
+                         mgr.GetPlayerState()->HasPowerUp(CPlayerState::kIT_UnknownItem2);
     const bool beamsOnDPad = metaforce::input::ModernControlsEnabled()
                                  ? input.DZ()
                                  : gpGameState->GameOptions().GetSwapBeamControls();

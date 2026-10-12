@@ -7,6 +7,9 @@
 
 #include <array>
 #include <cstring>
+#include <initializer_list>
+#include <string_view>
+#include <vector>
 
 namespace metaforce::randomizer {
 namespace {
@@ -157,14 +160,101 @@ bool ReplaceCharacterModel(std::vector< uint8_t >& ancs, uint32_t oldModel, uint
   return replaced;
 }
 
+// The Phazon Beam's message box, which the game shows like it does an item's.
+constexpr std::string_view kPhazonBeamText =
+    "Phazon Beam acquired! With the Power Beam equipped, press Up on the C-stick or D-pad to "
+    "switch to the Phazon Beam. Press Down to switch back.";
+
+// The Phazon Beam's scan text: its name for the scan and the logbook, then the description.
+constexpr std::string_view kPhazonBeamName = "Phazon Beam";
+constexpr std::string_view kPhazonBeamDescription =
+    "The Phazon Beam. With the Power Beam equipped, press Up on the C-stick or D-pad to switch "
+    "to the Phazon Beam, and Down to switch back.";
+
+// The Energy Tank's scan, which the Phazon Beam's scan is copied from.
+unsigned int gPhazonBeamScanSource = 0;
+
+// A string table of English strings, in the layout CStringTable::Load reads: big-endian, then
+// each string as UTF-16 with its offset counted from the start of the string data.
+AssetData BuildStringTable(std::initializer_list< std::string_view > texts) {
+  std::vector< uint8_t > strg;
+  const auto put32 = [&strg](uint32_t value) {
+    for (int shift = 24; shift >= 0; shift -= 8) {
+      strg.push_back(static_cast< uint8_t >(value >> shift));
+    }
+  };
+  uint32_t dataLength = 4 * static_cast< uint32_t >(texts.size());
+  for (const std::string_view text : texts) {
+    dataLength += 2 * static_cast< uint32_t >(text.size() + 1);
+  }
+  put32(0); // version
+  put32(0);
+  put32(1); // languages
+  put32(static_cast< uint32_t >(texts.size())); // strings
+  strg.insert(strg.end(), {'E', 'N', 'G', 'L'});
+  put32(0);          // the language's data, from the end of the language table
+  put32(dataLength); // the data's length
+  uint32_t offset = 4 * static_cast< uint32_t >(texts.size());
+  for (const std::string_view text : texts) {
+    put32(offset); // the string's offset, after the offsets in the data
+    offset += 2 * static_cast< uint32_t >(text.size() + 1);
+  }
+  for (const std::string_view text : texts) {
+    for (const char c : text) {
+      strg.push_back(0);
+      strg.push_back(static_cast< uint8_t >(c));
+    }
+    strg.push_back(0);
+    strg.push_back(0);
+  }
+  return strg;
+}
+
+// The Energy Tank's scan with the Phazon Beam's string table in place of its own. The scan starts
+// with its version, then two unused longs and the string table's id, so only that id changes.
+AssetData BuildPhazonBeamScan() {
+  if (gPhazonBeamScanSource == 0) {
+    Log.error("The Phazon Beam's scan has no Energy Tank scan to copy");
+    return std::nullopt;
+  }
+  AssetData data = ReadGameResource(kSCAN, gPhazonBeamScanSource);
+  if (!data || data->size() < 16) {
+    Log.error("Missing scan {:08X} to build the Phazon Beam's scan from", gPhazonBeamScanSource);
+    return std::nullopt;
+  }
+  for (int i = 0; i < 4; ++i) {
+    (*data)[12 + i] = static_cast< uint8_t >(kPhazonBeamScanText >> (24 - 8 * i));
+  }
+  return data;
+}
+
 } // namespace
 
+void SetPhazonBeamScanSource(unsigned int scan) {
+  gPhazonBeamScanSource = scan;
+}
+
 unsigned int GetPickupAssetType(unsigned int id) {
+  if (id == kPhazonBeamMessage || id == kPhazonBeamScanText) {
+    return kSTRG;
+  }
+  if (id == kPhazonBeamScan) {
+    return kSCAN;
+  }
   const PickupAsset* asset = FindPickupAsset(id);
   return asset != nullptr ? asset->type : 0;
 }
 
 AssetData BuildPickupAsset(unsigned int id) {
+  if (id == kPhazonBeamMessage) {
+    return BuildStringTable({kPhazonBeamText});
+  }
+  if (id == kPhazonBeamScanText) {
+    return BuildStringTable({kPhazonBeamName, kPhazonBeamName, kPhazonBeamDescription});
+  }
+  if (id == kPhazonBeamScan) {
+    return BuildPhazonBeamScan();
+  }
   const PickupAsset* asset = FindPickupAsset(id);
   if (asset == nullptr) {
     return std::nullopt;

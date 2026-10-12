@@ -28,6 +28,12 @@ void CScriptHUDMemo::AcceptScriptMsg(EScriptObjectMessage msg, TUniqueId uid, CS
   case kSM_SetToZero:
 #if defined(TARGET_PC)
     if (GetActive() && mgr.GetWorld() != nullptr) {
+      unsigned int message = 0;
+      if (metaforce::randomizer::GetPausedMemoOverride(mgr.GetWorld()->GetWorldAssetId(),
+                                                       GetEditorId().Value(), message)) {
+        mgr.ShowPausedHUDMemo(message, mParms.GetDisplayTime());
+        break;
+      }
       if (const wchar_t* text = metaforce::randomizer::GetHudMemoOverride(
               mgr.GetWorld()->GetWorldAssetId(), GetEditorId().Value())) {
         CSamusHud::DisplayHudMemo(rstl::wstring_l(text),
