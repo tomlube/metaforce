@@ -41,20 +41,33 @@ CAssetId FontId() {
   return tag != nullptr ? tag->GetId() : kInvalidAssetId;
 }
 
-} // namespace
-
-void Show() {
+// Starts a note with no text yet. False when there's no font to draw it with.
+bool Start() {
   const CAssetId font = FontId();
   if (font == kInvalidAssetId || gpSimplePool == nullptr || gpTweakGuiColors == nullptr) {
-    return;
+    return false;
   }
   sText = std::make_unique< CGuiTextSupport >(
       font, CGuiTextProperties(false, true, kJustification_Left, kVerticalJustification_Bottom),
       gpTweakGuiColors->GetHudMessageFill(), gpTweakGuiColors->GetHudMessageOutline(),
       CColor::White(), kBlockWidth, kBlockHeight, gpSimplePool);
-  sText->SetText(rstl::string("Saved"));
   sTime = 0.f;
   sLoaded = false;
+  return true;
+}
+
+} // namespace
+
+void Show() {
+  if (Start()) {
+    sText->SetText(rstl::string("Saved"));
+  }
+}
+
+void ShowText(const wchar_t* text) {
+  if (Start()) {
+    sText->SetText(rstl::wstring(text));
+  }
 }
 
 void Update(float dt) {

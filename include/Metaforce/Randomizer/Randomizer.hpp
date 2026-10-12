@@ -98,6 +98,11 @@ inline constexpr int kMapDrawDistanceDefault = 15;
 int GetMapDrawDistance();
 void SetMapDrawDistance(int rooms);
 
+// Room Names: in a randomized game, a room's name is shown for a few seconds the first time it's
+// entered in a save. Off by default.
+bool GetRoomNames();
+void SetRoomNames(bool enabled);
+
 // Autosave: in a randomized game, saves to the game's slot after a pickup, on the first frame
 // the game could be saved from the save screen, Samus is on the ground and she hasn't lost energy
 // for a moment. Major Only saves after upgrades, Energy Tanks and artifacts; All Pickups after

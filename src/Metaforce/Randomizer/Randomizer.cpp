@@ -11,6 +11,9 @@
 #include "Metaforce/Warp.hpp"
 
 #include "Kyoto/Audio/CSfxManager.hpp"
+#include "Kyoto/CSimplePool.hpp"
+#include "Kyoto/TToken.hpp"
+#include "Kyoto/Text/CStringTable.hpp"
 #include "Kyoto/Math/CRelAngle.hpp"
 #include "Kyoto/Math/CTransform4f.hpp"
 #include "MetroidPrime/CEntityInfo.hpp"
@@ -174,6 +177,7 @@ struct Session {
   int mapLayout = kMapLayoutConnected;
   int mapDrawDistance = kMapDrawDistanceDefault;
   int autosave = kAutosaveAuto;
+  bool roomNames = false;
   // Whether each shortcut chord was held on the last input seen, so holding one acts once.
   bool quickReloadHeld = false;
   bool quickSaveHeld = false;
@@ -257,6 +261,7 @@ void SaveSession() {
       {"map_layout", S().mapLayout},
       {"map_draw_rooms", S().mapDrawDistance},
       {"autosave", S().autosave},
+      {"room_names", S().roomNames},
   };
   std::error_code ec;
   fs::create_directories(S().root, ec);
@@ -284,6 +289,7 @@ void LoadSession() {
   S().mapDrawDistance = std::max(root.value("map_draw_rooms", kMapDrawDistanceDefault), 0);
   S().autosave = std::clamp(root.value("autosave", static_cast< int >(kAutosaveAuto)),
                             kAutosaveAuto, kAutosaveAll);
+  S().roomNames = root.value("room_names", false);
   if (root.contains("slots") && root["slots"].is_object()) {
     S().slots = root["slots"].get< std::map< std::string, std::string > >();
   }
@@ -776,6 +782,13 @@ void SetQuickSave(bool enabled) {
   SaveSession();
 }
 
+bool GetRoomNames() { return S().roomNames; }
+
+void SetRoomNames(bool enabled) {
+  S().roomNames = enabled;
+  SaveSession();
+}
+
 bool GetItemWarp() { return S().itemWarp; }
 
 void SetItemWarp(bool enabled) {
@@ -1219,6 +1232,18 @@ void RestoreVisitedAreas(CStateManager& mgr) {
 }
 } // namespace
 
+namespace {
+// The room's name as the map shows it: the first string of its string table.
+void ShowRoomName(const CWorld& world, TAreaId area) {
+  const CAssetId strg = world.IGetAreaAlways(area)->IGetStringTableAssetId();
+  if (strg == kInvalidAssetId) {
+    return;
+  }
+  TToken< CStringTable > table(gpSimplePool->GetObj(SObjectTag('STRG', strg)));
+  save_indicator::ShowText(table->GetString(0));
+}
+} // namespace
+
 void OnAreaVisited(CStateManager& mgr, int area) {
   auto& s = S();
   const CWorld* world = mgr.GetWorld();
@@ -1227,8 +1252,12 @@ void OnAreaVisited(CStateManager& mgr, int area) {
     return;
   }
   SetAreaVisited(mgr, TAreaId(area));
+  // Only the first visit in this save, which is when the name is new to the player.
   if (s.visitedAreas.insert(world->GetAreaAlways(TAreaId(area)).GetAreaAssetId()).second) {
     SaveTraversed();
+    if (s.roomNames) {
+      ShowRoomName(*world, TAreaId(area));
+    }
   }
 }
 

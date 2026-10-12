@@ -343,11 +343,33 @@ void RandomizerWindow::build_seeds_tab(Rml::Element* content) {
           "last save at once, as if you had died and chosen Continue.<br/><br/>Without a save, "
           "the seed starts over. While this is on, holding R stops Z from opening the map.");
 
+  auto& autosave = leftPane.add_group_button({.text = "Autosave..."});
+  leftPane.register_control(autosave, rightPane, [this](Pane& pane) {
+    pane.clear();
+    add_autosave_panel(pane);
+  });
+
+  auto& roomRando = leftPane.add_group_button({.text = "Room Rando Options..."});
+  leftPane.register_control(roomRando, rightPane, [this](Pane& pane) {
+    pane.clear();
+    add_room_rando_panel(pane);
+  });
+
+  leftPane.add_section("Seeds");
+  auto& seeds = leftPane.add_group_button({.text = "Generated Seeds"});
+  leftPane.register_control(seeds, rightPane, [this](Pane& pane) {
+    pane.clear();
+    add_seed_list(pane);
+  });
+}
+
+// The help strip sits under the selector, where the help for the focused control shows.
+void RandomizerWindow::add_autosave_panel(Pane& pane) {
   std::vector< DropdownButton::Option > autosaveModes;
   for (const char* name : rando::kAutosaveNames) {
     autosaveModes.push_back({name});
   }
-  auto& autosave = leftPane.add_child< DropdownButton >(DropdownButton::Props{
+  auto& autosave = pane.add_child< DropdownButton >(DropdownButton::Props{
       .key = "Autosave",
       .options = std::move(autosaveModes),
       .getValue = [] { return rando::GetAutosave(); },
@@ -355,7 +377,8 @@ void RandomizerWindow::build_seeds_tab(Rml::Element* content) {
       .isDisabled = [] { return rando::GetItemWarp(); },
       .isModified = [] { return rando::GetAutosave() != rando::kAutosaveAuto; },
   });
-  SetHelp(leftPane, rightPane, autosave,
+  auto& helpPane = pane.add_child< Pane >(Pane::Type::Uncontrolled);
+  SetHelp(pane, helpPane, autosave,
           "Saves a randomized game to its slot after you collect a pickup, without the save "
           "screen. Loading the save puts you back on that spot.<br/><br/>The save waits until "
           "the game could be saved, Samus is on the ground and she hasn't lost energy for two "
@@ -366,38 +389,28 @@ void RandomizerWindow::build_seeds_tab(Rml::Element* content) {
           "autosave replaces is kept; see <b>Autosave Backups</b>.<br/><br/>Off while <b>Item "
           "Warp</b> is on.");
 
-  auto& backups = leftPane.add_group_button({.text = "Autosave Backups"});
-  leftPane.register_control(backups, rightPane, [this](Pane& pane) {
-    pane.clear();
-    add_backup_list(pane);
-  });
+  pane.add_section("Autosave Backups");
+  add_backup_list(pane);
+}
 
+// As in the Autosave panel, the selectors come first and the help strip sits under them.
+void RandomizerWindow::add_room_rando_panel(Pane& pane) {
   std::vector< DropdownButton::Option > mapLayouts;
   for (const char* name : rando::kMapLayoutNames) {
     mapLayouts.push_back({name});
   }
-  auto& mapLayout = leftPane.add_child< DropdownButton >(DropdownButton::Props{
+  auto& mapLayout = pane.add_child< DropdownButton >(DropdownButton::Props{
       .key = "Room Rando Map",
       .options = std::move(mapLayouts),
       .getValue = [] { return rando::GetMapLayout(); },
       .setValue = [](int v) { rando::SetMapLayout(v); },
       .isModified = [] { return rando::GetMapLayout() != rando::kMapLayoutConnected; },
   });
-  SetHelp(leftPane, rightPane, mapLayout,
-          "How the map is drawn when the room randomizer moved doors.<br/><br/><b>Vanilla</b> "
-          "draws every room where it is in the game, so the room behind a moved door is "
-          "somewhere else on the map.<br/><br/><b>Tidy</b> lays the map out again so rooms meet "
-          "at the doors between them, the doors you went through first. Rooms that fit by none "
-          "of their doors are drawn apart, next to one of them.<br/><br/><b>Connected</b> joins "
-          "every room by one of its doors, even where that draws it over other rooms; where "
-          "rooms take up the same space, the map outlines it.<br/><br/>Doors closing a loop of "
-          "moved doors can't meet either way.");
-
   std::vector< DropdownButton::Option > drawDistances;
   for (const char* name : rando::kMapDrawDistanceNames) {
     drawDistances.push_back({name});
   }
-  auto& drawDistance = leftPane.add_child< DropdownButton >(DropdownButton::Props{
+  auto& drawDistance = pane.add_child< DropdownButton >(DropdownButton::Props{
       .key = "Map Draw Distance",
       .options = std::move(drawDistances),
       .getValue =
@@ -409,7 +422,28 @@ void RandomizerWindow::build_seeds_tab(Rml::Element* content) {
       .setValue = [](int v) { rando::SetMapDrawDistance(rando::kMapDrawDistances[v]); },
       .isModified = [] { return rando::GetMapDrawDistance() != rando::kMapDrawDistanceDefault; },
   });
-  SetHelp(leftPane, rightPane, drawDistance,
+  auto& roomNames = pane.add_child< BoolButton >(BoolButton::Props{
+      .key = "Room Names",
+      .getValue = [] { return rando::GetRoomNames(); },
+      .setValue = [](bool v) { rando::SetRoomNames(v); },
+      .isModified = [] { return rando::GetRoomNames(); },
+  });
+
+  auto& helpPane = pane.add_child< Pane >(Pane::Type::Uncontrolled);
+  SetHelp(pane, helpPane, roomNames,
+          "In a randomized game, shows the name of a room in the bottom left corner for a few "
+          "seconds the first time you enter it. Handy for newer players who don't want to constantly check the map.<br/><br/>Rooms "
+          "you've already entered in that save don't show up again.");
+  SetHelp(pane, helpPane, mapLayout,
+          "How the map is drawn when the room randomizer moved doors.<br/><br/><b>Vanilla</b> "
+          "draws every room where it is in the game, so the room behind a moved door is "
+          "somewhere else on the map.<br/><br/><b>Tidy</b> lays the map out again so rooms meet "
+          "at the doors between them, the doors you went through first. Rooms that fit by none "
+          "of their doors are drawn apart, next to one of them.<br/><br/><b>Connected</b> joins "
+          "every room by one of its doors, even where that draws it over other rooms; where "
+          "rooms take up the same space, the map outlines it.<br/><br/>Doors closing a loop of "
+          "moved doors can't meet either way.");
+  SetHelp(pane, helpPane, drawDistance,
           "How many rooms around the selected room the map screen draws, nearest first by "
           "doors. The farthest of them fade out and every room past them is drawn as an "
           "outline only. Moving around the map brings the rooms around the new selection "
@@ -417,13 +451,6 @@ void RandomizerWindow::build_seeds_tab(Rml::Element* content) {
           "PCs.<br/><br/>Mixed regions put every room of "
           "the game on one map. Drawing them all at once will be very slow on most PCs. "
           "<b>Whole World</b> does it anyway.");
-
-  leftPane.add_section("Seeds");
-  auto& seeds = leftPane.add_group_button({.text = "Generated Seeds"});
-  leftPane.register_control(seeds, rightPane, [this](Pane& pane) {
-    pane.clear();
-    add_seed_list(pane);
-  });
 }
 
 void RandomizerWindow::add_seed_list(Pane& pane) {

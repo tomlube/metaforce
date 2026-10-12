@@ -5,8 +5,11 @@
 
 namespace metaforce::save_indicator {
 
-// Shows the note for a few seconds.
+// Shows the "Saved" note for a few seconds.
 void Show();
+
+// Shows a note with the given text for a few seconds, such as a room's name.
+void ShowText(const wchar_t* text);
 
 // CInGameGuiManager::Update: counts down while the note is up.
 void Update(float dt);

@@ -33,6 +33,8 @@ private:
   std::vector< borealis::ui::List::Item > start_list_items() const;
   void on_start_pressed(uint64_t key);
   bool is_start_selected(uint64_t key) const;
+  void add_autosave_panel(borealis::ui::Pane& pane);
+  void add_room_rando_panel(borealis::ui::Pane& pane);
   void add_seed_list(borealis::ui::Pane& pane);
   void refresh_seeds();
   void show_seed_actions(const std::string& hash);
