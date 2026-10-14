@@ -2,6 +2,9 @@
 
 #include "Metaforce/Randomizer/Generator.hpp"
 #include "Metaforce/Randomizer/RoomRando.hpp"
+#include "Metaforce/Randomizer/ShareCode.hpp"
+
+#include <SDL3/SDL_clipboard.h>
 
 #include <borealis/ui/bool_button.hpp>
 
@@ -177,6 +180,66 @@ Rml::String PoolRml() {
   return fmt::format("{} pickups for {} locations.", count, kLocations);
 }
 
+void SetRml(Rml::Element* element, const Rml::String& rml) {
+  if (element != nullptr) {
+    element->SetInnerRML(rml);
+  }
+}
+
+// Long codes have no spaces to wrap at.
+Rml::String ShareCodeRml(const std::string& code) {
+  return fmt::format("<span style=\"word-break: break-all;\"><b>{}</b></span>", EscapeRml(code));
+}
+
+// What a share code sets, shown before it's imported.
+Rml::String ShareSummaryRml(const rando::Database& db, const rando::PickupDatabase& pickups,
+                            const rando::Settings& settings) {
+  Rml::String start = "Landing Site (Tallon Overworld)";
+  if (settings.startingLocation == rando::kRandomStartingLocation) {
+    start = "Random";
+  } else if (!settings.startingLocation.empty()) {
+    for (const auto& [key, name] : rando::StartingLocations(db)) {
+      if (key == settings.startingLocation) {
+        start = EscapeRml(name);
+        break;
+      }
+    }
+  }
+
+  int changedPickups = 0;
+  for (const auto& def : pickups.standard) {
+    const auto& state = settings.standard.at(def.name);
+    changedPickups += state.shuffled != def.defaultShuffled ||
+                      state.starting != def.defaultStarting || state.ammo != def.defaultAmmo;
+  }
+  for (const auto& def : pickups.ammo) {
+    const auto& state = settings.ammo.at(def.name);
+    changedPickups += state.count != def.defaultCount || state.ammo != def.defaultAmmo;
+  }
+
+  Rml::String rml = fmt::format(
+      "Seed string: {}<br/>"
+      "Starting location: <b>{}</b><br/>"
+      "Trick level: <b>{}</b>  ·  Damage: <b>{}</b><br/>"
+      "Chozo Artifacts: <b>{}</b><br/>"
+      "Room randomizer: <b>{}</b><br/>"
+      "Door locks: <b>{}</b><br/>"
+      "Item pool: <b>{}</b>",
+      settings.seedString.empty()
+          ? Rml::String("<b>none</b> (every seed made from it is different)")
+          : fmt::format("<b>{}</b>", EscapeRml(settings.seedString)),
+      start, rando::kTrickLevelNames[settings.trickLevel],
+      rando::kDamageStrictnessNames[settings.damageStrictness], settings.artifactTarget,
+      rando::kRoomRandoNames[settings.roomRando], rando::kDoorLockModeNames[settings.doorLockMode],
+      changedPickups == 0 ? Rml::String("Starter Preset")
+                          : fmt::format("{} change{} from the Starter Preset", changedPickups,
+                                        changedPickups == 1 ? "" : "s"));
+  if (settings.logicDisabled) {
+    rml += "<br/><icon class=\"warning\"/> <b>Fully Disable Logic</b> is on.";
+  }
+  return rml;
+}
+
 } // namespace
 
 RandomizerWindow::RandomizerWindow() {
@@ -227,6 +290,7 @@ RandomizerWindow::RandomizerWindow() {
 
 void RandomizerWindow::reset_tab_elements() {
   mStatusText = nullptr;
+  mShareText = nullptr;
   mArmedText = nullptr;
   mArmedButton = nullptr;
   mPoolText = nullptr;
@@ -302,7 +366,14 @@ void RandomizerWindow::build_seeds_tab(Rml::Element* content) {
       .key = "Seed String",
       .getValue = [&settings] { return settings.seedString; },
       .setValue =
-          [&settings](Rml::String value) {
+          [this, &settings](Rml::String value) {
+            if (rando::LooksLikeShareCode(value)) {
+              play_nav_sound(NavSound::Warning);
+              SetRml(mShareText, "<icon class=\"warning\"/> That's a share code, not a seed "
+                                 "string. Copy the whole code and press <b>Paste Share "
+                                 "Code</b> instead.");
+              return;
+            }
             settings.seedString = std::move(value);
             Save();
           },
@@ -339,6 +410,53 @@ void RandomizerWindow::build_seeds_tab(Rml::Element* content) {
 
   mStatusText = leftPane.add_rml(GenerationStatusRml());
   mShownState = rando::GetGenerationStatus().state;
+
+  leftPane.add_section("Share");
+  auto& copyCode = leftPane.add_button("Copy Share Code");
+  copyCode.on_pressed([this] { copy_share_code(); });
+  leftPane.register_control(copyCode, rightPane, [](Pane& pane) {
+    pane.clear();
+    Rml::String rml =
+        "Copies a share code for your settings to the clipboard. Whoever pastes it with "
+        "<b>Paste Share Code</b> gets the same settings and seed string, so they generate the "
+        "same seed as you. Handy for races.<br/><br/>The code covers everything that changes "
+        "the seed: the <b>Logic</b>, <b>Item Pool</b>, <b>Rooms</b> and <b>Door Locks</b> "
+        "tabs and <b>Fully Disable Logic</b>. Your individual QoL options are kept untouched.";
+    if (rando::GetSettings().seedString.empty()) {
+      rml += "<br/><br/><icon class=\"warning\"/> Your seed string is empty, so the code shares "
+             "settings only and every seed made from it is different.";
+    }
+    if (rando::GetPickupDatabase() != nullptr) {
+      rml += "<br/><br/>Your share code:<br/>" +
+             ShareCodeRml(rando::EncodeShareCode(*rando::GetDatabase(),
+                                                 *rando::GetPickupDatabase(),
+                                                 rando::GetSettings()));
+    }
+    pane.add_rml(rml);
+  });
+
+  auto& pasteCode = leftPane.add_button("Paste Share Code");
+  pasteCode.on_pressed([this] {
+    char* text = SDL_GetClipboardText();
+    const std::string code = text != nullptr ? text : "";
+    SDL_free(text);
+    if (code.empty()) {
+      play_nav_sound(NavSound::Warning);
+      SetRml(mShareText, "<icon class=\"warning\"/> The clipboard is empty. Copy a share code "
+                         "first.");
+      return;
+    }
+    play_nav_sound(NavSound::Click);
+    import_share_code(code);
+  });
+  SetHelp(leftPane, rightPane, pasteCode,
+          "Reads a share code from the clipboard and shows what it sets. Nothing changes "
+          "until you choose <b>Import</b>.<br/><br/>Importing replaces your seed string and "
+          "every setting that changes the seed. <b>Import and Generate</b> also generates the "
+          "seed right away.<br/><br/>Codes only work between copies of Metaforce with the same "
+          "randomizer data.");
+
+  mShareText = leftPane.add_rml("Trade settings with a share code.");
 
   leftPane.add_section("Seeds");
   auto& seeds = leftPane.add_group_button({.text = "Generated Seeds"});
@@ -719,6 +837,108 @@ void RandomizerWindow::show_message(const Rml::String& title, const Rml::String&
       .onDismiss = dismiss,
       .variant = danger ? "danger" : "",
       .icon = danger ? "error" : "download-done",
+  }));
+}
+
+void RandomizerWindow::copy_share_code() {
+  const rando::PickupDatabase* pickups = rando::GetPickupDatabase();
+  if (pickups == nullptr) {
+    return;
+  }
+  const auto& settings = rando::GetSettings();
+  const std::string code = rando::EncodeShareCode(*rando::GetDatabase(), *pickups, settings);
+  if (!SDL_SetClipboardText(code.c_str())) {
+    // Show the code anyway, so it can still be written down.
+    play_nav_sound(NavSound::Warning);
+    show_message("Share Code",
+                 "Couldn't copy to the clipboard. Your share code is:<br/><br/>" +
+                     ShareCodeRml(code),
+                 true);
+    return;
+  }
+  play_nav_sound(NavSound::ItemEnable);
+  SetRml(mShareText,
+         settings.seedString.empty()
+             ? Rml::String("<icon class=\"download-done\"/> Share code copied. Your seed string "
+                           "is empty, so it shares settings only.")
+             : fmt::format("<icon class=\"download-done\"/> Share code copied, with seed string "
+                           "<b>{}</b>.",
+                           EscapeRml(settings.seedString)));
+}
+
+void RandomizerWindow::import_share_code(const std::string& code) {
+  const rando::Database* db = rando::GetDatabase();
+  const rando::PickupDatabase* pickups = rando::GetPickupDatabase();
+  if (db == nullptr || pickups == nullptr) {
+    return;
+  }
+  std::string error;
+  auto decoded = rando::DecodeShareCode(*db, *pickups, code, error);
+  if (!decoded) {
+    SetRml(mShareText, "<icon class=\"warning\"/> That share code couldn't be read.");
+    show_message("Share Code", EscapeRml(error), true);
+    return;
+  }
+
+  Rml::String body = ShareSummaryRml(*db, *pickups, decoded->settings);
+  if (!decoded->exact) {
+    body += "<br/><br/><icon class=\"warning\"/> Some of the shared settings couldn't be put in "
+            "the code exactly, so seeds will differ from the sharer's.";
+  }
+  const auto beam = decoded->settings.standard.find("Phazon Beam");
+  const bool usesBeam = beam != decoded->settings.standard.end() &&
+                        (beam->second.shuffled > 0 || beam->second.starting > 0);
+  if (rando::GetTournament() && (decoded->settings.logicDisabled || usesBeam)) {
+    body += "<br/><br/><icon class=\"warning\"/> <b>Tournament Mode</b> turns logic back on and "
+            "removes the Phazon Beam, so seeds will differ from the sharer's.";
+  }
+  body += "<br/><br/>Importing replaces your current settings.";
+
+  const auto dismiss = [](Modal& modal) { modal.pop(); };
+  const auto apply = [this, settings = decoded->settings](bool generate) {
+    rando::GetSettings() = settings;
+    rando::ApplyTournamentSettings(rando::GetSettings());
+    rando::SaveSettings();
+    play_nav_sound(NavSound::ItemEnable);
+    SetRml(mShareText, "<icon class=\"download-done\"/> Share code imported.");
+    if (generate && rando::GetGenerationStatus().state != rando::GenerationState::Running) {
+      rando::AcknowledgeGeneration();
+      rando::StartGeneration();
+    }
+  };
+  push(std::make_unique< Modal >(Modal::Props{
+      .title = "Import Share Code",
+      .bodyRml = body,
+      .actions =
+          {
+              ModalAction{
+                  .label = "Import and Generate",
+                  .onPressed =
+                      [apply, dismiss](Modal& modal) {
+                        apply(true);
+                        dismiss(modal);
+                      },
+              },
+              ModalAction{
+                  .label = "Import",
+                  .onPressed =
+                      [apply, dismiss](Modal& modal) {
+                        apply(false);
+                        dismiss(modal);
+                      },
+              },
+              ModalAction{
+                  .label = "Cancel",
+                  .onPressed =
+                      [dismiss](Modal& modal) {
+                        play_nav_sound(NavSound::WindowClose);
+                        dismiss(modal);
+                      },
+              },
+          },
+      .onDismiss = dismiss,
+      .icon = "controller",
+      .isVertical = true,
   }));
 }
 

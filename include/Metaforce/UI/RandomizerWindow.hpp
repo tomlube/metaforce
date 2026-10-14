@@ -44,8 +44,11 @@ private:
   void add_backup_list(borealis::ui::Pane& pane);
   void show_backup_actions(const randomizer::AutosaveBackup& backup);
   void show_message(const Rml::String& title, const Rml::String& body, bool danger = false);
+  void copy_share_code();
+  void import_share_code(const std::string& code);
 
   Rml::Element* mStatusText = nullptr;
+  Rml::Element* mShareText = nullptr;
   Rml::Element* mArmedText = nullptr;
   borealis::ui::Button* mArmedButton = nullptr;
   Rml::Element* mPoolText = nullptr;
