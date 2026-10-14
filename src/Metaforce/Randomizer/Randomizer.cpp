@@ -1,5 +1,6 @@
 #include "Metaforce/Randomizer/Randomizer.hpp"
 
+#include "Metaforce/Cheats.hpp"
 #include "Metaforce/MergedWorld.hpp"
 #include "Metaforce/Randomizer/CrossWorldDoors.hpp"
 #include "Metaforce/Randomizer/CustomAssets.hpp"
@@ -207,9 +208,10 @@ struct Session {
   bool settingsLoaded = false;
   std::string armedSeed;
   std::map< std::string, std::string > slots; // save slot key -> seed hash
+  bool tournament = false;
   bool quickReload = true;
   bool quickSave = true;
-  bool warpVisitedOnly = true;
+  int mapWarp = kMapWarpVisited;
   bool itemWarp = false;
   bool itemWarpAll = false;
   int mapLayout = kMapLayoutConnected;
@@ -301,9 +303,10 @@ void SaveSession() {
   const json root{
       {"armed", S().armedSeed},
       {"slots", S().slots},
+      {"tournament", S().tournament},
       {"quick_reload", S().quickReload},
       {"quick_save", S().quickSave},
-      {"warp_visited_only", S().warpVisitedOnly},
+      {"map_warp", S().mapWarp},
       {"item_warp", S().itemWarp},
       {"item_warp_all", S().itemWarpAll},
       {"map_layout", S().mapLayout},
@@ -329,9 +332,12 @@ void LoadSession() {
     return;
   }
   S().armedSeed = root.value("armed", "");
+  S().tournament = root.value("tournament", false);
   S().quickReload = root.value("quick_reload", true);
   S().quickSave = root.value("quick_save", true);
-  S().warpVisitedOnly = root.value("warp_visited_only", true);
+  // Sessions from before Allow Warping on Map kept only the visited-rooms switch.
+  const int oldMapWarp = root.value("warp_visited_only", true) ? kMapWarpVisited : kMapWarpOn;
+  S().mapWarp = std::clamp(root.value("map_warp", oldMapWarp), kMapWarpOn, kMapWarpOff);
   S().itemWarp = root.value("item_warp", false);
   S().itemWarpAll = root.value("item_warp_all", false);
   S().mapLayout = std::clamp(root.value("map_layout", static_cast< int >(kMapLayoutConnected)),
@@ -819,6 +825,7 @@ void SaveSettings() {
 void ResetSettings() {
   if (GetDatabase()) {
     S().settings.ResetToDefaults(S().pickups);
+    ApplyTournamentSettings(S().settings);
     SaveSettings();
   }
 }
@@ -904,24 +911,52 @@ void SetArmedSeed(const std::string& hash) {
 
 const Seed* GetActiveSeed() { return S().active ? &*S().active : nullptr; }
 
-bool GetQuickReload() { return S().quickReload; }
+bool GetTournament() { return S().tournament; }
+
+void SetTournament(bool enabled) {
+  auto& s = S();
+  s.tournament = enabled;
+  if (enabled) {
+    cheats::GetToggles() = {};
+    s.itemWarpTarget.reset();
+    ApplyTournamentSettings(GetSettings());
+    SaveSettings();
+  }
+  SaveSession();
+}
+
+void ApplyTournamentSettings(Settings& settings) {
+  if (!S().tournament) {
+    return;
+  }
+  settings.logicDisabled = false;
+  const auto beam = settings.standard.find("Phazon Beam");
+  if (beam != settings.standard.end()) {
+    beam->second.shuffled = 0;
+    beam->second.starting = 0;
+  }
+}
+
+bool GetQuickReload() { return S().quickReload && !S().tournament; }
 
 void SetQuickReload(bool enabled) {
   S().quickReload = enabled;
   SaveSession();
 }
 
-bool GetQuickSave() { return S().quickSave; }
+bool GetQuickSave() { return S().quickSave && !S().tournament; }
 
 void SetQuickSave(bool enabled) {
   S().quickSave = enabled;
   SaveSession();
 }
 
-bool GetWarpVisitedOnly() { return S().warpVisitedOnly; }
+int GetMapWarp() {
+  return S().tournament && S().mapWarp == kMapWarpOn ? kMapWarpVisited : S().mapWarp;
+}
 
-void SetWarpVisitedOnly(bool enabled) {
-  S().warpVisitedOnly = enabled;
+void SetMapWarp(int mode) {
+  S().mapWarp = std::clamp(mode, S().tournament ? kMapWarpVisited : kMapWarpOn, kMapWarpOff);
   SaveSession();
 }
 
@@ -939,7 +974,7 @@ void SetRegionTint(int percent) {
   SaveSession();
 }
 
-bool GetItemWarp() { return S().itemWarp; }
+bool GetItemWarp() { return S().itemWarp && !S().tournament; }
 
 void SetItemWarp(bool enabled) {
   S().itemWarp = enabled;
@@ -974,8 +1009,13 @@ void SetAutosave(int mode) {
   SaveSession();
 }
 
+int GetTournamentAutosave(bool roomRando) { return roomRando ? kAutosaveAll : kAutosaveMajor; }
+
 int GetEffectiveAutosave() {
   const auto& s = S();
+  if (s.tournament) {
+    return s.active ? GetTournamentAutosave(!s.active->docks.empty()) : kAutosaveOff;
+  }
   // Item Warp takes the pickup's room away from under the save, so autosaves would make it easy.
   if (s.itemWarp) {
     return kAutosaveOff;
@@ -1055,6 +1095,7 @@ bool StartGeneration() {
   JoinWorker();
 
   Settings settings = s.settings;
+  ApplyTournamentSettings(settings);
   if (settings.seedString.empty()) {
     settings.seedString = RandomSeedString();
   }
@@ -1143,13 +1184,13 @@ bool OnShortcutInput(bool r, bool z, bool dpadLeft, bool dpadRight) {
     return false;
   }
 
-  if (reloadCompleted && s.quickReload) {
+  if (reloadCompleted && GetQuickReload()) {
     Log.info("Quick reload: reloading the last save");
     ReloadLastSave();
     return true;
   }
 
-  if (saveCompleted && s.quickSave) {
+  if (saveCompleted && GetQuickSave()) {
     const std::string reason = save_anywhere::WhyCantSave();
     if (!reason.empty()) {
       Log.info("Quick save: can't save now: {}", reason);
@@ -1217,7 +1258,7 @@ bool IsDoorTraversed(unsigned int worldId, unsigned int editorId) {
 }
 
 bool ShortcutsHoldMap(bool r) {
-  return r && S().active && (S().quickReload || S().quickSave);
+  return r && S().active && (GetQuickReload() || GetQuickSave());
 }
 
 bool TakeQuickReload() {
@@ -1362,11 +1403,12 @@ static const warp::Area* FindRoom(unsigned int mrea, const warp::World*& world) 
 bool CanWarpToRoom(unsigned int mrea) {
   uint32_t curMlvl = 0;
   int curArea = 0;
-  if (!S().active.has_value() || !warp::CanWarp()) {
+  const int mapWarp = GetMapWarp();
+  if (!S().active.has_value() || mapWarp == kMapWarpOff || !warp::CanWarp()) {
     return false;
   }
-  // Only rooms the player has been in this save, unless Warp to Visited Rooms Only is off.
-  if (S().warpVisitedOnly && S().visitedAreas.count(mrea) == 0) {
+  // Only rooms the player has been in this save, unless Allow Warping on Map is On.
+  if (mapWarp == kMapWarpVisited && S().visitedAreas.count(mrea) == 0) {
     return false;
   }
   const warp::World* world = nullptr;
@@ -1894,7 +1936,7 @@ void OnPickupCollected(CStateManager& mgr, int itemType, unsigned int editorId) 
   int area = 0;
   // By default the pickups that matter for progress; refills and drops only with Refills and Drops.
   const bool wanted = s.itemWarpAll || IsItemWarpDefault(mgr, itemType, editorId);
-  if (s.itemWarp && wanted && warp::GetCurrentLocation(worldId, area)) {
+  if (GetItemWarp() && wanted && warp::GetCurrentLocation(worldId, area)) {
     s.itemWarpTarget = ChooseItemWarp(worldId, editorId);
     s.itemWarpTime = kItemWarpDelay;
   }
@@ -1946,7 +1988,7 @@ void UpdateItemWarp(float dt) {
   if (!s.itemWarpTarget) {
     return;
   }
-  if (!s.itemWarp || !s.active) {
+  if (!GetItemWarp() || !s.active) {
     s.itemWarpTarget.reset();
     return;
   }

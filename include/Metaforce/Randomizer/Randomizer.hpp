@@ -58,6 +58,12 @@ void MarkDockTraversed(unsigned int areaAssetId, int dock);
 // facing `yaw` (radians about Z, 0 facing +Y). Autosaves made in the room load them there.
 void MarkRoomEntered(unsigned int areaAssetId, int dock, bool morphed, float yaw);
 
+// Tournament mode: locks out certain settings for tournament logic.
+bool GetTournament();
+void SetTournament(bool enabled);
+// Forces the seed settings tournament mode locks: the Phazon Beam removed and logic on.
+void ApplyTournamentSettings(Settings& settings);
+
 // Whether R + Z + D-pad Left reloads the last save in a randomized game. On by default.
 bool GetQuickReload();
 void SetQuickReload(bool enabled);
@@ -66,9 +72,13 @@ void SetQuickReload(bool enabled);
 bool GetQuickSave();
 void SetQuickSave(bool enabled);
 
-// Whether holding A on the map only warps to rooms already entered in that save. On by default.
-bool GetWarpVisitedOnly();
-void SetWarpVisitedOnly(bool enabled);
+// Allow Warping on Map: whether holding A on the map warps to the highlighted room.
+inline constexpr const char* kMapWarpNames[] = {"On", "Visited Only", "Off"};
+inline constexpr int kMapWarpOn = 0;
+inline constexpr int kMapWarpVisited = 1;
+inline constexpr int kMapWarpOff = 2;
+int GetMapWarp();
+void SetMapWarp(int mode);
 
 // Item Warp: in a randomized game, collecting a pickup takes Samus to a room the seed picks for
 // that pickup, a moment later. The room is the same every time for the same seed and pickup. Off
@@ -126,6 +136,9 @@ int GetAutosave();
 void SetAutosave(int mode);
 // The mode the game being played autosaves with: Auto resolved for its seed. Off without one.
 int GetEffectiveAutosave();
+// The mode tournament mode locks autosaves to for a seed: All Pickups with the room randomizer,
+// Major Only without.
+int GetTournamentAutosave(bool roomRando);
 
 // The save an autosave replaced, kept so a bad autosave (say, in a room there's no way out of)
 // can be undone. The last few are kept for each save slot.

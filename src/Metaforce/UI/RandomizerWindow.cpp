@@ -7,6 +7,7 @@
 
 #include <borealis/ui/dropdown_button.hpp>
 #include <borealis/ui/list.hpp>
+#include <borealis/ui/menu_bar.hpp>
 #include <borealis/ui/modal.hpp>
 #include <borealis/ui/number_button.hpp>
 #include <borealis/ui/pane.hpp>
@@ -88,7 +89,8 @@ NumberButton& AddNumber(Pane& leftPane, Pane& rightPane, Rml::String key, Rml::S
 DropdownButton& AddDropdown(Pane& leftPane, Pane& rightPane, Rml::String key, Rml::String help,
                             std::vector< DropdownButton::Option > options,
                             std::function< int() > get, std::function< void(int) > set,
-                            std::function< bool() > isModified) {
+                            std::function< bool() > isModified,
+                            std::function< bool() > isDisabled = {}) {
   auto& button = leftPane.add_child< DropdownButton >(DropdownButton::Props{
       .key = std::move(key),
       .options = std::move(options),
@@ -98,6 +100,7 @@ DropdownButton& AddDropdown(Pane& leftPane, Pane& rightPane, Rml::String key, Rm
             set(v);
             Save();
           },
+      .isDisabled = std::move(isDisabled),
       .isModified = std::move(isModified),
   });
   SetHelp(leftPane, rightPane, button, std::move(help));
@@ -188,7 +191,7 @@ RandomizerWindow::RandomizerWindow() {
     return;
   }
 
-  add_tab("Seeds", [this](Rml::Element* content) {
+  add_tab("Seed", [this](Rml::Element* content) {
     reset_tab_elements();
     build_seeds_tab(content);
   });
@@ -215,6 +218,10 @@ RandomizerWindow::RandomizerWindow() {
   add_tab("Item Warp", [this](Rml::Element* content) {
     reset_tab_elements();
     build_item_warp_tab(content);
+  });
+  add_tab("Races", [this](Rml::Element* content) {
+    reset_tab_elements();
+    build_tournament_tab(content);
   });
 }
 
@@ -351,6 +358,7 @@ void RandomizerWindow::build_qol_tab(Rml::Element* content) {
       .key = "Quick Save",
       .getValue = [] { return rando::GetQuickSave(); },
       .setValue = [](bool v) { rando::SetQuickSave(v); },
+      .isDisabled = [] { return rando::GetTournament(); },
       .isModified = [] { return !rando::GetQuickSave(); },
   });
   SetHelp(leftPane, rightPane, quickSave,
@@ -358,29 +366,41 @@ void RandomizerWindow::build_qol_tab(Rml::Element* content) {
           "screen wherever you are. Loading the save puts you back on that spot.<br/><br/>You "
           "can't save while paused, in a cutscene, mid-morph, during the escape, or while dead; "
           "a warning sound plays instead.<br/><br/>While this is on, holding R stops Z from "
-          "opening the map.");
+          "opening the map.<br/><br/>Off while <b>Tournament Mode</b> is on.");
 
   auto& quickReload = leftPane.add_child< BoolButton >(BoolButton::Props{
       .key = "Quick Reload",
       .getValue = [] { return rando::GetQuickReload(); },
       .setValue = [](bool v) { rando::SetQuickReload(v); },
+      .isDisabled = [] { return rando::GetTournament(); },
       .isModified = [] { return !rando::GetQuickReload(); },
   });
   SetHelp(leftPane, rightPane, quickReload,
           "Hold <b>R</b> + <b>Z</b> + <b>D-pad Left</b> during a randomized game to reload your "
           "last save at once, as if you had died and chosen Continue.<br/><br/>Without a save, "
-          "the seed starts over. While this is on, holding R stops Z from opening the map.");
+          "the seed starts over. While this is on, holding R stops Z from opening the map.<br/><br/>"
+          "Off while <b>Tournament Mode</b> is on.");
 
-  auto& warpVisitedOnly = leftPane.add_child< BoolButton >(BoolButton::Props{
-      .key = "Warp to Visited Rooms Only",
-      .getValue = [] { return rando::GetWarpVisitedOnly(); },
-      .setValue = [](bool v) { rando::SetWarpVisitedOnly(v); },
-      .isModified = [] { return !rando::GetWarpVisitedOnly(); },
+  std::vector< DropdownButton::Option > mapWarpModes;
+  for (int mode = 0; mode < static_cast< int >(std::size(rando::kMapWarpNames)); ++mode) {
+    // Tournament Mode doesn't allow warping to rooms not yet entered. Switching tabs rebuilds
+    // this, so it follows the toggle.
+    mapWarpModes.push_back({.text = rando::kMapWarpNames[mode],
+                            .enabled = mode != rando::kMapWarpOn || !rando::GetTournament()});
+  }
+  auto& mapWarp = leftPane.add_child< DropdownButton >(DropdownButton::Props{
+      .key = "Allow Warping on Map",
+      .options = std::move(mapWarpModes),
+      .getValue = [] { return rando::GetMapWarp(); },
+      .setValue = [](int v) { rando::SetMapWarp(v); },
+      .isModified = [] { return rando::GetMapWarp() != rando::kMapWarpVisited; },
   });
-  SetHelp(leftPane, rightPane, warpVisitedOnly,
-          "In a randomized game, holding <b>A</b> on the map warps to the highlighted room. While "
-          "this is on, that only works for rooms you've already entered in that save.<br/><br/>"
-          "Turn it off to warp to any room on the map.");
+  SetHelp(leftPane, rightPane, mapWarp,
+          "In a randomized game, holding <b>A</b> on the map warps to the highlighted room."
+          "<br/><br/><b>On</b> warps to any room on the map. <b>Visited Only</b> warps only to "
+          "rooms you've already entered in that save. <b>Off</b> turns the warp off.<br/><br/>"
+          "<b>On</b> isn't allowed while <b>Tournament Mode</b> is on; it acts as Visited Only. "
+          "Warp to Start is always allowed.");
 
   leftPane.add_section("Autosave & Map");
   auto& autosave = leftPane.add_group_button({.text = "Autosave..."});
@@ -405,22 +425,31 @@ void RandomizerWindow::add_autosave_panel(Pane& pane) {
   auto& autosave = pane.add_child< DropdownButton >(DropdownButton::Props{
       .key = "Autosave",
       .options = std::move(autosaveModes),
-      .getValue = [] { return rando::GetAutosave(); },
+      .getValue =
+          [] {
+            if (!rando::GetTournament()) {
+              return rando::GetAutosave();
+            }
+            const rando::Seed* active = rando::GetActiveSeed();
+            return rando::GetTournamentAutosave(active != nullptr
+                                                    ? !active->docks.empty()
+                                                    : rando::GetSettings().roomRando != 0);
+          },
       .setValue = [](int v) { rando::SetAutosave(v); },
-      .isDisabled = [] { return rando::GetItemWarp(); },
+      .isDisabled = [] { return rando::GetItemWarp() || rando::GetTournament(); },
       .isModified = [] { return rando::GetAutosave() != rando::kAutosaveAuto; },
   });
   auto& helpPane = pane.add_child< Pane >(Pane::Type::Uncontrolled);
   SetHelp(pane, helpPane, autosave,
           "Saves a randomized game to its slot after you collect a pickup, without the save "
           "screen. Loading the save puts you back on that spot.<br/><br/>The save waits until "
-          "the game could be saved, Samus is on the ground and she hasn't lost energy for two "
-          "seconds, so it isn't made mid-jump, in a fight or in lava.<br/><br/><b>Major "
-          "Only</b> saves after upgrades, Energy Tanks and artifacts. <b>All Pickups</b> saves "
+          "Samus is on the ground and she hasn't lost energy for two seconds."
+          "<br/><br/><b>Major Only</b> saves after upgrades, Energy Tanks and artifacts. <b>All Pickups</b> saves "
           "after expansions too. <b>Auto</b> is Major Only for seeds with the room randomizer, "
-          "where a wrong turn costs the most, and Off for the rest.<br/><br/>The save each "
+          "where a wrong move is most painful, and Off for the rest.<br/><br/>The save each "
           "autosave replaces is kept; see <b>Autosave Backups</b>.<br/><br/>Off while <b>Item "
-          "Warp</b> is on.");
+          "Warp</b> is on. <b>Tournament Mode</b> locks it to All Pickups for seeds with the room "
+          "randomizer and Major Only for the rest.");
 
   pane.add_section("Autosave Backups");
   add_backup_list(pane);
@@ -910,6 +939,37 @@ void RandomizerWindow::build_doors_tab(Rml::Element* content) {
           "Makes all Blast Shield locks targetable in Combat Visor.");
 }
 
+// Locks out what would give a racer an edge. The locked controls on the other tabs show as
+// disabled while it's on.
+void RandomizerWindow::build_tournament_tab(Rml::Element* content) {
+  auto& leftPane = add_child< Pane >(content, Pane::Type::Controlled);
+  auto& rightPane = add_child< Pane >(content, Pane::Type::Uncontrolled);
+
+  leftPane.add_section("Tournament");
+  auto& tournament = leftPane.add_child< BoolButton >(BoolButton::Props{
+      .key = "Tournament Mode",
+      .getValue = [] { return rando::GetTournament(); },
+      .setValue =
+          [](bool v) {
+            rando::SetTournament(v);
+            borealis::ui::MenuBar::refresh_tabs();
+          },
+      .isModified = [] { return rando::GetTournament(); },
+  });
+  SetHelp(leftPane, rightPane, tournament,
+          "Locks some settings for racing, so every runner plays by the same rules.<br/><br/>"
+          "· The <b>Warp</b> and <b>Cheats</b> menus are gone, and every cheat is turned "
+          "off.<br/>"
+          "· <b>Quick Save</b> and <b>Quick Reload</b> are off.<br/>"
+          "· <b>Autosave</b> is All Pickups for seeds with the room randomizer, and Major Only "
+          "for the rest.<br/>"
+          "· <b>Item Warp</b> is off.<br/>"
+          "· <b>Allow Warping on Map</b> can't be On; it acts as Visited Only.<br/>"
+          "· Seeds are generated with the <b>Phazon Beam</b> cheat item removed and <b>Fully Disable "
+          "Logic</b> off.<br/><br/>"
+          "Your default settings are preserved with this enabled. ");
+}
+
 void RandomizerWindow::build_item_warp_tab(Rml::Element* content) {
   auto& leftPane = add_child< Pane >(content, Pane::Type::Controlled);
   auto& rightPane = add_child< Pane >(content, Pane::Type::Uncontrolled);
@@ -919,6 +979,7 @@ void RandomizerWindow::build_item_warp_tab(Rml::Element* content) {
       .key = "Item Warp",
       .getValue = [] { return rando::GetItemWarp(); },
       .setValue = [](bool v) { rando::SetItemWarp(v); },
+      .isDisabled = [] { return rando::GetTournament(); },
       .isModified = [] { return rando::GetItemWarp(); },
   });
   SetHelp(leftPane, rightPane, itemWarp,
@@ -948,6 +1009,7 @@ void RandomizerWindow::build_item_warp_tab(Rml::Element* content) {
             settings.logicDisabled = v;
             Save();
           },
+      .isDisabled = [] { return rando::GetTournament(); },
       .isModified = [&settings] { return settings.logicDisabled; },
   });
   SetHelp(leftPane, rightPane, disableLogic,
@@ -1224,7 +1286,8 @@ void RandomizerWindow::build_pool_tab(Rml::Element* content) {
                   state->shuffled = v < kStandardStarting ? v - kStandardShuffled + 1 : 0;
                   state->starting = v == kStandardStarting ? 1 : 0;
                 },
-                [mode, defaultMode] { return mode() != defaultMode; });
+                [mode, defaultMode] { return mode() != defaultMode; },
+                [locked = def.name == "Phazon Beam"] { return locked && rando::GetTournament(); });
   }
 
   for (const auto& def : pickups.standard) {
