@@ -756,7 +756,9 @@ void CAutoMapper::ProcessMapScreenInput(const CFinalInput& input, const CStateMa
   if (mState == kAMS_MapScreen) {
 #if defined(TARGET_PC)
     // Randomizer: holding A warps to the highlighted room. Since a tap still opens the world map,
-    // that waits for A to be let go, and only opens it when the hold was too short to warp.
+    // that waits for A to be let go, and only opens it when the hold was too short to warp. With
+    // mixed regions the map already holds every mixed region, so A never opens the world map.
+    const bool worldMapOnA = !metaforce::randomizer::AreRegionsMixed();
     if (sWarpHoldStartedAt < 0.f && input.PA() && x328_ == 0 && mWorld != nullptr &&
         metaforce::randomizer::CanWarpToRoom(HighlightedRoomAsset(*mWorld, mCurAreaId))) {
       sWarpHoldStartedAt = CGraphics::GetSecondsMod900();
@@ -765,14 +767,14 @@ void CAutoMapper::ProcessMapScreenInput(const CFinalInput& input, const CStateMa
       if (!input.DA()) {
         const bool tapped = SecondsSince(sWarpHoldStartedAt) < skWarpHoldSeconds;
         sWarpHoldStartedAt = -1.f;
-        if (tapped && x328_ == 0 && HasCurrentMapUniverseWorld(mgr)) {
+        if (tapped && worldMapOnA && x328_ == 0 && HasCurrentMapUniverseWorld(mgr)) {
           BeginMapperStateTransition(kAMS_MapScreenUniverse, mgr);
         }
       } else if (SecondsSince(sWarpHoldStartedAt) >= skWarpHoldSeconds && mWorld != nullptr) {
         sWarpHoldStartedAt = -1.f;
         metaforce::randomizer::WarpToRoom(HighlightedRoomAsset(*mWorld, mCurAreaId));
       }
-    } else if (input.PA() && x328_ == 0) {
+    } else if (input.PA() && x328_ == 0 && worldMapOnA) {
       if (HasCurrentMapUniverseWorld(mgr)) {
         BeginMapperStateTransition(kAMS_MapScreenUniverse, mgr);
       }
@@ -1457,6 +1459,19 @@ void CAutoMapper::Update(float dt, const CStateManager& mgr) {
   if (mFrmeInitialized != NULL) {
     mFrmeInitialized->Update(dt);
 
+#if defined(TARGET_PC)
+    // Randomizer: the room warp, when it can be used now. With mixed regions it takes the world
+    // map's place on the A hint.
+    const bool showRoomWarp = mState == kAMS_MapScreen && mWorld != nullptr &&
+                              metaforce::randomizer::CanWarpToRoom(
+                                  HighlightedRoomAsset(*mWorld, mCurAreaId));
+    const bool roomWarpOnA = metaforce::randomizer::AreRegionsMixed();
+    const bool showWorldMap =
+        !roomWarpOnA && mState == kAMS_MapScreen && HasCurrentMapUniverseWorld(mgr);
+#else
+    const bool showWorldMap = mState == kAMS_MapScreen && HasCurrentMapUniverseWorld(mgr);
+#endif
+
     {
       CGuiTextPane* right1 =
           static_cast< CGuiTextPane* >(mFrmeInitialized->FindWidget("textpane_right1"));
@@ -1464,8 +1479,11 @@ void CAutoMapper::Update(float dt, const CStateManager& mgr) {
       const wchar_t imageSuffix[] = L";";
       rstl::wstring string;
 
-      if (mState == kAMS_MapScreenUniverse ||
-          (mState == kAMS_MapScreen && HasCurrentMapUniverseWorld(mgr))) {
+      bool showAButton = mState == kAMS_MapScreenUniverse || showWorldMap;
+#if defined(TARGET_PC)
+      showAButton = showAButton || (roomWarpOnA && showRoomWarp);
+#endif
+      if (showAButton) {
         string.reserve(0x100);
         string.append(imagePrefix, -1);
         string.append(CStringExtras::ConvertToUNICODE(rstl::string(
@@ -1482,8 +1500,12 @@ void CAutoMapper::Update(float dt, const CStateManager& mgr) {
     rstl::wstring rightString;
     if (mState == kAMS_MapScreenUniverse) {
       rightString = rstl::wstring_l(gpStringTable->GetString(0x2d));
-    } else if (mState == kAMS_MapScreen && HasCurrentMapUniverseWorld(mgr)) {
+    } else if (showWorldMap) {
       rightString = rstl::wstring_l(gpStringTable->GetString(0x2c));
+#if defined(TARGET_PC)
+    } else if (roomWarpOnA && showRoomWarp) {
+      rightString = rstl::wstring_l(L"Hold to Warp");
+#endif
     } else {
       rightString = rstl::wstring_l(L"");
     }
@@ -1498,9 +1520,8 @@ void CAutoMapper::Update(float dt, const CStateManager& mgr) {
           static_cast< CGuiTextPane* >(mFrmeInitialized->FindWidget("textpane_yicon"));
       const bool showStartWarp =
           mState == kAMS_MapScreen && metaforce::randomizer::CanWarpToStart();
-      const bool showRoomWarp = mState == kAMS_MapScreen && mWorld != nullptr &&
-                                metaforce::randomizer::CanWarpToRoom(
-                                    HighlightedRoomAsset(*mWorld, mCurAreaId));
+      // With mixed regions the room warp's hint is on the right, where the world map's was.
+      const bool showHoldWarp = showRoomWarp && !roomWarpOnA;
       rstl::wstring string(gpStringTable->GetString(0x2b));
       CVector3f offset = CVector3f::Zero();
       if (showStartWarp) {
@@ -1509,7 +1530,7 @@ void CAutoMapper::Update(float dt, const CStateManager& mgr) {
             rstl::string(CBasics::Stringize("%8.8X", gpTweakPlayerRes->mXButton[0]))));
         string.append(IsWarpArmed() ? L";  Confirm Warp" : L";  Warp to Start", -1);
       }
-      if (showRoomWarp) {
+      if (showHoldWarp) {
         // The line is left justified, so spaces push the hold hint over to the right.
         for (int i = 0; i < skHoldWarpPadSpaces; ++i) {
           string.append(L" ", -1);
@@ -1519,12 +1540,12 @@ void CAutoMapper::Update(float dt, const CStateManager& mgr) {
             rstl::string(CBasics::Stringize("%8.8X", gpTweakPlayerRes->mAButton[0]))));
         string.append(L"; Warp to room", -1);
       }
-      if (showStartWarp || showRoomWarp) {
+      if (showStartWarp || showHoldWarp) {
         offset = CVector3f(skKeyHintLeft * yicon->GetWidth() /
                                yicon->GetTextSupport().GetTextBoundingWidth(),
                            0.f, 0.f);
       }
-      yicon->TextSupport().SetJustification(showStartWarp || showRoomWarp
+      yicon->TextSupport().SetJustification(showStartWarp || showHoldWarp
                                                 ? kJustification_Left
                                                 : kJustification_Center);
       yicon->TextSupport().SetText(string);

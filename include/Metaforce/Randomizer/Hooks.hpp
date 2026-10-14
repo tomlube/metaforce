@@ -64,9 +64,14 @@ void WarpToStart();
 
 // CAutoMapper: holding A on the map warps to the highlighted room. The room is found by its area
 // asset id (mrea) in the warp catalog, so rooms appended from another region still warp to their
-// own world. False for the room Samus is already in, or one the catalog doesn't list.
+// own world. False for the room Samus is already in, one she hasn't been in yet this save (with
+// Warp to Visited Rooms Only on), or one the catalog doesn't list.
 bool CanWarpToRoom(unsigned int mrea);
 void WarpToRoom(unsigned int mrea);
+
+// CAutoMapper: whether the active seed mixes regions. Its map already holds every mixed region, so
+// A warps to the highlighted room instead of opening the world map.
+bool AreRegionsMixed();
 
 // ScriptLoader::LoadPickup. editorId is the object's editor id without layer bits.
 bool GetPickupOverride(unsigned int worldId, unsigned int editorId, PickupOverride& out);

@@ -66,6 +66,10 @@ void SetQuickReload(bool enabled);
 bool GetQuickSave();
 void SetQuickSave(bool enabled);
 
+// Whether holding A on the map only warps to rooms already entered in that save. On by default.
+bool GetWarpVisitedOnly();
+void SetWarpVisitedOnly(bool enabled);
+
 // Item Warp: in a randomized game, collecting a pickup takes Samus to a room the seed picks for
 // that pickup, a moment later. The room is the same every time for the same seed and pickup. Off
 // by default.

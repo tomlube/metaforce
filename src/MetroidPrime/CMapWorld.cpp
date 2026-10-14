@@ -64,11 +64,12 @@ static CColor TintByRegion(const CColor& color, CAssetId area) {
     uchar r, g, b;
   };
   static const SRegionTint kTints[] = {
-      {"Tallon Overworld", 80, 200, 80},   // green
-      {"Chozo Ruins", 230, 200, 60},       // yellow
-      {"Magmoor Caverns", 230, 80, 60},    // red
-      {"Phendrana Drifts", 80, 140, 255},  // blue
-      {"Phazon Mines", 170, 90, 230},      // purple
+      // Hues follow the region colors on the map universe (planet) view.
+      {"Tallon Overworld", 60, 190, 90},    // green
+      {"Chozo Ruins", 235, 165, 45},        // amber
+      {"Magmoor Caverns", 225, 65, 35},     // red-orange
+      {"Phendrana Drifts", 235, 245, 255},  // icy white
+      {"Phazon Mines", 110, 40, 180},       // deep purple
   };
   const std::string* region = GetRoomRegion(area);
   if (region == nullptr) {
