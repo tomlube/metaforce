@@ -1340,6 +1340,13 @@ void CFrontEndUI::SNewFileSelectFrame::SetupFrameContents() {
 #else
         int strIdx = data->mHardMode ? 0x6a : 0x27;
 #endif
+#if defined(TARGET_PC)
+        if (data->mRandomized) {
+          wchar_t name[] = L"Random A";
+          name[7] += i;
+          str = rstl::wstring_l(name) + CStringExtras::ConvertToUNICODE(rstl::string_l(buf));
+        } else
+#endif
         str = rstl::wstring_l(gpStringTable->GetString(strIdx + i)) +
               CStringExtras::ConvertToUNICODE(rstl::string_l(buf));
       } else {

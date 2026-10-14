@@ -311,8 +311,14 @@ void CGameState::InitializeMemoryWorlds() {
 CGameState::GameFileStateInfo CGameState::LoadGameFileState(const void* data) {
   GameFileStateInfo result;
   CMemoryInStream in(data, 4096);
+#if defined(TARGET_PC)
+  result.mRandomized = in.ReadBits(8) != 0;
+  for (int i = 1; i < 128; ++i)
+    in.ReadBits(8);
+#else
   for (int i = 0; i < 128; ++i)
     in.ReadBits(8);
+#endif
   uint timestamp = in.ReadBits(32);
   result.mHardMode = in.ReadBits(1) != 0;
   in.ReadBits(1);

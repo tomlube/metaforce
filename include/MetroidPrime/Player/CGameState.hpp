@@ -43,6 +43,8 @@ public:
     StateForWorld(worldId);
     mMlvlId = worldId;
   }
+  // The save's first byte can represent randomized save or not
+  void SetRandomized(bool randomized) { x0_[0] = randomized ? 1 : 0; }
 #endif
   const CWorldState& GetCurrentWorldState() const;
 
@@ -76,6 +78,9 @@ public:
     uint mItemPercent;
     float mScanPercent;
     bool mHardMode;
+#if defined(TARGET_PC)
+    bool mRandomized;
+#endif
   };
   static GameFileStateInfo LoadGameFileState(const void* data);
 
