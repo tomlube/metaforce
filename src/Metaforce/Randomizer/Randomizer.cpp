@@ -79,6 +79,12 @@ constexpr uint32_t kTallonWorld = 0x39F2DE28;
 constexpr uint32_t kTruthRelay = 0x00100574;
 constexpr uint32_t kTruthProgressRelay = 0x00100125;
 
+// This trigger only does anything once Sunchamber's "Flaahgra Defeated" layer (3) is active.
+constexpr uint32_t kChozoWorld = 0x83F6FF6F;
+constexpr uint32_t kSunTowerLayerTrigger = 0x001D015B;
+constexpr uint32_t kSunchamberSaveId = 0xF262C1EA;
+constexpr int kFlaahgraDefeatedLayer = 3;
+
 // Artifact hints, after Randovania's "artifacts" specific pickup hint and randomprime's
 // "artifactHints". Each Artifact Temple totem scans as a string table of a header, the artifact's
 // name and its riddle. The riddle's string becomes the hint, in Truth through Newborn order.
@@ -1899,11 +1905,36 @@ bool AllowLayerChange(unsigned int areaSaveId, unsigned int layer) {
          layer > static_cast< unsigned int >(kLastArtifactLayer);
 }
 
+namespace {
+// Whether Sunchamber's "Flaahgra Defeated" layer is on. Its layers are kept in the Chozo Ruins'
+// state, even when the room was appended to another region.
+bool FlaahgraDefeated() {
+  if (gpGameState == nullptr || gpMemoryCard == nullptr) {
+    return false;
+  }
+  const rstl::pair< CAssetId, int > sunchamber =
+      gpMemoryCard->GetAreaAndWorldIdForSaveId(static_cast< int >(kSunchamberSaveId));
+  if (sunchamber.first == kInvalidAssetId) {
+    return false;
+  }
+  const CScriptLayerManager& layers = *gpGameState->StateForWorld(sunchamber.first).GetLayerState();
+  const TAreaId area(sunchamber.second);
+  return sunchamber.second >= 0 &&
+         sunchamber.second < static_cast< int >(layers.GetAreaLayers().size()) &&
+         layers.GetAreaLayerCount(area) > kFlaahgraDefeatedLayer &&
+         layers.IsLayerActive(area, TLayerId(kFlaahgraDefeatedLayer));
+}
+} // namespace
+
 bool AllowScriptMsg(unsigned int worldId, unsigned int senderEditorId,
                     unsigned int targetEditorId) {
   unsigned int targetWorld = worldId;
   senderEditorId = merged::ToSourceEditorId(senderEditorId, worldId);
   targetEditorId = merged::ToSourceEditorId(targetEditorId, targetWorld);
+  if (S().active && worldId == kChozoWorld &&
+      (senderEditorId & 0x3FFFFFF) == kSunTowerLayerTrigger) {
+    return FlaahgraDefeated();
+  }
   if (!S().active || worldId != kTallonWorld || (senderEditorId & 0x3FFFFFF) != kTruthRelay ||
       (targetEditorId & 0x3FFFFFF) != kTruthProgressRelay) {
     return true;
