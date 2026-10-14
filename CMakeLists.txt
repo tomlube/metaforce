@@ -782,6 +782,7 @@ set(GAME_FILES
       src/Metaforce/Randomizer/RoomRando.cpp
       src/Metaforce/Randomizer/Seed.cpp
       src/Metaforce/Randomizer/Settings.cpp
+      src/Metaforce/Randomizer/ShareCode.cpp
 )
 
 if (ANDROID)
