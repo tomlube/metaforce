@@ -14,6 +14,10 @@
 #include "rstl/math.hpp"
 #include <limits.h>
 
+#if defined(TARGET_PC)
+#include "Metaforce/Randomizer/Hooks.hpp"
+#endif
+
 namespace {
 struct SInventoryItem {
   int idx;
@@ -180,6 +184,14 @@ void CInventoryScreen::UpdateTextBody() {
   const SInventoryItem& item = category.items[mRightSel];
 
   rstl::wstring text = mPauseStrg.GetString(item.entryStrIdx);
+#if defined(TARGET_PC)
+  // A randomized game unlocks the Phazon Suit's entry before the suit is found, to hint at it.
+  if (item.idx == 13 && !mMgr.GetPlayerState()->HasPowerUp(CPlayerState::kIT_PhazonSuit)) {
+    if (const wchar_t* hint = metaforce::randomizer::GetPhazonSuitHint()) {
+      text = rstl::wstring(hint);
+    }
+  }
+#endif
   if (item.idx == 23) {
     const CPlayerState& playerState = *mMgr.GetPlayerState();
     text.append(
@@ -462,6 +474,11 @@ bool CInventoryScreen::HasRightInventoryItem(int idx) const {
   case 12:
     return playerState.HasPowerUp(CPlayerState::kIT_GravitySuit);
   case 13:
+#if defined(TARGET_PC)
+    if (metaforce::randomizer::GetPhazonSuitHint() != nullptr) {
+      return true;
+    }
+#endif
     return playerState.HasPowerUp(CPlayerState::kIT_PhazonSuit);
   case 14:
     return playerState.HasPowerUp(CPlayerState::kIT_EnergyTanks);

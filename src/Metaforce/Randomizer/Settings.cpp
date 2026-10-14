@@ -122,6 +122,9 @@ json Settings::ToJson() const {
   if (artifactHints != kArtifactHintsPrecise) {
     root["artifact_hints"] = artifactHints;
   }
+  if (phazonSuitHints != kArtifactHintsPrecise) {
+    root["phazon_suit_hints"] = phazonSuitHints;
+  }
   json& standardJson = root["standard"] = json::object();
   for (const auto& [name, state] : standard) {
     // Phazon Beam came after seeds were first made, so it's only written when it's in use. That
@@ -151,6 +154,8 @@ bool Settings::FromJson(const json& root) {
     result.artifactTarget = std::clamp(root.value("artifact_target", 12), 0, 12);
     result.artifactHints = std::clamp(root.value("artifact_hints", kArtifactHintsPrecise), 0,
                                       static_cast< int >(std::size(kArtifactHintNames)) - 1);
+    result.phazonSuitHints = std::clamp(root.value("phazon_suit_hints", kArtifactHintsPrecise), 0,
+                                        static_cast< int >(std::size(kArtifactHintNames)) - 1);
     result.startingLocation = root.value("starting_location", "");
     result.roomRando = std::clamp(root.value("room_rando", 0), 0,
                                   static_cast< int >(std::size(kRoomRandoNames)) - 1);

@@ -93,6 +93,9 @@ bool GetPickupCompanion(unsigned int worldId, unsigned int editorId, const unsig
                         unsigned int& size);
 void SetPickupCompanion(unsigned int worldId, unsigned int editorId, unsigned short uid);
 
+// CInventoryScreen: unlock Phazon Suit hint when all artifacts are collected.
+const wchar_t* GetPhazonSuitHint();
+
 // CPlayerState Get/SetScanTime for a scan the game's own list doesn't have: the Phazon Beam's.
 // Its progress is kept for the session only, since it isn't saved. False for any other scan, and
 // when no randomized game is active.
