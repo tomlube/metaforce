@@ -371,6 +371,17 @@ void RandomizerWindow::build_qol_tab(Rml::Element* content) {
           "last save at once, as if you had died and chosen Continue.<br/><br/>Without a save, "
           "the seed starts over. While this is on, holding R stops Z from opening the map.");
 
+  auto& warpVisitedOnly = leftPane.add_child< BoolButton >(BoolButton::Props{
+      .key = "Warp to Visited Rooms Only",
+      .getValue = [] { return rando::GetWarpVisitedOnly(); },
+      .setValue = [](bool v) { rando::SetWarpVisitedOnly(v); },
+      .isModified = [] { return !rando::GetWarpVisitedOnly(); },
+  });
+  SetHelp(leftPane, rightPane, warpVisitedOnly,
+          "In a randomized game, holding <b>A</b> on the map warps to the highlighted room. While "
+          "this is on, that only works for rooms you've already entered in that save.<br/><br/>"
+          "Turn it off to warp to any room on the map.");
+
   leftPane.add_section("Autosave & Map");
   auto& autosave = leftPane.add_group_button({.text = "Autosave..."});
   leftPane.register_control(autosave, rightPane, [this](Pane& pane) {
@@ -458,6 +469,7 @@ void RandomizerWindow::add_room_rando_panel(Pane& pane) {
       .min = 0,
       .max = 100,
       .step = 5,
+      .suffix = "%",
   });
 
   auto& helpPane = pane.add_child< Pane >(Pane::Type::Uncontrolled);
@@ -467,8 +479,8 @@ void RandomizerWindow::add_room_rando_panel(Pane& pane) {
           "you've already entered in that save don't show up again.");
   SetHelp(pane, helpPane, regionTint,
           "Tints each room on the map toward the color of the region it belongs to, by this "
-          "percentage.<br/><br/>Tallon is green, Chozo is yellow, Magmoor is red, "
-          "Phendrana is blue, and Mines is purple.");
+          "percentage.<br/><br/>The colors match the planet map: Tallon is green, Chozo is amber, "
+          "Magmoor is red, Phendrana is white, and Mines is deep purple.");
   SetHelp(pane, helpPane, mapLayout,
           "How the map is drawn when the room randomizer moved doors.<br/><br/><b>Vanilla</b> "
           "draws every room where it is in the game, so the room behind a moved door is "

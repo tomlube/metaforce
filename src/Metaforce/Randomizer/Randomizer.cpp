@@ -203,6 +203,7 @@ struct Session {
   std::map< std::string, std::string > slots; // save slot key -> seed hash
   bool quickReload = true;
   bool quickSave = true;
+  bool warpVisitedOnly = true;
   bool itemWarp = false;
   bool itemWarpAll = false;
   int mapLayout = kMapLayoutConnected;
@@ -294,6 +295,7 @@ void SaveSession() {
       {"slots", S().slots},
       {"quick_reload", S().quickReload},
       {"quick_save", S().quickSave},
+      {"warp_visited_only", S().warpVisitedOnly},
       {"item_warp", S().itemWarp},
       {"item_warp_all", S().itemWarpAll},
       {"map_layout", S().mapLayout},
@@ -321,6 +323,7 @@ void LoadSession() {
   S().armedSeed = root.value("armed", "");
   S().quickReload = root.value("quick_reload", true);
   S().quickSave = root.value("quick_save", true);
+  S().warpVisitedOnly = root.value("warp_visited_only", true);
   S().itemWarp = root.value("item_warp", false);
   S().itemWarpAll = root.value("item_warp_all", false);
   S().mapLayout = std::clamp(root.value("map_layout", static_cast< int >(kMapLayoutConnected)),
@@ -881,6 +884,13 @@ void SetQuickSave(bool enabled) {
   SaveSession();
 }
 
+bool GetWarpVisitedOnly() { return S().warpVisitedOnly; }
+
+void SetWarpVisitedOnly(bool enabled) {
+  S().warpVisitedOnly = enabled;
+  SaveSession();
+}
+
 bool GetRoomNames() { return S().roomNames; }
 
 void SetRoomNames(bool enabled) {
@@ -1318,6 +1328,10 @@ bool CanWarpToRoom(unsigned int mrea) {
   if (!S().active.has_value() || !warp::CanWarp()) {
     return false;
   }
+  // Only rooms the player has been in this save, unless Warp to Visited Rooms Only is off.
+  if (S().warpVisitedOnly && S().visitedAreas.count(mrea) == 0) {
+    return false;
+  }
   const warp::World* world = nullptr;
   const warp::Area* area = FindRoom(mrea, world);
   if (area == nullptr) {
@@ -1335,6 +1349,12 @@ void WarpToRoom(unsigned int mrea) {
   const warp::Area* area = FindRoom(mrea, world);
   Log.info("Warping to room 0x{:08X}: area {} of world 0x{:08X}", mrea, area->index, world->mlvl);
   warp::RequestWarp(world->mlvl, area->index, std::nullopt);
+}
+
+bool AreRegionsMixed() {
+  const std::optional< Seed >& active = S().active;
+  return active.has_value() && active->settings.is_object() &&
+         active->settings.value("room_rando", 0) == kRoomRandoMixed;
 }
 
 namespace {
