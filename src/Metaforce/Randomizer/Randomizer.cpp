@@ -1216,11 +1216,13 @@ void OnGameLoad() {
     fs::remove_all(BackupDirectory(key), ec);
     if (s.armedSeed.empty() || !ActivateByHash(s.armedSeed)) {
       Deactivate();
+      gpGameState->SetRandomized(false);
       if (s.slots.erase(key) != 0) {
         SaveSession();
       }
       return;
     }
+    gpGameState->SetRandomized(true);
     s.slots[key] = s.active->hash;
     SaveSession();
     LoadTraversed(key, true);
@@ -1242,6 +1244,7 @@ void OnGameLoad() {
   } else if (ActivateByHash(it->second)) {
     LoadTraversed(key, false);
   }
+  gpGameState->SetRandomized(s.active.has_value());
 }
 
 namespace {
