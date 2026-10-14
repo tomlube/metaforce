@@ -174,6 +174,8 @@ constexpr std::string_view kPhazonBeamDescription =
 // The Energy Tank's scan, which the Phazon Beam's scan is copied from.
 unsigned int gPhazonBeamScanSource = 0;
 
+} // namespace
+
 // A string table of English strings, in the layout CStringTable::Load reads: big-endian, then
 // each string as UTF-16 with its offset counted from the start of the string data.
 AssetData BuildStringTable(std::initializer_list< std::string_view > texts) {
@@ -209,6 +211,8 @@ AssetData BuildStringTable(std::initializer_list< std::string_view > texts) {
   }
   return strg;
 }
+
+namespace {
 
 // The Energy Tank's scan with the Phazon Beam's string table in place of its own. The scan starts
 // with its version, then two unused longs and the string table's id, so only that id changes.

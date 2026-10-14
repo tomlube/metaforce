@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <initializer_list>
 #include <optional>
 #include <string_view>
 #include <vector>
@@ -23,6 +24,16 @@ inline constexpr uint32_t kPhazonBeamMessage = 0xDEAF0100;
 inline constexpr uint32_t kSCAN = 0x5343414E;
 inline constexpr uint32_t kPhazonBeamScan = 0xDEAF0101;
 inline constexpr uint32_t kPhazonBeamScanText = 0xDEAF0102;
+
+// A string table of English strings, in the layout CStringTable::Load reads.
+AssetData BuildStringTable(std::initializer_list< std::string_view > texts);
+
+// Artifact Temple's totem scan texts, which the active seed replaces with its artifact hints
+// (Randomizer.cpp). The ids are the game's own STRGs, so these are only custom assets while a
+// randomized game is active. Kept apart from the other custom assets, which are built once and
+// kept: these change with the seed.
+bool IsArtifactHintText(unsigned int id);
+bool GetArtifactHintText(unsigned int id, const unsigned char*& data, unsigned int& size);
 
 // One of the game's resources, decompressed.
 AssetData ReadGameResource(uint32_t type, uint32_t id);

@@ -498,6 +498,9 @@ void WriteDoorVulnerability(DoorColor color, uint8_t (&out)[kVulnerabilitySize])
 }
 
 unsigned int GetCustomAssetType(unsigned int id) {
+  if (IsArtifactHintText(id)) {
+    return kSTRG;
+  }
   if (const unsigned int type = GetPickupAssetType(id)) {
     return type;
   }
@@ -514,6 +517,9 @@ bool GetCustomAsset(unsigned int id, const unsigned char*& data, unsigned int& s
   const unsigned int type = GetCustomAssetType(id);
   if (type == 0) {
     return false;
+  }
+  if (IsArtifactHintText(id)) {
+    return GetArtifactHintText(id, data, size);
   }
   CustomAsset& asset = CustomAssets()[id];
   if (!asset.built) {

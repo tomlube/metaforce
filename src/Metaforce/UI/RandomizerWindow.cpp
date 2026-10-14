@@ -964,6 +964,23 @@ void RandomizerWindow::build_logic_tab(Rml::Element* content) {
             [&settings]() -> int& { return settings.artifactTarget; },
             rando::GetPickupDatabase()->defaultArtifactTarget, 0, 12);
 
+  std::vector< DropdownButton::Option > artifactHints;
+  for (const char* name : rando::kArtifactHintNames) {
+    artifactHints.push_back({name});
+  }
+  AddDropdown(leftPane, rightPane, "Chozo Artifact Hints",
+              "How precise the hints on the totems in Artifact Temple are. Every totem can be "
+              "scanned from the start, and tells you where its artifact is.<br/><br/>"
+              "<b>Disabled</b> gives no hint.<br/><br/><b>Region only</b> shows the region "
+              "name.<br/><br/><b>Region and area</b> shows the region and area name.<br/><br/>"
+              "This is set when the seed is generated.",
+              std::move(artifactHints), [&settings] { return settings.artifactHints; },
+              [&settings](int v) {
+                settings.artifactHints = std::clamp(
+                    v, 0, static_cast< int >(std::size(rando::kArtifactHintNames)) - 1);
+              },
+              [&settings] { return settings.artifactHints != rando::kArtifactHintsPrecise; });
+
   auto& start = leftPane.add_select_button({
       .key = "Starting Location",
       .getValue =
