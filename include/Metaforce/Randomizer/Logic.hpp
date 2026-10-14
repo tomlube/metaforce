@@ -202,6 +202,8 @@ public:
   int FindMisc(std::string_view name) const;
   int FindWeakness(std::string_view name) const;
   int FindNode(std::string_view region, std::string_view area, std::string_view node) const;
+  // Gives dock node `node` another weakness, as Randovania's base patches do before generating.
+  void SetDockWeakness(int node, int weakness);
   // Whether every dock node has a shape, which the room randomizer needs.
   bool HasDockShapes() const { return mHasDockShapes; }
   // "Region / Area / Node"

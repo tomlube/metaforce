@@ -23,6 +23,7 @@
 #include "MetroidPrime/CWorld.hpp"
 #include "MetroidPrime/Cameras/CCameraManager.hpp"
 #include "MetroidPrime/Cameras/CCameraShakeData.hpp"
+#include "MetroidPrime/Player/CPlayer.hpp"
 #include "MetroidPrime/ScriptObjects/CScriptActor.hpp"
 #include "MetroidPrime/ScriptObjects/CScriptDamageableTrigger.hpp"
 #include "MetroidPrime/ScriptObjects/CScriptDoor.hpp"
@@ -34,6 +35,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <iterator>
 #include <optional>
 #include <unordered_map>
@@ -121,6 +123,7 @@ uint32_t ShieldModel(DoorColor color, bool vertical) {
 struct State {
   bool active = false;
   bool lockOn = false;
+  bool mainPlazaDoor = false;
   // Restyled doors' shield actors, damageable triggers and Door objects, by ObjectKey.
   std::unordered_map< uint64_t, DoorStyle > shieldActors;
   std::unordered_map< uint64_t, DoorStyle > forces;
@@ -499,6 +502,167 @@ void SpawnBlastShield(CStateManager& mgr, TAreaId area, uint32_t mrea, int dock,
                                        doorShields, door->vertical));
 }
 
+// Main Plaza Vault Door, after Randovania's "Main Plaza Vault Door". Main Plaza's side of the door
+// to Plaza Access is a bare door that only opens from the other side. It gets the blue door kit
+// Plaza Access's side has (shield, unlock trigger, open trigger, close timer), mirrored onto the
+// ledge and run here instead of with script connections.
+constexpr uint32_t kMainPlazaMrea = 0xD5CDB809;
+constexpr uint32_t kMainPlazaVaultDoor = 0x00020060;
+constexpr uint32_t kChozoWorld = 0x83F6FF6F;
+// Scan points the door makes untrue: the door's "one way door", and the Energy Tank ledge's
+// "cannot be reached from this room", which also covers the pickup's own scan.
+constexpr uint32_t kMainPlazaScanPoints[] = {0x000202F4, 0x000202B6};
+// The Energy Tank ledge's hardcoded "Energy Tank" scan, shown up close in place of the pickup's
+// own. Left out of every randomized game.
+constexpr uint32_t kMainPlazaEnergyTankScan = 0x000202B7;
+// Plaza Access's kit, relative to its door, with X mirrored.
+const CVector3f kVaultShieldOffset(-0.4059f, 0.f, 1.8018f);
+const CVector3f kVaultUnlockOffset(-0.2187f, 0.f, 1.9996f);
+const CVector3f kVaultUnlockExtent(0.25f, 4.5f, 4.f);
+const CVector3f kVaultOpenOffset(-5.f, 0.f, 1.9996f);
+const CVector3f kVaultOpenExtent(20.f, 10.f, 4.f);
+constexpr float kVaultCloseDelay = 0.25f;
+
+class CMainPlazaDoor : public CEntity {
+public:
+  CMainPlazaDoor(TUniqueId uid, const CEntityInfo& info, TUniqueId door, TUniqueId shield,
+                 TUniqueId unlock, const CAABox& openBox)
+  : CEntity(uid, info, true, rstl::string_l("Randomizer Main Plaza Door"))
+  , mDoor(door)
+  , mShield(shield)
+  , mUnlock(unlock)
+  , mOpenBox(openBox) {}
+
+#ifndef HAS_TYPES_MATCH
+  void Accept(IVisitor&) override {}
+#endif
+
+  void Think(float dt, CStateManager& mgr) override {
+    CScriptDoor* door = TCastToPtr< CScriptDoor >(mgr.ObjectById(mDoor));
+    if (door == nullptr) {
+      return;
+    }
+    // As a CActor: TCastToPtr isn't generated for CScriptDamageableTrigger.
+    CActor* unlock = TCastToPtr< CActor >(mgr.ObjectById(mUnlock));
+    if (!mUnlocked && unlock != nullptr && unlock->GetActive() &&
+        unlock->HealthInfo(mgr)->GetHP() <= 0.f) {
+      mUnlocked = true;
+      door->AcceptScriptMsg(kSM_SetToZero, GetUniqueId(), mgr);
+    }
+    // Opened from Plaza Access, the door closes from there too.
+    SetShieldUp(!mUnlocked && !door->IsOpen(), mgr);
+    if (!mUnlocked) {
+      return;
+    }
+    if (PlayerInside(mgr)) {
+      door->AcceptScriptMsg(kSM_Open, GetUniqueId(), mgr);
+      mCloseTimer = kVaultCloseDelay;
+    } else if (mCloseTimer > 0.f) {
+      mCloseTimer -= dt;
+      if (mCloseTimer <= 0.f) {
+        door->AcceptScriptMsg(kSM_Close, GetUniqueId(), mgr);
+        mUnlocked = false;
+      }
+    }
+  }
+
+private:
+  bool PlayerInside(const CStateManager& mgr) const {
+    const CPlayer* player = mgr.GetPlayer();
+    if (player == nullptr) {
+      return false;
+    }
+    const rstl::optional_object< CAABox > bounds = player->GetTouchBounds();
+    return bounds.valid() && bounds->DoBoundsOverlap(mOpenBox);
+  }
+
+  // Activating the unlock trigger again also restores its health.
+  void SetShieldUp(bool up, CStateManager& mgr) {
+    if (up == mShieldUp) {
+      return;
+    }
+    mShieldUp = up;
+    for (const TUniqueId id : {mShield, mUnlock}) {
+      if (CEntity* entity = mgr.ObjectById(id)) {
+        entity->AcceptScriptMsg(up ? kSM_Activate : kSM_Deactivate, GetUniqueId(), mgr);
+      }
+    }
+  }
+
+  TUniqueId mDoor;
+  TUniqueId mShield;
+  TUniqueId mUnlock;
+  CAABox mOpenBox;
+  bool mShieldUp = true;
+  bool mUnlocked = false;
+  float mCloseTimer = 0.f;
+};
+
+// The damageable trigger face toward `dir`, as ScriptLoader turns a room's face flags into
+// world ones.
+uint FaceFlag(const CVector3f& dir) {
+  const float x = std::fabs(dir.GetX());
+  const float y = std::fabs(dir.GetY());
+  const float z = std::fabs(dir.GetZ());
+  if (x >= y && x >= z) {
+    return dir.GetX() < 0.f ? 4 : 8;
+  }
+  if (y >= z) {
+    return dir.GetY() < 0.f ? 2 : 1;
+  }
+  return dir.GetZ() < 0.f ? 0x20 : 0x10;
+}
+
+void SpawnMainPlazaDoor(CStateManager& mgr, TAreaId area) {
+  const TUniqueId doorId = FindLoadedObject(mgr, area, kMainPlazaVaultDoor);
+  const CActor* door = TCastToConstPtr< CActor >(mgr.GetObjectById(doorId));
+  const uint32_t shieldModel = ShieldModel(DoorColor::Blue, false);
+  if (door == nullptr || !IsAvailable(shieldModel)) {
+    Log.warn("Can't put a blue door on Main Plaza's Vault door");
+    return;
+  }
+  const CVector3f origin = door->GetTransform().GetTranslation();
+  const CEntityInfo info(area, CEntity::NullConnectionList, kInvalidEditorId);
+  const CVisorParameters visor(0xF, false, true);
+
+  const CTransform4f xf =
+      EditorTransform(CVector3f(0.f, 0.f, 180.f), origin + kVaultShieldOffset);
+  const CModelData model(CStaticRes(shieldModel, CVector3f(1.f, 1.f, 1.f)));
+  CMaterialList materials;
+  materials.Add(kMT_Immovable);
+  const CLightParameters lights(true, 1.f, CLightParameters::kST_Zero, 1.f, 20.f, CColor::White(),
+                                true, CLightParameters::kLO_NormalWorld,
+                                CLightParameters::kLR_EightFrames, CVector3f::Zero(), 4, 4, false,
+                                0);
+  const CActorParameters actorParms(
+      lights, CScannableParameters(kInvalidAssetId),
+      rstl::pair< CAssetId, CAssetId >(0, 0), rstl::pair< CAssetId, CAssetId >(0, 0), visor, true,
+      false, false, false, 1.f, 1.f, 1.f);
+  CScriptActor* shield = rs_new CScriptActor(
+      mgr.AllocateUniqueId(), rstl::string_l("Randomizer Main Plaza Door Shield"), info, xf, model,
+      model.GetBounds(xf.GetRotation()), materials, 1.f, 0.f, CHealthInfo(1.f, 1.f),
+      CDamageVulnerability::PassThroughVulnerability(), actorParms, true, true, 0, 1.f, false,
+      false, false, false);
+  mgr.AddObject(shield);
+
+  // Facing the ledge, the way Plaza Access's faces its room.
+  const CTransform4f areaRotation = mgr.GetWorld()->GetAreaAlways(area).GetTM().GetRotation();
+  const DoorColorStyle& blue = GetDoorColorStyle(DoorColor::Blue);
+  CScriptDamageableTrigger* unlock = rs_new CScriptDamageableTrigger(
+      mgr.AllocateUniqueId(), rstl::string_l("Randomizer Main Plaza Door Unlock"), info,
+      origin + kVaultUnlockOffset, kVaultUnlockExtent, CHealthInfo(1.f, 1.f),
+      MakeVulnerability(DoorColor::Blue), FaceFlag(areaRotation * CVector3f::Right()),
+      blue.pattern0, blue.pattern1, blue.color, CScriptDamageableTrigger::kCO_NoOrbit, true,
+      visor);
+  mgr.AddObject(unlock);
+
+  const CVector3f openCenter = origin + kVaultOpenOffset;
+  const CVector3f openHalf = kVaultOpenExtent * 0.5f;
+  mgr.AddObject(rs_new CMainPlazaDoor(mgr.AllocateUniqueId(), info, doorId,
+                                      shield->GetUniqueId(), unlock->GetUniqueId(),
+                                      CAABox(openCenter - openHalf, openCenter + openHalf)));
+}
+
 // The map icon type for a door color, keeping the floor and ceiling variants the game has for
 // Ice, Wave and Plasma doors.
 CMappableObject::EMappableObjectType MapType(MapDoorColor color, int original) {
@@ -559,17 +723,18 @@ namespace door_locks {
 
 void Activate(const Seed& seed) {
   Deactivate();
-  if (!seed.doorLocksRandomized) {
-    return;
-  }
   State& s = S();
-  s.active = true;
-  s.lockOn = seed.blastShieldLockOn;
   for (size_t color = 0; color < s.vulnerabilities.size(); ++color) {
     uint8_t bytes[kVulnerabilitySize];
     WriteDoorVulnerability(static_cast< DoorColor >(color), bytes);
     std::copy(std::begin(bytes), std::end(bytes), s.vulnerabilities[color].begin());
   }
+  s.mainPlazaDoor = seed.settings.is_object() && seed.settings.value("main_plaza_door", false);
+  if (!seed.doorLocksRandomized) {
+    return;
+  }
+  s.active = true;
+  s.lockOn = seed.blastShieldLockOn;
   for (const DoorLock& lock : seed.doorLocks) {
     const DoorLocationInfo* door = FindDoorLocation(lock.area, lock.dock);
     DoorColor color;
@@ -604,6 +769,7 @@ void Deactivate() {
   State& s = S();
   s.active = false;
   s.lockOn = false;
+  s.mainPlazaDoor = false;
   s.shieldActors.clear();
   s.forces.clear();
   s.doors.clear();
@@ -633,6 +799,20 @@ bool RemoveBlastShieldScan(unsigned int scan) {
   return S().active && scan == GetBlastShieldStyle(BlastShield::Missile).scan;
 }
 
+bool RemoveSeedScanPoint(unsigned int worldId, unsigned int editorId) {
+  if (GetActiveSeed() == nullptr) {
+    return false;
+  }
+  editorId = merged::ToSourceEditorId(editorId, worldId) & 0x3FFFFFF;
+  if (worldId != kChozoWorld) {
+    return false;
+  }
+  return editorId == kMainPlazaEnergyTankScan ||
+         (S().mainPlazaDoor && std::find(std::begin(kMainPlazaScanPoints),
+                                         std::end(kMainPlazaScanPoints),
+                                         editorId) != std::end(kMainPlazaScanPoints));
+}
+
 bool GetDoorForceOverride(unsigned int worldId, unsigned int editorId, DoorForceOverride& out) {
   const DoorStyle* style = FindStyle(S().forces, worldId, editorId);
   if (style == nullptr) {
@@ -653,11 +833,17 @@ bool GetDoorForceOverride(unsigned int worldId, unsigned int editorId, DoorForce
 
 void SpawnDoorLocks(CStateManager& mgr, int areaIndex) {
   const State& s = S();
-  if (!s.active || mgr.GetWorld() == nullptr || areaIndex < 0) {
+  if (mgr.GetWorld() == nullptr || areaIndex < 0) {
     return;
   }
   const TAreaId area(areaIndex);
   const uint32_t mrea = mgr.GetWorld()->GetAreaAlways(area).GetAreaAssetId();
+  if (s.mainPlazaDoor && mrea == kMainPlazaMrea) {
+    SpawnMainPlazaDoor(mgr, area);
+  }
+  if (!s.active) {
+    return;
+  }
   const auto it = s.blastShields.find(mrea);
   if (it == s.blastShields.end()) {
     return;

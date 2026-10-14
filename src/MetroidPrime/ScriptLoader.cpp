@@ -804,6 +804,9 @@ CEntity* ScriptLoader::LoadPointOfInterest(CStateManager& mgr, CInputStream& in,
   // Door lock randomizer: the scan point of one of the game's own blast shields, replaced.
   if (metaforce::randomizer::RemoveBlastShieldScan(sParms.GetScannableObject0()))
     return nullptr;
+  if (metaforce::randomizer::RemoveSeedScanPoint(mgr.GetWorld()->GetWorldAssetId(),
+                                                info.GetEditorId().Value()))
+    return nullptr;
 #endif
   return rs_new CScriptPointOfInterest(mgr.AllocateUniqueId(), aHead.mName, info,
                                        aHead.mTransform, active, sParms, pointSize);
