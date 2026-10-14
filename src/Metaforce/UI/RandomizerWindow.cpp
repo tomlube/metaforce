@@ -136,6 +136,10 @@ Rml::String ArmedRml() {
   return rml;
 }
 
+Rml::String ArmedButtonText() {
+  return rando::GetArmedSeed().empty() ? "Randomizer Disabled" : "Randomizer Enabled";
+}
+
 Rml::String SeedLabel(const rando::SeedSummary& seed) {
   return fmt::format("{}  ·  {}", seed.hash, seed.randomStart ? "Random start" : seed.startName);
 }
@@ -188,6 +192,10 @@ RandomizerWindow::RandomizerWindow() {
     reset_tab_elements();
     build_seeds_tab(content);
   });
+  add_tab("QoL", [this](Rml::Element* content) {
+    reset_tab_elements();
+    build_qol_tab(content);
+  });
   add_tab("Logic", [this](Rml::Element* content) {
     reset_tab_elements();
     build_logic_tab(content);
@@ -213,6 +221,7 @@ RandomizerWindow::RandomizerWindow() {
 void RandomizerWindow::reset_tab_elements() {
   mStatusText = nullptr;
   mArmedText = nullptr;
+  mArmedButton = nullptr;
   mPoolText = nullptr;
   mSeedList = nullptr;
   mStartList = nullptr;
@@ -245,6 +254,9 @@ void RandomizerWindow::update() {
   if (mArmedText != nullptr && mShownArmed != rando::GetArmedSeed()) {
     mShownArmed = rando::GetArmedSeed();
     mArmedText->SetInnerRML(ArmedRml());
+    if (mArmedButton != nullptr) {
+      mArmedButton->set_text(ArmedButtonText());
+    }
   }
   if (mPoolText != nullptr) {
     if (const auto* pickups = rando::GetPickupDatabase()) {
@@ -262,6 +274,21 @@ void RandomizerWindow::build_seeds_tab(Rml::Element* content) {
   auto& leftPane = add_child< Pane >(content, Pane::Type::Controlled);
   auto& rightPane = add_child< Pane >(content, Pane::Type::Uncontrolled);
   auto& settings = rando::GetSettings();
+
+  leftPane.add_section("RANDOMIZER STATUS");
+  mArmedText = leftPane.add_rml(ArmedRml());
+  mShownArmed = rando::GetArmedSeed();
+
+  auto& disarm = leftPane.add_button(ArmedButtonText());
+  disarm.on_pressed([] {
+    play_nav_sound(NavSound::ItemDisable);
+    rando::SetArmedSeed({});
+  });
+  mArmedButton = &disarm;
+  SetHelp(leftPane, rightPane, disarm,
+          "Shows whether new games are randomized. Press it to turn the randomizer off: new "
+          "games start vanilla. Saves that were started with a seed keep using it.<br/><br/>"
+          "Generating a seed or choosing one under <b>Generated Seeds</b> turns it back on.");
 
   leftPane.add_section("Generate");
   auto& seedString = leftPane.add_child< StringButton >(StringButton::Props{
@@ -306,19 +333,20 @@ void RandomizerWindow::build_seeds_tab(Rml::Element* content) {
   mStatusText = leftPane.add_rml(GenerationStatusRml());
   mShownState = rando::GetGenerationStatus().state;
 
-  leftPane.add_section("New Games");
-  mArmedText = leftPane.add_rml(ArmedRml());
-  mShownArmed = rando::GetArmedSeed();
-
-  auto& disarm = leftPane.add_button("Start New Games Without Randomizer");
-  disarm.on_pressed([] {
-    play_nav_sound(NavSound::ItemDisable);
-    rando::SetArmedSeed({});
+  leftPane.add_section("Seeds");
+  auto& seeds = leftPane.add_group_button({.text = "Generated Seeds"});
+  leftPane.register_control(seeds, rightPane, [this](Pane& pane) {
+    pane.clear();
+    add_seed_list(pane);
   });
-  SetHelp(leftPane, rightPane, disarm,
-          "New games start vanilla. Saves that were started with a seed keep using it.");
+}
 
-  leftPane.add_section("In Game");
+// Player preferences that apply during play. None of them change the generated seed.
+void RandomizerWindow::build_qol_tab(Rml::Element* content) {
+  auto& leftPane = add_child< Pane >(content, Pane::Type::Controlled);
+  auto& rightPane = add_child< Pane >(content, Pane::Type::Uncontrolled);
+
+  leftPane.add_section("Shortcuts");
   auto& quickSave = leftPane.add_child< BoolButton >(BoolButton::Props{
       .key = "Quick Save",
       .getValue = [] { return rando::GetQuickSave(); },
@@ -343,6 +371,7 @@ void RandomizerWindow::build_seeds_tab(Rml::Element* content) {
           "last save at once, as if you had died and chosen Continue.<br/><br/>Without a save, "
           "the seed starts over. While this is on, holding R stops Z from opening the map.");
 
+  leftPane.add_section("Autosave & Map");
   auto& autosave = leftPane.add_group_button({.text = "Autosave..."});
   leftPane.register_control(autosave, rightPane, [this](Pane& pane) {
     pane.clear();
@@ -353,13 +382,6 @@ void RandomizerWindow::build_seeds_tab(Rml::Element* content) {
   leftPane.register_control(roomRando, rightPane, [this](Pane& pane) {
     pane.clear();
     add_room_rando_panel(pane);
-  });
-
-  leftPane.add_section("Seeds");
-  auto& seeds = leftPane.add_group_button({.text = "Generated Seeds"});
-  leftPane.register_control(seeds, rightPane, [this](Pane& pane) {
-    pane.clear();
-    add_seed_list(pane);
   });
 }
 

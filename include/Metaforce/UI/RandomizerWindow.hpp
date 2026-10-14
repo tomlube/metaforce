@@ -10,6 +10,7 @@
 #include <vector>
 
 namespace borealis::ui {
+class Button;
 class Pane;
 } // namespace borealis::ui
 
@@ -24,6 +25,7 @@ public:
 private:
   void reset_tab_elements();
   void build_seeds_tab(Rml::Element* content);
+  void build_qol_tab(Rml::Element* content);
   void build_logic_tab(Rml::Element* content);
   void build_pool_tab(Rml::Element* content);
   void build_rooms_tab(Rml::Element* content);
@@ -44,6 +46,7 @@ private:
 
   Rml::Element* mStatusText = nullptr;
   Rml::Element* mArmedText = nullptr;
+  borealis::ui::Button* mArmedButton = nullptr;
   Rml::Element* mPoolText = nullptr;
   borealis::ui::List* mSeedList = nullptr;
 
