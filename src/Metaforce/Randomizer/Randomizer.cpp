@@ -79,6 +79,36 @@ constexpr uint32_t kTallonWorld = 0x39F2DE28;
 constexpr uint32_t kTruthRelay = 0x00100574;
 constexpr uint32_t kTruthProgressRelay = 0x00100125;
 
+// Artifact hints, after Randovania's "artifacts" specific pickup hint and randomprime's
+// "artifactHints". Each Artifact Temple totem scans as a string table of a header, the artifact's
+// name and its riddle. The riddle's string becomes the hint, in Truth through Newborn order.
+constexpr uint32_t kArtifactTotemText[] = {
+    0xFAE3D58E, 0x7C77A720, 0xB72B7485, 0xAA2E443D, 0x61729798, 0xE7E6E536,
+    0x2CBA3693, 0xDDEC8446, 0x16B057E3, 0x8E9C7387, 0x45C0A022, 0xC354D28C,
+};
+constexpr const char* kArtifactNames[] = {
+    "Truth", "Strength", "Elder", "Wild", "Lifegiver", "Warrior",
+    "Chozo", "Nature", "Sun", "World", "Spirit", "Newborn",
+};
+constexpr std::string_view kTotemHeader = "Translating Chozo runes on Totem's surface.";
+// Randovania's Metroid Prime hint colors (PrimeHintNamer).
+constexpr std::string_view kHintItemColor = "#c300ff";
+constexpr std::string_view kHintLocationColor = "#89a1ff";
+
+// In the game, only six totems have their hint from the start ("Timer - Hint On First Stones"
+// lights their "Relay Hint From Neighbours"); placing an artifact lights its neighbours'. Like
+// randomprime's "All" hint behavior, the timer lights the other six as well. A placed artifact's
+// relay is already off by the time the timer goes, so its totem keeps the returned scan.
+constexpr uint32_t kFirstStonesHintTimer = 0x0010017C;
+constexpr ScriptConnection kFirstStonesHintConnections[] = {
+    {kSS_Zero, kSM_SetToZero, 0x04100133}, // Strength
+    {kSS_Zero, kSM_SetToZero, 0x04100127}, // Elder
+    {kSS_Zero, kSM_SetToZero, 0x0410012D}, // Warrior
+    {kSS_Zero, kSM_SetToZero, 0x0410013F}, // Nature
+    {kSS_Zero, kSM_SetToZero, 0x04100145}, // Sun
+    {kSS_Zero, kSM_SetToZero, 0x04100139}, // Newborn
+};
+
 // Landing Site plays the ship's arrival cinematic the first time it loads, which leaves the
 // ship missing (and its save station unusable) in games that start elsewhere. Like randomprime,
 // those games get Landing Site set up as if Samus had already landed.
@@ -224,6 +254,8 @@ struct Session {
   std::unordered_map< uint64_t, int > dockByKey;
   std::vector< std::wstring > memoText;
   int templeLocation = -1;
+  // Artifact Temple totem string tables with the seed's hints, by the game's STRG id.
+  std::unordered_map< uint32_t, std::vector< uint8_t > > totemText;
   bool pendingNewGame = false;
   // Warp to Start: put the player on the start position once the start area has loaded.
   bool pendingStartTeleport = false;
@@ -323,6 +355,7 @@ void Deactivate() {
   s.dockByKey.clear();
   s.memoText.clear();
   s.templeLocation = -1;
+  s.totemText.clear();
   s.pendingNewGame = false;
   s.autosavePending = false;
   s.traversedDoors.clear();
@@ -408,6 +441,61 @@ void LoadTraversed(const std::string& slot, bool newGame) {
   s.brokenShields = s.savedBrokenShields;
 }
 
+std::string HintColor(std::string_view color, std::string_view text) {
+  return fmt::format("&push;&main-color={};{}&pop;", color, text);
+}
+
+// Where a pickup location is, as Randovania's hints name it: "Region - Area", or the region alone.
+std::string HintLocationName(int pickupIndex, bool withArea) {
+  const Database* db = GetDatabase();
+  if (db == nullptr || pickupIndex < 0 ||
+      pickupIndex >= static_cast< int >(db->PickupNodes().size()) ||
+      db->PickupNodes()[pickupIndex] < 0) {
+    return {};
+  }
+  const auto& area = db->Areas()[db->GetNode(db->PickupNodes()[pickupIndex]).area];
+  const std::string& region = db->Regions()[area.region].name;
+  return withArea ? fmt::format("{} - {}", region, area.name) : region;
+}
+
+// The hint on the totem of artifact `artifact` (0 for Truth), worded as Randovania's
+// PrimeHintNamer does.
+std::string ArtifactHint(const Seed& seed, int artifact, int mode) {
+  const std::string name = fmt::format("Artifact of {}", kArtifactNames[artifact]);
+  if (mode == kArtifactHintsDisabled) {
+    return name + " is lost somewhere on Tallon IV.";
+  }
+  const int itemType = CPlayerState::kIT_Truth + artifact;
+  for (int i = 0; i < static_cast< int >(seed.locations.size()); ++i) {
+    if (seed.locations[i].grant.itemType != itemType) {
+      continue;
+    }
+    const std::string where = HintLocationName(i, mode == kArtifactHintsPrecise);
+    if (!where.empty()) {
+      return fmt::format("{} is located in {}.", HintColor(kHintItemColor, name),
+                         HintColor(kHintLocationColor, where));
+    }
+  }
+  if ((seed.shuffledArtifacts & (1u << artifact)) == 0) {
+    return fmt::format("{} has no need to be located.", HintColor(kHintItemColor, name));
+  }
+  return name + " is lost somewhere on Tallon IV.";
+}
+
+void BuildArtifactHints(const Seed& seed) {
+  int mode = kArtifactHintsPrecise;
+  if (seed.settings.is_object()) {
+    mode = std::clamp(seed.settings.value("artifact_hints", kArtifactHintsPrecise), 0,
+                      static_cast< int >(std::size(kArtifactHintNames)) - 1);
+  }
+  for (int i = 0; i < static_cast< int >(std::size(kArtifactTotemText)); ++i) {
+    const std::string hint = ArtifactHint(seed, i, mode);
+    if (AssetData strg = BuildStringTable({kTotemHeader, kArtifactNames[i], hint})) {
+      S().totemText.emplace(kArtifactTotemText[i], std::move(*strg));
+    }
+  }
+}
+
 void Activate(Seed seed) {
   auto& s = S();
   Deactivate();
@@ -439,6 +527,7 @@ void Activate(Seed seed) {
     s.dockByKey.emplace(DockKey(seed.docks[i].area, seed.docks[i].dock), i);
   }
   door_locks::Activate(seed);
+  BuildArtifactHints(seed);
   Log.info("Activated seed {}", seed.hash);
   s.active = std::move(seed);
 }
@@ -1411,6 +1500,22 @@ bool GetPausedMemoOverride(unsigned int worldId, unsigned int editorId, unsigned
   return true;
 }
 
+bool IsArtifactHintText(unsigned int id) {
+  const auto& s = S();
+  return s.active && s.totemText.find(id) != s.totemText.end();
+}
+
+bool GetArtifactHintText(unsigned int id, const unsigned char*& data, unsigned int& size) {
+  const auto& s = S();
+  const auto it = s.totemText.find(id);
+  if (!s.active || it == s.totemText.end()) {
+    return false;
+  }
+  data = it->second.data();
+  size = static_cast< unsigned int >(it->second.size());
+  return true;
+}
+
 bool GetSessionScanTime(unsigned int scan, float& time) {
   const auto& s = S();
   if (!s.active || scan != kPhazonBeamScan) {
@@ -1508,10 +1613,18 @@ bool PatchesLandingSite() {
 } // namespace
 
 bool GetScriptObjectPatch(unsigned int worldId, unsigned int editorId, ScriptObjectPatch& out) {
-  if (worldId != kTallonWorld || !PatchesLandingSite()) {
+  if (worldId != kTallonWorld || !S().active) {
     return false;
   }
   out = {};
+  if ((editorId & 0x3FFFFFF) == kFirstStonesHintTimer) {
+    out.add = kFirstStonesHintConnections;
+    out.addCount = static_cast< int >(std::size(kFirstStonesHintConnections));
+    return true;
+  }
+  if (!PatchesLandingSite()) {
+    return false;
+  }
   switch (editorId & 0x3FFFFFF) {
   case kStartOverworldCinematicTrigger:
     out.active = 0;

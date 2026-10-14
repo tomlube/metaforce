@@ -68,6 +68,12 @@ struct AmmoPickupState {
 
 inline constexpr const char* kRandomStartingLocation = "random";
 
+inline constexpr const char* kArtifactHintNames[] = {"Disabled", "Region only", "Region and area"};
+// kArtifactHintNames indices.
+inline constexpr int kArtifactHintsDisabled = 0;
+inline constexpr int kArtifactHintsRegion = 1;
+inline constexpr int kArtifactHintsPrecise = 2;
+
 struct Settings {
   static constexpr int kVersion = 1;
 
@@ -75,6 +81,10 @@ struct Settings {
   int trickLevel = 0;      // 0 (disabled) to 5 (ludicrous), applied to every trick
   int damageStrictness = 1; // index into kDamageStrictnessValues
   int artifactTarget = 6;
+  // How precise the Artifact Temple totems' hints are, index into kArtifactHintNames. Like
+  // Randovania's "artifacts" specific pickup hint. Only written to the settings when it isn't
+  // the default, so older seeds keep their hashes.
+  int artifactHints = kArtifactHintsPrecise;
   // "Region|Area|Node", kRandomStartingLocation, or empty for the database default
   std::string startingLocation;
   int roomRando = 0; // index into kRoomRandoNames
