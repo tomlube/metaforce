@@ -178,7 +178,7 @@ public:
     }
     error = fmt::format("Could not generate a beatable seed after {} attempts ({} fill, {} "
                         "playthrough, {} room layout, {} door lock failures). Try more lenient "
-                        "settings, a higher trick level, or more items in the pool.",
+                        "settings, higher trick levels, or more items in the pool.",
                         maxAttempts, mFillFailures, mPlaythroughFailures, mRoomFailures,
                         mDoorLockFailures);
     return std::nullopt;
@@ -186,7 +186,10 @@ public:
 
 private:
   bool SetupContext(std::string& error) {
-    mCtx.trickLevels.assign(mDb.Tricks().size(), mSettings.trickLevel);
+    mCtx.trickLevels.clear();
+    for (const auto& trick : mDb.Tricks()) {
+      mCtx.trickLevels.push_back(mSettings.TrickLevel(trick.name));
+    }
     mCtx.misc.assign(mDb.Misc().size(), 0);
     // Metaforce runs the game unpatched, where every suit after the Power Suit resists heat.
     if (const int heat = mDb.FindMisc("vanilla_heat"); heat >= 0) {

@@ -217,10 +217,18 @@ Rml::String ShareSummaryRml(const rando::Database& db, const rando::PickupDataba
     changedPickups += state.count != def.defaultCount || state.ammo != def.defaultAmmo;
   }
 
+  Rml::String tricks = rando::kTrickLevelNames[settings.trickLevel];
+  if (!settings.tricks.empty()) {
+    const auto enabled = std::count_if(
+        db.Tricks().begin(), db.Tricks().end(),
+        [&settings](const rando::TrickResource& t) { return settings.TrickLevel(t.name) != 0; });
+    tricks = fmt::format("Custom ({} of {} enabled)", enabled, db.Tricks().size());
+  }
+
   Rml::String rml = fmt::format(
       "Seed string: {}<br/>"
       "Starting location: <b>{}</b><br/>"
-      "Trick level: <b>{}</b>  ·  Damage: <b>{}</b><br/>"
+      "Tricks: <b>{}</b>  ·  Damage: <b>{}</b><br/>"
       "Chozo Artifacts: <b>{}</b><br/>"
       "Room randomizer: <b>{}</b><br/>"
       "Door locks: <b>{}</b><br/>"
@@ -229,7 +237,7 @@ Rml::String ShareSummaryRml(const rando::Database& db, const rando::PickupDataba
       settings.seedString.empty()
           ? Rml::String("<b>none</b> (every seed made from it is different)")
           : fmt::format("<b>{}</b>", EscapeRml(settings.seedString)),
-      start, rando::kTrickLevelNames[settings.trickLevel],
+      start, tricks,
       rando::kDamageStrictnessNames[settings.damageStrictness], settings.artifactTarget,
       rando::kRoomRandoNames[settings.roomRando], rando::kDoorLockModeNames[settings.doorLockMode],
       settings.mainPlazaDoor ? "On" : "Off", changedPickups == 0 ? Rml::String("Starter Preset")
@@ -1258,6 +1266,97 @@ void RandomizerWindow::build_item_warp_tab(Rml::Element* content) {
           "Otherwise you will often run into softlocks almost immediately.");
 }
 
+namespace {
+// Trick sections of the Logic tab, by Randovania trick name. Tricks not listed go under "Other".
+struct TrickGroup {
+  const char* name;
+  std::vector< std::string_view > tricks;
+};
+const std::array< TrickGroup, 4 > kTrickGroups = {{
+    {"Movement",
+     {"Movement", "LJump", "RJump", "SJump", "Dash", "Standable", "StandEnemies", "DBoosting",
+      "UnderwaterMovement"}},
+    {"Morph Ball", {"BJ", "BSJ", "CBJ", "IUJ", "WallBoost", "BoostlessSpiner"}},
+    {"Knowledge and Combat", {"Knowledge", "InvisibleObjects", "Combat", "HeatRun"}},
+    {"Glitches", {"ClipThruObjects", "OoB", "IS"}},
+}};
+
+std::vector< DropdownButton::Option > TrickLevelOptions() {
+  std::vector< DropdownButton::Option > options;
+  for (const char* name : rando::kTrickLevelNames) {
+    options.push_back({name});
+  }
+  return options;
+}
+
+// Randovania's descriptions are HTML. The wiki links go, since the help pane can't open them.
+Rml::String TrickHelpRml(const rando::TrickResource& trick) {
+  Rml::String rml = trick.description;
+  for (size_t start; (start = rml.find("<a ")) != Rml::String::npos;) {
+    const size_t end = rml.find("</a>", start);
+    rml.erase(start, end == Rml::String::npos ? Rml::String::npos : end + 4 - start);
+  }
+  while (rml.ends_with("<br />") || rml.ends_with("<br/>")) {
+    rml.erase(rml.rfind("<br"));
+  }
+  if (!trick.levels.empty()) {
+    Rml::String levels;
+    for (const int level : trick.levels) {
+      if (level > 0 && level < static_cast< int >(std::size(rando::kTrickLevelNames))) {
+        levels += fmt::format("{}<b>{}</b>", levels.empty() ? "" : ", ",
+                              rando::kTrickLevelNames[level]);
+      }
+    }
+    rml += fmt::format("<br/><br/>The logic uses this trick at: {}.", levels);
+  }
+  return rml;
+}
+
+// A section of trick level dropdowns per kTrickGroups entry.
+void AddTrickSections(Pane& leftPane, Pane& rightPane, rando::Settings& settings,
+                      const rando::Database& db) {
+  std::vector< const rando::TrickResource* > other;
+  for (const auto& trick : db.Tricks()) {
+    const bool grouped = std::any_of(kTrickGroups.begin(), kTrickGroups.end(),
+                                     [&trick](const TrickGroup& group) {
+                                       return std::find(group.tricks.begin(), group.tricks.end(),
+                                                        trick.name) != group.tricks.end();
+                                     });
+    if (!grouped) {
+      other.push_back(&trick);
+    }
+  }
+  const auto addTrick = [&](const rando::TrickResource& trick) {
+    const std::string name = trick.name;
+    AddDropdown(leftPane, rightPane, trick.longName, TrickHelpRml(trick), TrickLevelOptions(),
+                [&settings, name] { return settings.TrickLevel(name); },
+                [&settings, name](int v) { settings.SetTrickLevel(name, v); },
+                [&settings, name] { return settings.TrickLevel(name) != 0; });
+  };
+  for (const auto& group : kTrickGroups) {
+    bool sectionAdded = false;
+    for (const std::string_view name : group.tricks) {
+      const auto it = std::find_if(db.Tricks().begin(), db.Tricks().end(),
+                                   [name](const rando::TrickResource& t) { return t.name == name; });
+      if (it == db.Tricks().end()) {
+        continue;
+      }
+      if (!sectionAdded) {
+        leftPane.add_section(group.name);
+        sectionAdded = true;
+      }
+      addTrick(*it);
+    }
+  }
+  if (!other.empty()) {
+    leftPane.add_section("Other");
+    for (const auto* trick : other) {
+      addTrick(*trick);
+    }
+  }
+}
+} // namespace
+
 void RandomizerWindow::build_logic_tab(Rml::Element* content) {
   auto& leftPane = add_child< Pane >(content, Pane::Type::Controlled);
   auto& rightPane = add_child< Pane >(content, Pane::Type::Uncontrolled);
@@ -1266,18 +1365,6 @@ void RandomizerWindow::build_logic_tab(Rml::Element* content) {
   build_start_regions(db);
 
   leftPane.add_section("Logic");
-  std::vector< DropdownButton::Option > trickLevels;
-  for (const char* name : rando::kTrickLevelNames) {
-    trickLevels.push_back({name});
-  }
-  AddDropdown(leftPane, rightPane, "Trick Level",
-              "The highest difficulty of tricks the generator may require, for every trick in "
-              "Randovania's database.<br/><br/><b>Disabled</b> only requires the intended way "
-              "through the game.",
-              std::move(trickLevels), [&settings] { return settings.trickLevel; },
-              [&settings](int v) { settings.trickLevel = std::clamp(v, 0, 5); },
-              [&settings] { return settings.trickLevel != 0; });
-
   std::vector< DropdownButton::Option > strictness;
   for (const char* name : rando::kDamageStrictnessNames) {
     strictness.push_back({name});
@@ -1371,6 +1458,8 @@ void RandomizerWindow::build_logic_tab(Rml::Element* content) {
           "Each seed starts somewhere random, chosen so the seed is still beatable.<br/><br/>"
           "The start stays a surprise: it's only shown in the seed's spoiler log.");
 
+  AddTrickSections(leftPane, rightPane, settings, db);
+
   leftPane.add_section("Settings");
   auto& reset = leftPane.add_button("Reset All Settings");
   reset.on_pressed([] {
@@ -1380,6 +1469,7 @@ void RandomizerWindow::build_logic_tab(Rml::Element* content) {
   SetHelp(leftPane, rightPane, reset,
           "Restores Randovania's Starter Preset for every setting except the seed string.");
 }
+
 
 namespace {
 constexpr uint64_t kRandomStartKey = 1;

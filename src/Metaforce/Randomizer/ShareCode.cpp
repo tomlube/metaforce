@@ -153,6 +153,7 @@ struct Schema {
   const DockTypeDistributor* doors = nullptr;
   std::vector< std::string > changeFrom;
   std::vector< std::string > changeTo;
+  std::vector< std::string > tricks;
   uint32_t hash = 0;
 };
 
@@ -173,6 +174,9 @@ Schema MakeSchema(const Database& db, const PickupDatabase& pickups) {
       schema.changeTo.push_back(db.Weaknesses()[weakness].name);
     }
   }
+  for (const auto& trick : db.Tricks()) {
+    schema.tricks.push_back(trick.name);
+  }
 
   uint64_t hash = Fnv(std::to_string(Settings::kVersion));
   const auto mixList = [&hash](std::string_view tag, const std::vector< std::string >& list) {
@@ -191,6 +195,7 @@ Schema MakeSchema(const Database& db, const PickupDatabase& pickups) {
   hash = Fnv(std::to_string(pickups.defaultArtifactTarget), hash);
   // Fields added to the code after it shipped, so older codes are told apart.
   hash = Fnv("main_plaza_door", hash);
+  mixList("tricks", schema.tricks);
   for (const auto& def : pickups.standard) {
     hash = Fnv(def.name, hash);
     hash = Fnv(std::to_string(def.defaultShuffled) + "/" + std::to_string(def.defaultStarting) +
@@ -274,6 +279,14 @@ std::string EncodeShareCode(const Database& db, const PickupDatabase& pickups,
   }
 
   w.WriteClamped(settings.trickLevel, BitsFor(std::size(kTrickLevelNames) - 1));
+  // One bit per trick when it's at the base level.
+  for (const auto& trick : schema.tricks) {
+    const int level = settings.TrickLevel(trick);
+    w.WriteBool(level != settings.trickLevel);
+    if (level != settings.trickLevel) {
+      w.WriteClamped(level, BitsFor(std::size(kTrickLevelNames) - 1));
+    }
+  }
   w.WriteClamped(settings.damageStrictness, BitsFor(std::size(kDamageStrictnessNames) - 1));
   w.WriteClamped(settings.artifactTarget, BitsFor(12));
   w.WriteClamped(settings.artifactHints, BitsFor(std::size(kArtifactHintNames) - 1));
@@ -376,6 +389,11 @@ std::optional< DecodedShareCode > DecodeShareCode(const Database& db, const Pick
 
   s.trickLevel = std::min(r.ReadInt(BitsFor(std::size(kTrickLevelNames) - 1)),
                           static_cast< int >(std::size(kTrickLevelNames)) - 1);
+  for (const auto& trick : schema.tricks) {
+    if (r.ReadBool()) {
+      s.SetTrickLevel(trick, r.ReadInt(BitsFor(std::size(kTrickLevelNames) - 1)));
+    }
+  }
   s.damageStrictness = std::min(r.ReadInt(BitsFor(std::size(kDamageStrictnessNames) - 1)),
                                 static_cast< int >(std::size(kDamageStrictnessNames)) - 1);
   s.artifactTarget = std::min(r.ReadInt(BitsFor(12)), 12);

@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <fstream>
+#include <iterator>
 
 namespace metaforce::randomizer {
 using json = nlohmann::json;
@@ -79,6 +80,20 @@ const AmmoPickupDef* PickupDatabase::FindAmmo(const std::string& name) const {
   return nullptr;
 }
 
+int Settings::TrickLevel(const std::string& trick) const {
+  const auto it = tricks.find(trick);
+  return it != tricks.end() ? it->second : trickLevel;
+}
+
+void Settings::SetTrickLevel(const std::string& trick, int level) {
+  level = std::clamp(level, 0, static_cast< int >(std::size(kTrickLevelNames)) - 1);
+  if (level == trickLevel) {
+    tricks.erase(trick);
+  } else {
+    tricks[trick] = level;
+  }
+}
+
 void Settings::ResetToDefaults(const PickupDatabase& pickups) {
   const std::string seed = seedString;
   *this = Settings{};
@@ -128,6 +143,9 @@ json Settings::ToJson() const {
   if (mainPlazaDoor) {
     root["main_plaza_door"] = true;
   }
+  if (!tricks.empty()) {
+    root["tricks"] = tricks;
+  }
   json& standardJson = root["standard"] = json::object();
   for (const auto& [name, state] : standard) {
     // Phazon Beam came after seeds were first made, so it's only written when it's in use. That
@@ -153,6 +171,11 @@ bool Settings::FromJson(const json& root) {
     Settings result;
     result.seedString = root.value("seed", "");
     result.trickLevel = std::clamp(root.value("trick_level", 0), 0, 5);
+    if (const auto it = root.find("tricks"); it != root.end()) {
+      for (const auto& [name, level] : it->items()) {
+        result.SetTrickLevel(name, level.get< int >());
+      }
+    }
     result.damageStrictness = std::clamp(root.value("damage_strictness", 1), 0, 2);
     result.artifactTarget = std::clamp(root.value("artifact_target", 12), 0, 12);
     result.artifactHints = std::clamp(root.value("artifact_hints", kArtifactHintsPrecise), 0,

@@ -23,18 +23,8 @@
 
 namespace metaforce {
 
-// The version from Git: v0.4.0 is tagged, and each commit after it counts up the patch number,
-// so "v0.4.0-3-dirty" from git describe shows as "v0.4.3-dirty".
-inline std::string VersionText() {
-  const std::string describe = BOREALIS_APP_DESCRIBE;
-  std::smatch match;
-  if (!std::regex_match(describe, match,
-                        std::regex(R"(v(\d+)\.(\d+)\.(\d+)(?:-(\d+))?(-dirty)?)"))) {
-    return describe;
-  }
-  const int patch = std::stoi(match[3]) + (match[4].matched ? std::stoi(match[4]) : 0);
-  return fmt::format("v{}.{}.{}{}", match[1].str(), match[2].str(), patch, match[5].str());
-}
+// The release version from the VERSION file, like "v0.6.5".
+inline std::string VersionText() { return BOREALIS_APP_DESCRIBE; }
 
 inline std::optional< std::filesystem::path > ExecutablePath() {
 #if defined(_WIN32)

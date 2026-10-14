@@ -27,8 +27,7 @@ private:
   void build_seeds_tab(Rml::Element* content);
   void build_qol_tab(Rml::Element* content);
   void build_tournament_tab(Rml::Element* content);
-  void build_logic_tab(Rml::Element* content);
-  void build_pool_tab(Rml::Element* content);
+  void build_logic_tab(Rml::Element* content);  void build_pool_tab(Rml::Element* content);
   void build_rooms_tab(Rml::Element* content);
   void build_doors_tab(Rml::Element* content);
   void build_item_warp_tab(Rml::Element* content);

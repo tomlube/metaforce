@@ -78,7 +78,10 @@ struct Settings {
   static constexpr int kVersion = 1;
 
   std::string seedString;
-  int trickLevel = 0;      // 0 (disabled) to 5 (ludicrous), applied to every trick
+  int trickLevel = 0;      // 0 (disabled) to 5 (ludicrous), for every trick not in `tricks`
+  // Per-trick levels by Randovania trick name, only for tricks that differ from trickLevel. Only
+  // written when not empty, so older seeds keep their hashes.
+  std::map< std::string, int > tricks;
   int damageStrictness = 1; // index into kDamageStrictnessValues
   int artifactTarget = 6;
   // How precise the Artifact Temple totems' hints are, index into kArtifactHintNames. Like
@@ -124,6 +127,9 @@ struct Settings {
   bool mainPlazaDoor = true;
   std::map< std::string, StandardPickupState > standard;
   std::map< std::string, AmmoPickupState > ammo;
+
+  int TrickLevel(const std::string& trick) const;
+  void SetTrickLevel(const std::string& trick, int level);
 
   void ResetToDefaults(const PickupDatabase& pickups);
   void FillMissing(const PickupDatabase& pickups);

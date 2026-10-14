@@ -56,6 +56,7 @@ struct TrickResource {
   std::string name;
   std::string longName;
   std::string description;
+  std::vector< int > levels; // levels the logic requires somewhere
 };
 
 struct DamageReduction {

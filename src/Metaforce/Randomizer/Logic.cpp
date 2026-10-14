@@ -130,7 +130,8 @@ bool Database::Load(const std::filesystem::path& path, std::string& error) {
       mEvents.push_back({ev.at("name"), ev.at("long_name")});
     }
     for (const auto& trick : res.at("tricks")) {
-      mTricks.push_back({trick.at("name"), trick.at("long_name"), trick.at("description")});
+      mTricks.push_back({trick.at("name"), trick.at("long_name"), trick.at("description"),
+                         trick.value("levels", std::vector< int >{})});
     }
     for (const auto& dmg : res.at("damage")) {
       mDamage.push_back({dmg.at("name"), dmg.at("long_name")});
