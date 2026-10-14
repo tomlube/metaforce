@@ -85,6 +85,8 @@ struct Settings {
   // Randovania's "artifacts" specific pickup hint. Only written to the settings when it isn't
   // the default, so older seeds keep their hashes.
   int artifactHints = kArtifactHintsPrecise;
+  // How precise the Phazon Suit's hint is. Only written when it isn't the default.
+  int phazonSuitHints = kArtifactHintsPrecise;
   // "Region|Area|Node", kRandomStartingLocation, or empty for the database default
   std::string startingLocation;
   int roomRando = 0; // index into kRoomRandoNames

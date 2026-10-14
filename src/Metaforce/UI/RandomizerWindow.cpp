@@ -1015,6 +1015,23 @@ void RandomizerWindow::build_logic_tab(Rml::Element* content) {
               },
               [&settings] { return settings.artifactHints != rando::kArtifactHintsPrecise; });
 
+  std::vector< DropdownButton::Option > phazonSuitHints;
+  for (const char* name : rando::kArtifactHintNames) {
+    phazonSuitHints.push_back({name});
+  }
+  AddDropdown(leftPane, rightPane, "Phazon Suit Hint",
+              "How precise the Phazon Suit's hint is. Once every Chozo Artifact is in Artifact "
+              "Temple and Ridley has appeared, the Phazon Suit's entry in the pause menu's "
+              "inventory can be opened, and tells you where the suit is.<br/><br/>"
+              "<b>Disabled</b> gives no hint.<br/><br/><b>Region only</b> shows the region "
+              "name.<br/><br/><b>Region and area</b> shows the region and area name.<br/><br/>",
+              std::move(phazonSuitHints), [&settings] { return settings.phazonSuitHints; },
+              [&settings](int v) {
+                settings.phazonSuitHints = std::clamp(
+                    v, 0, static_cast< int >(std::size(rando::kArtifactHintNames)) - 1);
+              },
+              [&settings] { return settings.phazonSuitHints != rando::kArtifactHintsPrecise; });
+
   auto& start = leftPane.add_select_button({
       .key = "Starting Location",
       .getValue =

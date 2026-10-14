@@ -263,6 +263,8 @@ struct Session {
   int templeLocation = -1;
   // Artifact Temple totem string tables with the seed's hints, by the game's STRG id.
   std::unordered_map< uint32_t, std::vector< uint8_t > > totemText;
+  // The Phazon Suit's inventory entry text with the seed's hint, or empty for no hint.
+  std::wstring phazonSuitHint;
   bool pendingNewGame = false;
   // Warp to Start: put the player on the start position once the start area has loaded.
   bool pendingStartTeleport = false;
@@ -365,6 +367,7 @@ void Deactivate() {
   s.memoText.clear();
   s.templeLocation = -1;
   s.totemText.clear();
+  s.phazonSuitHint.clear();
   s.pendingNewGame = false;
   s.autosavePending = false;
   s.traversedDoors.clear();
@@ -491,6 +494,25 @@ std::string ArtifactHint(const Seed& seed, int artifact, int mode) {
   return name + " is lost somewhere on Tallon IV.";
 }
 
+// The Phazon Suit's hint. Empty when the hint is disabled, so the
+// inventory entry stays locked.
+std::string PhazonSuitHint(const Seed& seed, int mode) {
+  if (mode == kArtifactHintsDisabled) {
+    return {};
+  }
+  const std::string name = HintColor(kHintItemColor, "Phazon Suit");
+  for (int i = 0; i < static_cast< int >(seed.locations.size()); ++i) {
+    if (seed.locations[i].grant.itemType != CPlayerState::kIT_PhazonSuit) {
+      continue;
+    }
+    const std::string where = HintLocationName(i, mode == kArtifactHintsPrecise);
+    if (!where.empty()) {
+      return fmt::format("The {} is located in {}.", name, HintColor(kHintLocationColor, where));
+    }
+  }
+  return fmt::format("The {} is lost somewhere on Tallon IV.", name);
+}
+
 void BuildArtifactHints(const Seed& seed) {
   int mode = kArtifactHintsPrecise;
   if (seed.settings.is_object()) {
@@ -503,6 +525,12 @@ void BuildArtifactHints(const Seed& seed) {
       S().totemText.emplace(kArtifactTotemText[i], std::move(*strg));
     }
   }
+  int phazonMode = kArtifactHintsPrecise;
+  if (seed.settings.is_object()) {
+    phazonMode = std::clamp(seed.settings.value("phazon_suit_hints", kArtifactHintsPrecise), 0,
+                            static_cast< int >(std::size(kArtifactHintNames)) - 1);
+  }
+  S().phazonSuitHint = Widen(PhazonSuitHint(seed, phazonMode));
 }
 
 void Activate(Seed seed) {
@@ -1543,6 +1571,61 @@ bool GetArtifactHintText(unsigned int id, const unsigned char*& data, unsigned i
   data = it->second.data();
   size = static_cast< unsigned int >(it->second.size());
   return true;
+}
+
+namespace {
+// Check for correct artifact layers. The layers are found by name
+// in the warp catalog (read from the MLVL), and their state is kept in Tallon Overworld.
+bool RidleyLayerActive() {
+  if (gpGameState == nullptr || gpMemoryCard == nullptr) {
+    return false;
+  }
+  const rstl::pair< CAssetId, int > temple =
+      gpMemoryCard->GetAreaAndWorldIdForSaveId(static_cast< int >(kArtifactTempleSaveId));
+  if (temple.first == kInvalidAssetId || temple.second < 0) {
+    return false;
+  }
+  const CScriptLayerManager& layers = *gpGameState->StateForWorld(temple.first).GetLayerState();
+  const TAreaId area(temple.second);
+  if (temple.second >= static_cast< int >(layers.GetAreaLayers().size())) {
+    return false;
+  }
+  for (const warp::World& world : warp::GetWorlds()) {
+    if (world.mlvl != temple.first) {
+      continue;
+    }
+    for (const warp::Area& a : world.areas) {
+      if (a.index != temple.second) {
+        continue;
+      }
+      for (int l = 0; l < static_cast< int >(a.layers.size()); ++l) {
+        std::string name = a.layers[l].name;
+        std::transform(name.begin(), name.end(), name.begin(),
+                       [](unsigned char c) { return static_cast< char >(std::tolower(c)); });
+        if (name.find("ridley") != std::string::npos && l < layers.GetAreaLayerCount(area) &&
+            layers.IsLayerActive(area, TLayerId(l))) {
+          return true;
+        }
+      }
+      return false;
+    }
+  }
+  return false;
+}
+} // namespace
+
+const wchar_t* GetPhazonSuitHint() {
+  const auto& s = S();
+  if (!s.active || s.phazonSuitHint.empty() || gpGameState == nullptr) {
+    return nullptr;
+  }
+  const CPlayerState& player = *gpGameState->PlayerState();
+  for (int i = CPlayerState::kIT_Truth; i <= CPlayerState::kIT_Newborn; ++i) {
+    if (!player.HasPowerUp(static_cast< CPlayerState::EItemType >(i))) {
+      return nullptr;
+    }
+  }
+  return RidleyLayerActive() ? s.phazonSuitHint.c_str() : nullptr;
 }
 
 bool GetSessionScanTime(unsigned int scan, float& time) {
