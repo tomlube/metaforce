@@ -372,6 +372,25 @@ const Requirement* Database::DockLockRequirement(int node, int weakness) const {
   return &*mWeaknesses[weakness].lock;
 }
 
+void Database::SetDockWeakness(int node, int weakness) {
+  Node& n = mNodes[node];
+  DockInfo& info = *n.dock;
+  info.weaknessIndex = weakness;
+  info.weakness = mWeaknesses[weakness].name;
+  info.openOverride.reset();
+  info.lockOverride.reset();
+  const Requirement* lock = DockLockRequirement(node, weakness);
+  info.lock = lock != nullptr ? *lock : Requirement::Trivial();
+  Requirement open = DockOpenRequirement(node, weakness);
+  Requirement req = lock != nullptr ? MakeAnd(std::move(open), *lock) : std::move(open);
+  if (info.connection >= 0) {
+    n.connections[info.connection].requirement = std::move(req);
+  } else if (info.target >= 0 && !(req.kind == Requirement::Kind::Or && req.children.empty())) {
+    info.connection = static_cast< int >(n.connections.size());
+    n.connections.push_back({info.target, std::move(req)});
+  }
+}
+
 int Database::FindNode(std::string_view region, std::string_view area, std::string_view node) const {
   auto it = mNodeLookup.find(NodeKey(region, area, node));
   return it == mNodeLookup.end() ? -1 : it->second;

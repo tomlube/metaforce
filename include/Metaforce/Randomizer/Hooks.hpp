@@ -185,6 +185,10 @@ bool GetDoorShieldModel(unsigned int worldId, unsigned int editorId, unsigned in
 // missile blast shields (by model) or its scan point (by SCAN), which the randomizer replaces.
 bool RemoveBlastShieldActor(unsigned int model);
 bool RemoveBlastShieldScan(unsigned int scan);
+// ScriptLoader::LoadPointOfInterest: true to leave out a scan point a seed made untrue: Main
+// Plaza's vanilla "Energy Tank" scan always, and its "one way door" and unreachable ledge with
+// Main Plaza Vault Door on.
+bool RemoveSeedScanPoint(unsigned int worldId, unsigned int editorId);
 
 // ScriptLoader::LoadDamageableTrigger: a restyled door's damageable trigger. The vulnerability
 // is a serialized DamageVulnerability property. The textures are only to be used when

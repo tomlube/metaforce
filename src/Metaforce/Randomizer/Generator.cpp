@@ -196,6 +196,9 @@ private:
     if (const int rooms = mDb.FindMisc("room_rando"); rooms >= 0 && mSettings.roomRando != 0) {
       mCtx.misc[rooms] = 1;
     }
+    if (const int door = mDb.FindMisc("main_plaza_door"); door >= 0 && mSettings.mainPlazaDoor) {
+      mCtx.misc[door] = 1;
+    }
     mCtx.damageStrictness =
         kDamageStrictnessValues[std::clamp(mSettings.damageStrictness, 0, 2)];
     mCtx.energyTankItem = mDb.FindItem("EnergyTank");
@@ -1126,6 +1129,17 @@ std::optional< Seed > Generate(const GeneratorInput& input, std::string& error,
   if (!input.db.IsLoaded()) {
     error = "The logic database isn't loaded";
     return std::nullopt;
+  }
+  // Like Randovania, the door is a blue door everywhere the generator looks, room and door lock
+  // randomizers included.
+  if (input.settings.mainPlazaDoor) {
+    const int node = input.db.FindNode("Chozo Ruins", "Main Plaza", "Door from Plaza Access");
+    const int weakness = input.db.FindWeakness("door/Normal Door (Forced)");
+    if (node >= 0 && weakness >= 0) {
+      Database db = input.db;
+      db.SetDockWeakness(node, weakness);
+      return Generator({db, input.pickups, input.settings}, progress, cancel).Run(error);
+    }
   }
   return Generator(input, progress, cancel).Run(error);
 }

@@ -119,6 +119,9 @@ struct Settings {
   // Rooms and door locks are still randomized, without checking they make sense. Only written to
   // the settings when on, so seeds made with it off keep their hashes.
   bool logicDisabled = false;
+  // Seed Specific QoL, after Randovania's "Main Plaza Vault Door": Main Plaza's door to the Vault
+  // opens from its ledge. Only written when on; seeds from before it read as off.
+  bool mainPlazaDoor = true;
   std::map< std::string, StandardPickupState > standard;
   std::map< std::string, AmmoPickupState > ammo;
 
