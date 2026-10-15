@@ -125,6 +125,9 @@ struct Settings {
   // Seed Specific QoL, after Randovania's "Main Plaza Vault Door": Main Plaza's door to the Vault
   // opens from its ledge. Only written when on; seeds from before it read as off.
   bool mainPlazaDoor = true;
+  // Seed Specific QoL: the Thermal Visor conduits' hitboxes are 40% bigger. Only written when on;
+  // seeds from before it read as off.
+  bool biggerThermalConduits = true;
   std::map< std::string, StandardPickupState > standard;
   std::map< std::string, AmmoPickupState > ammo;
 

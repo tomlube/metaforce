@@ -2012,6 +2012,14 @@ bool AllowSpawnPointInventoryReset() { return !S().active; }
 
 bool MissileStationRefillsPowerBombs() { return S().active.has_value(); }
 
+float GetDamageableTriggerScale(unsigned int visorMask) {
+  constexpr unsigned int kThermalOnly = 4;
+  const auto& s = S();
+  const bool bigger = s.active && s.active->settings.is_object() &&
+                      s.active->settings.value("bigger_thermal_conduits", false);
+  return bigger && visorMask == kThermalOnly ? 1.4f : 1.f;
+}
+
 bool GetPausedMemoStringOverride(unsigned int strg, unsigned int& message) {
   constexpr unsigned int kMissileStationMessage = 0xAB25D085;
   if (!S().active || strg != kMissileStationMessage) {

@@ -492,6 +492,7 @@ CEntity* ScriptLoader::LoadDamageableTrigger(CStateManager& mgr, CInputStream& i
       colorTex = doorForce.color;
     }
   }
+  volume = volume * metaforce::randomizer::GetDamageableTriggerScale(vParms.GetMask());
 #endif
   return rs_new CScriptDamageableTrigger(mgr.AllocateUniqueId(), name, info, position, volume,
                                          hInfo, dVuln, triggerFlags, patternTex1, patternTex2,

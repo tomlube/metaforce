@@ -233,6 +233,7 @@ Rml::String ShareSummaryRml(const rando::Database& db, const rando::PickupDataba
       "Room randomizer: <b>{}</b><br/>"
       "Door locks: <b>{}</b><br/>"
       "Main Plaza Vault Door: <b>{}</b><br/>"
+      "Bigger Thermal Conduits: <b>{}</b><br/>"
       "Item pool: <b>{}</b>",
       settings.seedString.empty()
           ? Rml::String("<b>none</b> (every seed made from it is different)")
@@ -240,7 +241,8 @@ Rml::String ShareSummaryRml(const rando::Database& db, const rando::PickupDataba
       start, tricks,
       rando::kDamageStrictnessNames[settings.damageStrictness], settings.artifactTarget,
       rando::kRoomRandoNames[settings.roomRando], rando::kDoorLockModeNames[settings.doorLockMode],
-      settings.mainPlazaDoor ? "On" : "Off", changedPickups == 0 ? Rml::String("Starter Preset")
+      settings.mainPlazaDoor ? "On" : "Off", settings.biggerThermalConduits ? "On" : "Off",
+      changedPickups == 0 ? Rml::String("Starter Preset")
                           : fmt::format("{} change{} from the Starter Preset", changedPickups,
                                         changedPickups == 1 ? "" : "s"));
   if (settings.logicDisabled) {
@@ -558,6 +560,21 @@ void RandomizerWindow::build_qol_tab(Rml::Element* content) {
           "Makes the door on Main Plaza's Energy Tank ledge a blue door, so the Vault can be "
           "reached from Main Plaza.<br/><br/>Takes effect on the next seed you generate; the logic "
           "counts on it. Seeds already made keep what they were made with.");
+
+  auto& thermalConduits = leftPane.add_child< BoolButton >(BoolButton::Props{
+      .key = "Bigger Thermal Conduits",
+      .getValue = [&settings] { return settings.biggerThermalConduits; },
+      .setValue =
+          [&settings](bool v) {
+            settings.biggerThermalConduits = v;
+            Save();
+          },
+      .isModified = [&settings] { return !settings.biggerThermalConduits; },
+  });
+  SetHelp(leftPane, rightPane, thermalConduits,
+          "Makes the hitboxes of the conduits that need the Thermal Visor 40% bigger, so they're "
+          "easier to hit.<br/><br/>Takes effect on the next seed you generate. Seeds already made "
+          "keep what they were made with.");
 }
 
 // The help strip sits under the selector, where the help for the focused control shows.

@@ -210,6 +210,11 @@ struct DoorForceOverride {
 };
 bool GetDoorForceOverride(unsigned int worldId, unsigned int editorId, DoorForceOverride& out);
 
+// ScriptLoader::LoadDamageableTrigger: how much to scale a trigger's volume by. Thermal-only
+// targets (the Thermal Visor conduits) get a bigger hitbox when the seed has Bigger Thermal
+// Conduits on.
+float GetDamageableTriggerScale(unsigned int visorMask);
+
 // CStateManager::LoadScriptObjects, after a room's objects are loaded: puts up its blast shields.
 void SpawnDoorLocks(CStateManager& mgr, int area);
 

@@ -143,6 +143,9 @@ json Settings::ToJson() const {
   if (mainPlazaDoor) {
     root["main_plaza_door"] = true;
   }
+  if (biggerThermalConduits) {
+    root["bigger_thermal_conduits"] = true;
+  }
   if (!tricks.empty()) {
     root["tricks"] = tricks;
   }
@@ -196,6 +199,7 @@ bool Settings::FromJson(const json& root) {
     result.blastShieldLockOn = root.value("blast_shield_lock_on", true);
     result.logicDisabled = root.value("logic_disabled", false);
     result.mainPlazaDoor = root.value("main_plaza_door", false);
+    result.biggerThermalConduits = root.value("bigger_thermal_conduits", false);
     for (const auto& [name, state] : root.at("standard").items()) {
       result.standard[name] = {state.value("shuffled", 0), state.value("starting", 0),
                                state.value("ammo", 0)};
