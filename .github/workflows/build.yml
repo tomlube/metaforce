@@ -172,6 +172,11 @@ jobs:
           fetch-depth: 0
           submodules: recursive
 
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.6.app
+          echo "SDKROOT=$(xcrun --sdk macosx --show-sdk-path)" >> "$GITHUB_ENV"
+
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@v0.0.11
 

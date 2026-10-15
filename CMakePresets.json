@@ -111,7 +111,8 @@
         "AURORA_NOD_PROVIDER": "vendor",
         "CMAKE_DISABLE_FIND_PACKAGE_PkgConfig": true,
         "CMAKE_IGNORE_PREFIX_PATH": "/opt/homebrew",
-        "CMAKE_OSX_DEPLOYMENT_TARGET": "12.0"
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "12.0",
+        "CMAKE_OSX_SYSROOT": "macosx"
       }
     },
     {
