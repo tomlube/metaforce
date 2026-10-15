@@ -47,11 +47,6 @@ enum : uint32_t {
   kGamecubeAncs,
   kGamecubeTxtr0,
   kGamecubeTxtr1,
-  kFlamethrowerCmdl,
-  kFlamethrowerAncs,
-  kFlamethrowerTxtr1,
-  kFlamethrowerTxtr2,
-  kFlamethrowerTxtr3,
 };
 constexpr uint32_t kIceTrapAncs = 0xDEAF0072;
 
@@ -61,8 +56,6 @@ constexpr uint32_t kSuitAncs = 0x27A97006;         // Node1_11.ANCS
 constexpr uint32_t kVisorCmdl = 0x61DAB956;        // Node1_39_1.CMDL, the visor pickup
 constexpr uint32_t kVisorAncs = 0x9F0C908A;        // Node1_39_1.ANCS
 constexpr uint32_t kMetroidCmdl = 0x2F976E86;      // Metroid.CMDL
-constexpr uint32_t kPlasmaComboCmdl = 0xC54BBF68;  // plasma_combo.CMDL
-constexpr uint32_t kPowerComboAncs = 0x7C04E388;   // power_combo.ANCS
 constexpr uint32_t kIceParasiteCmdl = 0xA3108E43;  // new_ice_parasite_bound.CMDL
 
 constexpr const char* kAssetDirectory = "pickup_assets";
@@ -119,13 +112,6 @@ constexpr std::array kPickupAssets = {
     Character(kGamecubeAncs, kSuitAncs, kSuitCmdl, kGamecubeCmdl),
     Texture(kGamecubeTxtr0, "randovania_gamecube.txtr"),
     Texture(kGamecubeTxtr1, "randovania_gamecube_text.txtr"),
-    Model(kFlamethrowerCmdl, kPlasmaComboCmdl,
-          {kFlamethrowerTxtr1, kFlamethrowerTxtr2, kFlamethrowerTxtr3}),
-    // power_combo.ANCS's second character, which uses plasma_combo.CMDL.
-    Character(kFlamethrowerAncs, kPowerComboAncs, kPlasmaComboCmdl, kFlamethrowerCmdl),
-    Texture(kFlamethrowerTxtr1, "flamethrower_vertice_color.txtr"),
-    Texture(kFlamethrowerTxtr2, "flamethrower_cap_glow.txtr"),
-    Texture(kFlamethrowerTxtr3, "flamethrower_color_body.txtr"),
     Character(kIceTrapAncs, kSuitAncs, kSuitCmdl, kIceParasiteCmdl),
 };
 
