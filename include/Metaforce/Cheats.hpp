@@ -18,12 +18,17 @@ struct Toggles {
   bool moonJump = false; // holding jump in the air keeps rising
   bool oneHitKill = false; // anything Samus can hurt dies to one hit
   bool unlockedDash = false; // the kiosk demo's dash: L orbiting an empty point can dash too
+  bool screwAttack = false; // Echoes' Screw Attack: jump again mid-air to somersault and relaunch
 };
 
 Toggles& GetToggles();
 
 // CStateManager::Update, after actors think.
-void Update(CStateManager& mgr);
+void Update(CStateManager& mgr, float dt);
+
+// CBallCamera: the Screw Attack has the ball camera while Samus is unmorphed, so it must follow
+// her like it follows the ball.
+bool InScrewAttack();
 
 // CStateManager::ApplyLocalDamage: whether damage to the player is ignored.
 bool IgnorePlayerDamage();

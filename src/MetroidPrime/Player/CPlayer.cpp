@@ -935,6 +935,7 @@ bool CPlayer::GetOrbitLockGun() { return !gpGameState->GameOptions().GetIsLockOn
 #include "rstl/vector.hpp"
 
 #if defined(TARGET_PC)
+#include "Metaforce/Cheats.hpp"
 #include "Metaforce/Input.hpp"
 #endif
 
@@ -3628,6 +3629,11 @@ bool CPlayer::CanEnterMorphBallState(CStateManager& mgr, float f1) const {
   if (!mCanEnterMorphBall) {
     return false;
   }
+#if defined(TARGET_PC)
+  if (metaforce::cheats::InScrewAttack()) {
+    return false;
+  }
+#endif
   return true;
 }
 

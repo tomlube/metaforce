@@ -27,6 +27,10 @@
 
 #include "WorldFormat/CMetroidAreaCollider.hpp"
 
+#if defined(TARGET_PC)
+#include "Metaforce/Cheats.hpp"
+#endif
+
 #include "math.h"
 
 static CMaterialList kLineOfSightIncludeList = CMaterialList(kMT_Solid);
@@ -1391,8 +1395,11 @@ void CBallCamera::UpdateUsingColliders(float dt, CStateManager& mgr) {
     return;
   }
 
-  if (player->GetMorphballTransitionState() == CPlayer::kMS_Unmorphed &&
-      !mAvoidGeometryFull) {
+  if (player->GetMorphballTransitionState() == CPlayer::kMS_Unmorphed && !mAvoidGeometryFull
+#if defined(TARGET_PC)
+      && !metaforce::cheats::InScrewAttack()
+#endif
+  ) {
     return;
   }
 

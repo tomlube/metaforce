@@ -1351,7 +1351,7 @@ void CStateManager::Update(float dt) {
     metaforce::randomizer::UpdateCrossWorldDoors(*this, dt);
     metaforce::randomizer::UpdateAutosave(*this, dt);
     metaforce::randomizer::UpdateItemWarp(dt);
-    metaforce::cheats::Update(*this);
+    metaforce::cheats::Update(*this, dt);
   }
 #endif
 

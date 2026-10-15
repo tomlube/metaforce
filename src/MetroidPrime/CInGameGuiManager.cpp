@@ -40,6 +40,7 @@
 #include "rstl/algorithm.hpp"
 
 #if defined(TARGET_PC)
+#include "Metaforce/Cheats.hpp"
 #include "Metaforce/Display.hpp"
 #include "Metaforce/SaveAnywhere.hpp"
 #include "Metaforce/SaveIndicator.hpp"
@@ -346,6 +347,11 @@ void CInGameGuiManager::Draw(const CStateManager& mgr) const {
     } else {
       mapAlpha = 0.f;
     }
+#if defined(TARGET_PC)
+    if (metaforce::cheats::InScrewAttack()) {
+      mapAlpha = 0.f;
+    }
+#endif
     CGuiCamera* camera = mSamusHud->GetBaseHudFrame()->GetFrameCamera();
     camera->Draw(CGuiWidgetDrawParms(0.f, CVector3f::Zero()));
     CGraphics::SetDepthRange(0.f, 1.f / 512.f);

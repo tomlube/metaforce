@@ -1090,6 +1090,11 @@ void CPlayerGun::ProcessInput(const CFinalInput& input, CStateManager& mgr) {
             : 0;
     break;
   }
+#if defined(TARGET_PC)
+  if (metaforce::cheats::InScrewAttack()) {
+    mFireButtonStates = 0;
+  }
+#endif
 }
 
 void CPlayerGun::ProcessChargeState(int releasedStates, int pressedStates, CStateManager& mgr,
@@ -3814,6 +3819,11 @@ void CPlayerGun::ProcessInput(const CFinalInput& input, CStateManager& mgr) {
         ControlMapper::GetDigitalInput(ControlMapper::kC_MissileOrPowerBomb, input) ? 2 : 0;
     break;
   }
+#if defined(TARGET_PC)
+  if (metaforce::cheats::InScrewAttack()) {
+    mFireButtonStates = 0;
+  }
+#endif
 }
 
 void CPlayerGun::ProcessChargeState(int releasedStates, int pressedStates, CStateManager& mgr,

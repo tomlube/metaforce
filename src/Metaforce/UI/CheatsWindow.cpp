@@ -314,6 +314,14 @@ void CheatsWindow::build_cheats_tab(Rml::Element* content) {
             "nothing is locked on, arcing around the point L holds in front of you.<br/><br/>The "
             "retail game only dashes while locked onto a target.",
             &cheats::Toggles::unlockedDash);
+  AddToggle(leftPane, rightPane, "Screw Attack",
+            "Echoes' Screw Attack, no item needed. Jump again while moving forward after the "
+            "double jump (or the first jump without Space Jump Boots) to launch into a "
+            "somersault that damages everything around Samus. Press jump while falling to "
+            "relaunch, up to five times.<br/><br/>Hitting a wall head-on bounces you back off it "
+            "and refills your relaunches. Hitting one at an angle, or pressing jump while rising, "
+            "ends the attack.",
+            &cheats::Toggles::screwAttack);
   leftPane.add_rml("Cheats stay on until Metaforce closes.");
 }
 

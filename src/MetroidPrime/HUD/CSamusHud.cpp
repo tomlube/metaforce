@@ -45,6 +45,10 @@
 #include "MetroidPrime/Weapons/CGameProjectile.hpp"
 #include "rstl/math.hpp"
 
+#if defined(TARGET_PC)
+#include "Metaforce/Cheats.hpp"
+#endif
+
 #include <float.h>
 #include <math.h>
 #include <stdio.h>
@@ -1218,6 +1222,9 @@ void CSamusHud::Update(float dt, const CStateManager& mgr, uint helmetVis, bool 
   UpdateStateTransition(dt, mgr);
   bool firstPerson = mgr.GetPlayer()->GetMorphballTransitionState() == CPlayer::kMS_Unmorphed &&
                      !mgr.GetCameraManager()->IsInCinematicCamera();
+#if defined(TARGET_PC)
+  firstPerson = firstPerson && !metaforce::cheats::InScrewAttack();
+#endif
   if (firstPerson != mLatestFirstPerson) {
     if (firstPerson) {
       EnterFirstPerson(mgr);
@@ -1534,6 +1541,9 @@ void CSamusHud::LeaveFirstPerson(const CStateManager& mgr) {
 
 void CSamusHud::DrawHelmet(const CStateManager& mgr, float camYOff) {
   bool unmorphed = mgr.GetPlayer()->GetMorphballTransitionState() == CPlayer::kMS_Unmorphed;
+#if defined(TARGET_PC)
+  unmorphed = unmorphed && !metaforce::cheats::InScrewAttack();
+#endif
   if (mLoadedFrmeHelmet != nullptr && unmorphed && mNextState != kHS_Ball) {
     bool leavingBall = mActiveTransState == kTS_Transitioning && mCurState == kHS_Ball;
     const float alpha = leavingBall ? mTransT : 1.f;
@@ -1549,7 +1559,11 @@ void CSamusHud::Draw(const CStateManager& mgr, float alpha, uint helmetVis, bool
   }
   const CPlayer::EPlayerMorphBallState ballState = mgr.GetPlayer()->GetMorphballTransitionState();
   mCamFilter.Draw();
-  if (ballState == CPlayer::kMS_Unmorphed) {
+  if (ballState == CPlayer::kMS_Unmorphed
+#if defined(TARGET_PC)
+      && !metaforce::cheats::InScrewAttack()
+#endif
+  ) {
     DrawAttachedEnemyEffect(mgr);
     mCamFilter2.Draw();
     if (targetingManager) {
@@ -1632,7 +1646,11 @@ const CTargetingManager& CSamusHud::GetTargetingManager() const { return mTarget
 EHudState CSamusHud::GetDesiredHudState(const CStateManager& mgr) const {
   const CPlayer::EPlayerMorphBallState state = mgr.GetPlayer()->GetMorphballTransitionState();
   if (state == CPlayer::kMS_Morphed || state == CPlayer::kMS_Morphing ||
-      state == CPlayer::kMS_Unmorphing) {
+      state == CPlayer::kMS_Unmorphing
+#if defined(TARGET_PC)
+      || metaforce::cheats::InScrewAttack()
+#endif
+  ) {
     return kHS_Ball;
   }
   switch (mgr.GetPlayerState()->GetTransitioningVisor()) {
