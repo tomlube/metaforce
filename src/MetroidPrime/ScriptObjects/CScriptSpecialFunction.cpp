@@ -297,6 +297,12 @@ void CScriptSpecialFunction::AcceptScriptMsg(EScriptObjectMessage msg, TUniqueId
         CPlayerState& pState = *mgr.PlayerState();
         pState.SetPickup(CPlayerState::kIT_Missiles,
                          pState.GetItemCapacity(CPlayerState::kIT_Missiles));
+#if defined(TARGET_PC)
+        if (metaforce::randomizer::MissileStationRefillsPowerBombs()) {
+          pState.SetPickup(CPlayerState::kIT_PowerBombs,
+                           pState.GetItemCapacity(CPlayerState::kIT_PowerBombs));
+        }
+#endif
       }
       break;
     }

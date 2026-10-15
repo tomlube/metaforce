@@ -42,6 +42,11 @@ void CScriptHUDMemo::AcceptScriptMsg(EScriptObjectMessage msg, TUniqueId uid, CS
                                                 true, false, false));
         break;
       }
+      if (mDispType == kDT_MessageBox &&
+          metaforce::randomizer::GetPausedMemoStringOverride(mStringTableId, message)) {
+        mgr.ShowPausedHUDMemo(message, mParms.GetDisplayTime());
+        break;
+      }
     }
 #endif
     if (GetActive()) {

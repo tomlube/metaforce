@@ -154,6 +154,13 @@ bool GetAutoEnabledElevator(unsigned int areaAssetId, unsigned int& relay);
 // one that takes Samus's upgrades after the frigate) would take them away again.
 bool AllowSpawnPointInventoryReset();
 
+// CScriptSpecialFunction missile station: true to refill power bombs.
+bool MissileStationRefillsPowerBombs();
+
+// CScriptHUDMemo SetToZero: true when a paused message box showing string table `strg` should
+// show `message` instead. The missile station's says "Ammunition", since it refills power bombs.
+bool GetPausedMemoStringOverride(unsigned int strg, unsigned int& message);
+
 // CGameState::LoadGameFileState: how many of the counted items the active seed hands out at the
 // start (its unshuffled artifacts) are left out of a save's item percentage until every other
 // counted item is collected. 0 when no randomized game is active.

@@ -24,6 +24,8 @@ inline constexpr uint32_t kPhazonBeamMessage = 0xDEAF0100;
 inline constexpr uint32_t kSCAN = 0x5343414E;
 inline constexpr uint32_t kPhazonBeamScan = 0xDEAF0101;
 inline constexpr uint32_t kPhazonBeamScanText = 0xDEAF0102;
+// The missile station's paused message box, which also refills power bombs in a randomized game.
+inline constexpr uint32_t kAmmoRefillMessage = 0xDEAF0103;
 
 // A string table of English strings, in the layout CStringTable::Load reads.
 AssetData BuildStringTable(std::initializer_list< std::string_view > texts);

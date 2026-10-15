@@ -2010,6 +2010,17 @@ bool StripPickupInputLocks() { return S().active.has_value(); }
 
 bool AllowSpawnPointInventoryReset() { return !S().active; }
 
+bool MissileStationRefillsPowerBombs() { return S().active.has_value(); }
+
+bool GetPausedMemoStringOverride(unsigned int strg, unsigned int& message) {
+  constexpr unsigned int kMissileStationMessage = 0xAB25D085;
+  if (!S().active || strg != kMissileStationMessage) {
+    return false;
+  }
+  message = kAmmoRefillMessage;
+  return true;
+}
+
 int WithheldItemPercentUnits() {
   const auto& s = S();
   if (!s.active) {

@@ -239,7 +239,7 @@ void SetPhazonBeamScanSource(unsigned int scan) {
 }
 
 unsigned int GetPickupAssetType(unsigned int id) {
-  if (id == kPhazonBeamMessage || id == kPhazonBeamScanText) {
+  if (id == kPhazonBeamMessage || id == kPhazonBeamScanText || id == kAmmoRefillMessage) {
     return kSTRG;
   }
   if (id == kPhazonBeamScan) {
@@ -258,6 +258,9 @@ AssetData BuildPickupAsset(unsigned int id) {
   }
   if (id == kPhazonBeamScan) {
     return BuildPhazonBeamScan();
+  }
+  if (id == kAmmoRefillMessage) {
+    return BuildStringTable({"&just=center;Ammunition fully replenished."});
   }
   const PickupAsset* asset = FindPickupAsset(id);
   if (asset == nullptr) {
