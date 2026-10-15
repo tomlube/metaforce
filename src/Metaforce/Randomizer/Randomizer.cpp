@@ -25,6 +25,7 @@
 #include "MetroidPrime/CMain.hpp"
 #include "MetroidPrime/CMemoryCard.hpp"
 #include "MetroidPrime/CScriptLayerManager.hpp"
+#include "MetroidPrime/CScriptMailbox.hpp"
 #include "MetroidPrime/CStateManager.hpp"
 #include "MetroidPrime/CMemoryCardDriver.hpp"
 #include "MetroidPrime/CWorld.hpp"
@@ -1276,6 +1277,28 @@ void MarkBlastShieldDestroyed(uint32_t area, int dock) {
 bool IsDoorTraversed(unsigned int worldId, unsigned int editorId) {
   const auto& s = S();
   return s.active && s.traversedDoors.count(ObjectKey(worldId, editorId)) != 0;
+}
+
+int GetMapItemDots(unsigned int areaAssetId, MapItemDot* out, int maxCount) {
+  if (!S().active || gpGameState == nullptr) {
+    return 0;
+  }
+  int count = 0;
+  for (const PickupLocationInfo& loc : kPickupLocations) {
+    if (loc.mrea != areaAssetId || count >= maxCount) {
+      continue;
+    }
+    // Collecting a pickup leaves its memory relay in the world's mailbox, and the save keeps it.
+    const CScriptMailbox* mailbox = gpGameState->StateForWorld(loc.mlvl).Mailbox().GetPtr();
+    if (mailbox != nullptr && mailbox->HasMsg(TEditorId(loc.relayId))) {
+      continue;
+    }
+    out[count].position[0] = loc.position[0];
+    out[count].position[1] = loc.position[1];
+    out[count].position[2] = loc.position[2];
+    ++count;
+  }
+  return count;
 }
 
 bool ShortcutsHoldMap(bool r) {

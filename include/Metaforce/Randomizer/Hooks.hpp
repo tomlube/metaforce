@@ -182,6 +182,14 @@ void OnPlayerCrossedDock(CStateManager& mgr, int area, int dock);
 // region it was read from) in this game. The map draws those doors green.
 bool IsDoorTraversed(unsigned int worldId, unsigned int editorId);
 
+// CMapWorld, on the map screen: the pickups in the room with this MREA that haven't been collected
+// yet, as positions in the room's world space. Writes up to `maxCount` and returns how many. Only
+// the places are given away, never the items. Empty without a randomized game.
+struct MapItemDot {
+  float position[3];
+};
+int GetMapItemDots(unsigned int areaAssetId, MapItemDot* out, int maxCount);
+
 // MapLayout: whether the player ever went through dock `dock` of the area with this MREA, either
 // way, in this game, and how many docks they've gone through, which grows whenever one is added.
 bool IsDockTraversed(unsigned int areaAssetId, int dock);

@@ -3,6 +3,7 @@
 #include "MetroidPrime/CMemoryDrawEnum.hpp"
 
 #include "Kyoto/CFactoryFnReturn.hpp"
+#include "Kyoto/Graphics/CGX.hpp"
 #include "Kyoto/Graphics/CGraphics.hpp"
 #include "Kyoto/Math/CMath.hpp"
 #include "Kyoto/Math/CMatrix3f.hpp"
@@ -25,9 +26,11 @@
 #include "Metaforce/MergedWorld.hpp"
 #include "Metaforce/Randomizer/Hooks.hpp"
 #include "Metaforce/Randomizer/Logic.hpp"
+#include "Metaforce/Randomizer/PickupTables.hpp"
 #include "Metaforce/Randomizer/Randomizer.hpp"
 #include <map>
 #include <string>
+#include <vector>
 
 // The region a room came from, by its editor asset id, from the randomizer database. Rebuilt when
 // the database changes.
@@ -108,6 +111,87 @@ static CMappableObject GetLoadedMappableObject(const CMapWorld::CMapWorldDrawPar
     object.SetType(static_cast< CMappableObject::EMappableObjectType >(doorType));
   }
   return object;
+}
+
+// Randomizer: a dot on each pickup of the rooms drawn that hasn't been collected, flat to the
+// camera and drawn over the rest of the map. Every dot looks the same, so no item is given away.
+static void DrawItemDots(const CMapWorld::CMapWorldDrawParms& parms,
+                         const std::vector< bool >& drawn) {
+  const IWorld& wld = parms.GetWorld();
+  const CTransform4f& cameraXf = parms.GetCameraTransform();
+  const float scale = parms.GetObjectScale();
+  const CVector3f right = scale * cameraXf.GetRight();
+  const CVector3f up = scale * cameraXf.GetUp();
+  // Each dot is a dark diamond with a bright one on top. Kept for the frame; the batches point
+  // into it.
+  static CVector3f sVerts[8 * metaforce::randomizer::kPickupLocationCount];
+  const int kBatch = 30;
+  int total = 0;
+  int batchStart = 0;
+  int batchDots = 0;
+  bool setUp = false;
+  const CColor outline(0.f, 0.f, 0.f, 0.85f * parms.GetAlpha());
+  const CColor fill(1.f, 0.82f, 0.15f, parms.GetAlpha());
+
+  const auto flush = [&]() {
+    if (batchDots == 0) {
+      return;
+    }
+    CGX::SetArray(GX_VA_POS, &sVerts[batchStart], sizeof(CVector3f),
+                  batchDots * 8 * sizeof(CVector3f), TARGET_LITTLE_ENDIAN);
+    for (int pass = 0; pass < 2; ++pass) {
+      CGX::SetTevKColor(GX_KCOLOR0, (pass == 0 ? outline : fill).GetGXColor());
+      for (int d = 0; d < batchDots; ++d) {
+        CGX::Begin(GX_TRIANGLESTRIP, GX_VTXFMT0, 4);
+        for (int v = 0; v < 4; ++v) {
+          GXPosition1x8(static_cast< uchar >(d * 8 + pass * 4 + v));
+        }
+        CGX::End();
+      }
+    }
+    batchStart += batchDots * 8;
+    batchDots = 0;
+  };
+
+  metaforce::randomizer::MapItemDot dots[metaforce::randomizer::kPickupLocationCount];
+  for (int i = 0; i < static_cast< int >(drawn.size()); ++i) {
+    if (!drawn[i]) {
+      continue;
+    }
+    const int count = metaforce::randomizer::GetMapItemDots(
+        wld.IGetAreaAlways(i)->IGetAreaAssetId(), dots, metaforce::randomizer::kPickupLocationCount);
+    if (count == 0) {
+      continue;
+    }
+    if (!setUp) {
+      CMapArea::CMapAreaSurface::SetupGXMaterial();
+      gpRender->SetModelMatrix(parms.GetPlaneProjectionTransform());
+      CGraphics::SetCullMode(kCM_None);
+      setUp = true;
+    }
+    const CTransform4f mapXf = CMapArea::GetAreaMapTransform(wld, i);
+    for (int d = 0; d < count; ++d) {
+      const CVector3f c =
+          mapXf * CVector3f(dots[d].position[0], dots[d].position[1], dots[d].position[2]);
+      for (int pass = 0; pass < 2; ++pass) {
+        const float r = pass == 0 ? 1.6f : 1.1f;
+        CVector3f* v = &sVerts[total];
+        v[0] = c + r * up;
+        v[1] = c - r * right;
+        v[2] = c + r * right;
+        v[3] = c - r * up;
+        total += 4;
+      }
+      if (++batchDots == kBatch) {
+        flush();
+      }
+    }
+  }
+  flush();
+  if (setUp) {
+    // As CAutoMapper::Draw left it.
+    CGraphics::SetCullMode(kCM_Front);
+  }
 }
 #endif
 
@@ -733,6 +817,9 @@ void CMapWorld::DrawAreas(const CMapWorldDrawParms& parms, int selArea,
 #if defined(TARGET_PC)
   // Room randomizer: where rooms the map had to lay over each other overlap.
   metaforce::maplayout::DrawOverlaps(parms.GetWorld(), drawn, modelXf, parms.GetAlpha());
+  if (inMapScreen && metaforce::randomizer::GetActiveSeed() != nullptr) {
+    DrawItemDots(parms, drawn);
+  }
 #endif
 }
 
