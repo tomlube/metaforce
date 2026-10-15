@@ -234,6 +234,7 @@ Rml::String ShareSummaryRml(const rando::Database& db, const rando::PickupDataba
       "Door locks: <b>{}</b><br/>"
       "Main Plaza Vault Door: <b>{}</b><br/>"
       "Bigger Thermal Conduits: <b>{}</b><br/>"
+      "Backwards Labs / Upper Mines / Lower Mines: <b>{}</b> / <b>{}</b> / <b>{}</b><br/>"
       "Item pool: <b>{}</b>",
       settings.seedString.empty()
           ? Rml::String("<b>none</b> (every seed made from it is different)")
@@ -242,6 +243,8 @@ Rml::String ShareSummaryRml(const rando::Database& db, const rando::PickupDataba
       rando::kDamageStrictnessNames[settings.damageStrictness], settings.artifactTarget,
       rando::kRoomRandoNames[settings.roomRando], rando::kDoorLockModeNames[settings.doorLockMode],
       settings.mainPlazaDoor ? "On" : "Off", settings.biggerThermalConduits ? "On" : "Off",
+      settings.backwardsLabs ? "On" : "Off", settings.backwardsUpperMines ? "On" : "Off",
+      settings.backwardsLowerMines ? "On" : "Off",
       changedPickups == 0 ? Rml::String("Starter Preset")
                           : fmt::format("{} change{} from the Starter Preset", changedPickups,
                                         changedPickups == 1 ? "" : "s"));
@@ -575,6 +578,43 @@ void RandomizerWindow::build_qol_tab(Rml::Element* content) {
           "Makes the hitboxes of the conduits that need the Thermal Visor 40% bigger, so they're "
           "easier to hit.<br/><br/>Takes effect on the next seed you generate. Seeds already made "
           "keep what they were made with.");
+
+  struct BackwardsOption {
+    const char* key;
+    bool rando::Settings::*value;
+    bool defaultValue;
+    const char* help;
+  };
+  static constexpr BackwardsOption kBackwardsOptions[] = {
+      {"Backwards Labs", &rando::Settings::backwardsLabs, true,
+       "The barrier in Research Lab Hydra can be scanned off from behind, so the Phendrana labs "
+       "can be done in reverse."},
+      {"Backwards Upper Mines", &rando::Settings::backwardsUpperMines, true,
+       "Main Quarry's barrier turns off when you walk up to it from Security Access A, as if both "
+       "of its panels had been scanned."},
+      {"Backwards Lower Mines", &rando::Settings::backwardsLowerMines, false,
+       "The barriers in Metroid Quarantine B and Elite Control can be scanned off from behind, "
+       "Metroid Quarantine A's lowers when you come at it from the Elevator Access B side, and the "
+       "pin doors in Processing Center Access and Elite Quarters Access and the blocker in "
+       "Central Dynamo are removed, so the lower Mines can be done in reverse."},
+  };
+  for (const BackwardsOption& option : kBackwardsOptions) {
+    auto& button = leftPane.add_child< BoolButton >(BoolButton::Props{
+        .key = option.key,
+        .getValue = [&settings, &option] { return settings.*option.value; },
+        .setValue =
+            [&settings, &option](bool v) {
+              settings.*option.value = v;
+              Save();
+            },
+        .isModified =
+            [&settings, &option] { return settings.*option.value != option.defaultValue; },
+    });
+    SetHelp(leftPane, rightPane, button,
+            fmt::format("{}<br/><br/>Takes effect on the next seed you generate; the logic counts "
+                        "on it. Seeds already made keep what they were made with.",
+                        option.help));
+  }
 }
 
 // The help strip sits under the selector, where the help for the focused control shows.

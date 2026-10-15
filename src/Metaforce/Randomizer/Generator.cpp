@@ -202,6 +202,16 @@ private:
     if (const int door = mDb.FindMisc("main_plaza_door"); door >= 0 && mSettings.mainPlazaDoor) {
       mCtx.misc[door] = 1;
     }
+    const std::pair< const char*, bool > backwards[] = {
+        {"backwards_labs", mSettings.backwardsLabs},
+        {"backwards_upper_mines", mSettings.backwardsUpperMines},
+        {"backwards_lower_mines", mSettings.backwardsLowerMines},
+    };
+    for (const auto& [name, on] : backwards) {
+      if (const int misc = mDb.FindMisc(name); misc >= 0 && on) {
+        mCtx.misc[misc] = 1;
+      }
+    }
     mCtx.damageStrictness =
         kDamageStrictnessValues[std::clamp(mSettings.damageStrictness, 0, 2)];
     mCtx.energyTankItem = mDb.FindItem("EnergyTank");

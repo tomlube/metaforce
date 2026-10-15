@@ -877,6 +877,12 @@ CEntity* ScriptLoader::LoadActor(CStateManager& mgr, CInputStream& in, int propC
   if (cameraPassthrough) // Bool 4
     list.Add(kMT_CameraPassthrough);
 
+#if defined(TARGET_PC)
+  if (metaforce::randomizer::IsScanPassthroughShield(mgr.GetWorld()->GetWorldAssetId(),
+                                                     info.GetEditorId().Value()))
+    list.Add(kMT_ScanPassthrough);
+#endif
+
   bool negativeCollisionExtent;
   if (collisionExtent.GetX() < 0.f)
     negativeCollisionExtent = true;

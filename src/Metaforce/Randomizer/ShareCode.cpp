@@ -196,6 +196,7 @@ Schema MakeSchema(const Database& db, const PickupDatabase& pickups) {
   // Fields added to the code after it shipped, so older codes are told apart.
   hash = Fnv("main_plaza_door", hash);
   hash = Fnv("bigger_thermal_conduits", hash);
+  hash = Fnv("backwards_barriers", hash);
   mixList("tricks", schema.tricks);
   for (const auto& def : pickups.standard) {
     hash = Fnv(def.name, hash);
@@ -318,6 +319,9 @@ std::string EncodeShareCode(const Database& db, const PickupDatabase& pickups,
   w.WriteBool(settings.logicDisabled);
   w.WriteBool(settings.mainPlazaDoor);
   w.WriteBool(settings.biggerThermalConduits);
+  w.WriteBool(settings.backwardsLabs);
+  w.WriteBool(settings.backwardsUpperMines);
+  w.WriteBool(settings.backwardsLowerMines);
 
   // Pickups are one bit when they're as the database has them, which most are.
   for (const auto& def : pickups.standard) {
@@ -426,6 +430,9 @@ std::optional< DecodedShareCode > DecodeShareCode(const Database& db, const Pick
   s.logicDisabled = r.ReadBool();
   s.mainPlazaDoor = r.ReadBool();
   s.biggerThermalConduits = r.ReadBool();
+  s.backwardsLabs = r.ReadBool();
+  s.backwardsUpperMines = r.ReadBool();
+  s.backwardsLowerMines = r.ReadBool();
 
   for (const auto& def : pickups.standard) {
     StandardPickupState state{def.defaultShuffled, def.defaultStarting, def.defaultAmmo};

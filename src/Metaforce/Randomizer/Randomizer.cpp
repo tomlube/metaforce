@@ -145,6 +145,27 @@ constexpr ScriptTimerSpawn kLandingSiteTimers[] = {
     {kBackFromLoadTimer, 0.02f, true, kBackFromLoadTimerConnections, 1},
 };
 
+// Randovania's backwards options, as randomprime patches them. The force shields of Research Lab
+// Hydra, Metroid Quarantine B and Elite Control let scans through, so their deactivation panels
+// can be scanned from behind.
+constexpr uint32_t kPhendranaWorld = 0xA8BE6291;
+constexpr uint32_t kMinesWorld = 0xB1AC4D65;
+constexpr uint32_t kHydraForceShield = 0x00190332;
+constexpr uint32_t kQuarantineBForceShield = 0x001F0018;
+constexpr uint32_t kEliteControlForceShield = 0x00100086;
+// Metroid Quarantine A's trigger that wakes the Metroids also sets the relay the barrier's panel
+// scan sets.
+constexpr uint32_t kQuarantineAMetroidTrigger = 0x00200214;
+constexpr ScriptConnection kQuarantineABarrierConnections[] = {
+    {kSS_Entered, kSM_SetToZero, 0x00200464}, // Relay One Shot In
+};
+// Processing Center Access's and Elite Quarters Access's pin doors (and the latter's ice), and
+// Central Dynamo's "Door Collision Blocker".
+constexpr uint32_t kBackwardsLowerMinesRemoved[] = {
+    0x00160075, 0x00160076, 0x00160077, 0x00160078, 0x001C000D,
+    0x001C000E, 0x001C000F, 0x001C0010, 0x001C0012, 0x001B065F,
+};
+
 // Each elevator room's "Memory Relay - dim scan holo", which scanning the elevator's hologram
 // activates: it dims the hologram and switches on the trigger that starts the ride. Editor ids
 // are without area bits; the game drops script object names, so they can't be found by name.
@@ -1764,13 +1785,50 @@ namespace {
 bool PatchesLandingSite() {
   return S().active && S().active->startArea != kLandingSiteArea;
 }
+
+bool SeedFlag(const char* key) {
+  const auto& s = S();
+  return s.active && s.active->settings.is_object() && s.active->settings.value(key, false);
+}
+
+bool GetBackwardsLowerMinesPatch(unsigned int editorId, ScriptObjectPatch& out) {
+  if (!SeedFlag("backwards_lower_mines")) {
+    return false;
+  }
+  editorId &= 0x3FFFFFF;
+  if (editorId == kQuarantineAMetroidTrigger) {
+    out.add = kQuarantineABarrierConnections;
+    out.addCount = static_cast< int >(std::size(kQuarantineABarrierConnections));
+    return true;
+  }
+  out.remove = std::find(std::begin(kBackwardsLowerMinesRemoved),
+                         std::end(kBackwardsLowerMinesRemoved),
+                         editorId) != std::end(kBackwardsLowerMinesRemoved);
+  return out.remove;
+}
 } // namespace
 
+bool IsScanPassthroughShield(unsigned int worldId, unsigned int editorId) {
+  editorId = merged::ToSourceEditorId(editorId, worldId) & 0x3FFFFFF;
+  if (worldId == kPhendranaWorld) {
+    return editorId == kHydraForceShield && SeedFlag("backwards_labs");
+  }
+  return worldId == kMinesWorld &&
+         (editorId == kQuarantineBForceShield || editorId == kEliteControlForceShield) &&
+         SeedFlag("backwards_lower_mines");
+}
+
 bool GetScriptObjectPatch(unsigned int worldId, unsigned int editorId, ScriptObjectPatch& out) {
-  if (worldId != kTallonWorld || !S().active) {
+  if (!S().active) {
     return false;
   }
   out = {};
+  if (worldId == kMinesWorld) {
+    return GetBackwardsLowerMinesPatch(editorId, out);
+  }
+  if (worldId != kTallonWorld) {
+    return false;
+  }
   if ((editorId & 0x3FFFFFF) == kFirstStonesHintTimer) {
     out.add = kFirstStonesHintConnections;
     out.addCount = static_cast< int >(std::size(kFirstStonesHintConnections));

@@ -146,6 +146,15 @@ json Settings::ToJson() const {
   if (biggerThermalConduits) {
     root["bigger_thermal_conduits"] = true;
   }
+  if (backwardsLabs) {
+    root["backwards_labs"] = true;
+  }
+  if (backwardsUpperMines) {
+    root["backwards_upper_mines"] = true;
+  }
+  if (backwardsLowerMines) {
+    root["backwards_lower_mines"] = true;
+  }
   if (!tricks.empty()) {
     root["tricks"] = tricks;
   }
@@ -200,6 +209,9 @@ bool Settings::FromJson(const json& root) {
     result.logicDisabled = root.value("logic_disabled", false);
     result.mainPlazaDoor = root.value("main_plaza_door", false);
     result.biggerThermalConduits = root.value("bigger_thermal_conduits", false);
+    result.backwardsLabs = root.value("backwards_labs", false);
+    result.backwardsUpperMines = root.value("backwards_upper_mines", false);
+    result.backwardsLowerMines = root.value("backwards_lower_mines", false);
     for (const auto& [name, state] : root.at("standard").items()) {
       result.standard[name] = {state.value("shuffled", 0), state.value("starting", 0),
                                state.value("ammo", 0)};

@@ -122,11 +122,15 @@ struct ScriptConnection {
 
 struct ScriptObjectPatch {
   int active = -1; // -1 keeps the object's own value
+  bool remove = false; // leave the object out
   bool clearConnections = false;
   unsigned int removeTarget = 0xFFFFFFFF; // drop connections to this object
   const ScriptConnection* add = nullptr;
   int addCount = 0;
 };
+
+// ScriptLoader::LoadActor: true for a force shield the seed's backwards options let scans through.
+bool IsScanPassthroughShield(unsigned int worldId, unsigned int editorId);
 
 // CStateManager::LoadScriptObject, before the object is built.
 bool GetScriptObjectPatch(unsigned int worldId, unsigned int editorId, ScriptObjectPatch& out);
@@ -215,7 +219,8 @@ bool GetDoorForceOverride(unsigned int worldId, unsigned int editorId, DoorForce
 // Conduits on.
 float GetDamageableTriggerScale(unsigned int visorMask);
 
-// CStateManager::LoadScriptObjects, after a room's objects are loaded: puts up its blast shields.
+// CStateManager::LoadScriptObjects, after a room's objects are loaded: puts up its blast shields
+// and the seed's Main Plaza door and Main Quarry barrier trigger.
 void SpawnDoorLocks(CStateManager& mgr, int area);
 
 // CMapWorld: `type` (a CMappableObject type) becomes the map icon of a restyled door. Takes the

@@ -30,6 +30,7 @@
 #include "MetroidPrime/ScriptObjects/CScriptEffect.hpp"
 #include "MetroidPrime/ScriptObjects/CScriptPointOfInterest.hpp"
 #include "MetroidPrime/ScriptObjects/CScriptStreamedMusic.hpp"
+#include "MetroidPrime/ScriptObjects/CScriptTrigger.hpp"
 
 #include <borealis/log.hpp>
 
@@ -124,6 +125,7 @@ struct State {
   bool active = false;
   bool lockOn = false;
   bool mainPlazaDoor = false;
+  bool backwardsUpperMines = false;
   // Restyled doors' shield actors, damageable triggers and Door objects, by ObjectKey.
   std::unordered_map< uint64_t, DoorStyle > shieldActors;
   std::unordered_map< uint64_t, DoorStyle > forces;
@@ -663,6 +665,33 @@ void SpawnMainPlazaDoor(CStateManager& mgr, TAreaId area) {
                                       CAABox(openCenter - openHalf, openCenter + openHalf)));
 }
 
+// Backwards Upper Mines, after randomprime's Main Quarry barrier patch: a trigger in the doorway
+// from Security Access A sets the relays the barrier's two panel scans set, which runs the game's
+// own shutdown and turns the shield's layer off for good.
+constexpr uint32_t kMainQuarryMrea = 0x643D038F;
+constexpr uint32_t kMainQuarryForceShield = 0x100201DA;
+constexpr uint32_t kMainQuarryScanRelays[] = {0x10020261, 0x10020263}; // Relay One Shot In
+const CVector3f kMainQuarryTriggerCenter(82.412056f, 9.354454f, 2.807631f);
+const CVector3f kMainQuarryTriggerExtent(10.f, 5.f, 7.f);
+
+void SpawnMainQuarryTrigger(CStateManager& mgr, TAreaId area) {
+  // Once the shield is down, its layer no longer loads.
+  if (FindLoadedObject(mgr, area, kMainQuarryForceShield) == kInvalidUniqueId) {
+    return;
+  }
+  rstl::vector< SConnection > conns;
+  for (const uint32_t relay : kMainQuarryScanRelays) {
+    conns.push_back(SConnection(kSS_Entered, kSM_SetToZero,
+                                TEditorId(merged::ToLoadedEditorId(area, relay))));
+  }
+  const CVector3f half = kMainQuarryTriggerExtent * 0.5f;
+  mgr.AddObject(rs_new CScriptTrigger(
+      mgr.AllocateUniqueId(), rstl::string_l("Randomizer Main Quarry Barrier Trigger"),
+      CEntityInfo(area, conns, kInvalidEditorId), kMainQuarryTriggerCenter,
+      CAABox(-half, half), CDamageInfo(), CVector3f::Zero(), kTFL_DetectPlayer, true, true,
+      false));
+}
+
 // The map icon type for a door color, keeping the floor and ceiling variants the game has for
 // Ice, Wave and Plasma doors.
 CMappableObject::EMappableObjectType MapType(MapDoorColor color, int original) {
@@ -730,6 +759,8 @@ void Activate(const Seed& seed) {
     std::copy(std::begin(bytes), std::end(bytes), s.vulnerabilities[color].begin());
   }
   s.mainPlazaDoor = seed.settings.is_object() && seed.settings.value("main_plaza_door", false);
+  s.backwardsUpperMines =
+      seed.settings.is_object() && seed.settings.value("backwards_upper_mines", false);
   if (!seed.doorLocksRandomized) {
     return;
   }
@@ -770,6 +801,7 @@ void Deactivate() {
   s.active = false;
   s.lockOn = false;
   s.mainPlazaDoor = false;
+  s.backwardsUpperMines = false;
   s.shieldActors.clear();
   s.forces.clear();
   s.doors.clear();
@@ -840,6 +872,9 @@ void SpawnDoorLocks(CStateManager& mgr, int areaIndex) {
   const uint32_t mrea = mgr.GetWorld()->GetAreaAlways(area).GetAreaAssetId();
   if (s.mainPlazaDoor && mrea == kMainPlazaMrea) {
     SpawnMainPlazaDoor(mgr, area);
+  }
+  if (s.backwardsUpperMines && mrea == kMainQuarryMrea) {
+    SpawnMainQuarryTrigger(mgr, area);
   }
   if (!s.active) {
     return;

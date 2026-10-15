@@ -2080,6 +2080,11 @@ rstl::pair< TEditorId, TUniqueId > CStateManager::LoadScriptObject(TAreaId aid,
     loader = mLoaderFuncs[type];
   }
 
+#if defined(TARGET_PC)
+  if (patched && scriptPatch.remove) {
+    loader = nullptr;
+  }
+#endif
   if (loader != nullptr) {
     CEntityInfo info(aid, conns, eid);
     ent = loader(*this, in, propCount, info);
