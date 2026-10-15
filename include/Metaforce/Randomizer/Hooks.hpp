@@ -127,6 +127,7 @@ struct ScriptObjectPatch {
   unsigned int removeTarget = 0xFFFFFFFF; // drop connections to this object
   const ScriptConnection* add = nullptr;
   int addCount = 0;
+  const float* triggerExtent = nullptr; // full x, y, z size for a trigger
 };
 
 // ScriptLoader::LoadActor: true for a force shield the seed's backwards options let scans through.

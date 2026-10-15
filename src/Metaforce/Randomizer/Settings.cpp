@@ -155,6 +155,9 @@ json Settings::ToJson() const {
   if (backwardsLowerMines) {
     root["backwards_lower_mines"] = true;
   }
+  if (backwardsFrigate) {
+    root["backwards_frigate"] = true;
+  }
   if (!tricks.empty()) {
     root["tricks"] = tricks;
   }
@@ -212,6 +215,7 @@ bool Settings::FromJson(const json& root) {
     result.backwardsLabs = root.value("backwards_labs", false);
     result.backwardsUpperMines = root.value("backwards_upper_mines", false);
     result.backwardsLowerMines = root.value("backwards_lower_mines", false);
+    result.backwardsFrigate = root.value("backwards_frigate", false);
     for (const auto& [name, state] : root.at("standard").items()) {
       result.standard[name] = {state.value("shuffled", 0), state.value("starting", 0),
                                state.value("ammo", 0)};

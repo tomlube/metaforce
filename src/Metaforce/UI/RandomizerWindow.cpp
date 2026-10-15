@@ -234,7 +234,7 @@ Rml::String ShareSummaryRml(const rando::Database& db, const rando::PickupDataba
       "Door locks: <b>{}</b><br/>"
       "Main Plaza Vault Door: <b>{}</b><br/>"
       "Bigger Thermal Conduits: <b>{}</b><br/>"
-      "Backwards Labs / Upper Mines / Lower Mines: <b>{}</b> / <b>{}</b> / <b>{}</b><br/>"
+      "Backwards Labs / Upper Mines / Lower Mines / Frigate: <b>{}</b> / <b>{}</b> / <b>{}</b> / <b>{}</b><br/>"
       "Item pool: <b>{}</b>",
       settings.seedString.empty()
           ? Rml::String("<b>none</b> (every seed made from it is different)")
@@ -244,7 +244,7 @@ Rml::String ShareSummaryRml(const rando::Database& db, const rando::PickupDataba
       rando::kRoomRandoNames[settings.roomRando], rando::kDoorLockModeNames[settings.doorLockMode],
       settings.mainPlazaDoor ? "On" : "Off", settings.biggerThermalConduits ? "On" : "Off",
       settings.backwardsLabs ? "On" : "Off", settings.backwardsUpperMines ? "On" : "Off",
-      settings.backwardsLowerMines ? "On" : "Off",
+      settings.backwardsLowerMines ? "On" : "Off", settings.backwardsFrigate ? "On" : "Off",
       changedPickups == 0 ? Rml::String("Starter Preset")
                           : fmt::format("{} change{} from the Starter Preset", changedPickups,
                                         changedPickups == 1 ? "" : "s"));
@@ -597,6 +597,9 @@ void RandomizerWindow::build_qol_tab(Rml::Element* content) {
        "Metroid Quarantine A's lowers when you come at it from the Elevator Access B side, and the "
        "pin doors in Processing Center Access and Elite Quarters Access and the blocker in "
        "Central Dynamo are removed, so the lower Mines can be done in reverse."},
+      {"Backwards Frigate", &rando::Settings::backwardsFrigate, true,
+       "The doors in Main Ventilation Shaft Section B unlock when you come at them from the "
+       "Section A side, as if the Wave conduit had been hit, so the shaft can be done in reverse."},
   };
   for (const BackwardsOption& option : kBackwardsOptions) {
     auto& button = leftPane.add_child< BoolButton >(BoolButton::Props{

@@ -130,11 +130,12 @@ struct Settings {
   bool biggerThermalConduits = true;
   // Seed Specific QoL, after Randovania's backwards options: barriers that open from their far
   // side, scanned through or walked up to. Labs is Research Lab Hydra; Upper Mines is Main
-  // Quarry; Lower Mines is the Metroid Quarantines, Elite Control and the pin doors. Only written
-  // when on; seeds from before them read as off.
+  // Quarry; Lower Mines is the Metroid Quarantines, Elite Control and the pin doors; Frigate is
+  // Main Ventilation Shaft Section B's doors. Only written when on; seeds from before them read as off.
   bool backwardsLabs = true;
   bool backwardsUpperMines = true;
   bool backwardsLowerMines = false;
+  bool backwardsFrigate = true;
   std::map< std::string, StandardPickupState > standard;
   std::map< std::string, AmmoPickupState > ammo;
 

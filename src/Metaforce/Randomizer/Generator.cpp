@@ -206,6 +206,7 @@ private:
         {"backwards_labs", mSettings.backwardsLabs},
         {"backwards_upper_mines", mSettings.backwardsUpperMines},
         {"backwards_lower_mines", mSettings.backwardsLowerMines},
+        {"backwards_frigate", mSettings.backwardsFrigate},
     };
     for (const auto& [name, on] : backwards) {
       if (const int misc = mDb.FindMisc(name); misc >= 0 && on) {

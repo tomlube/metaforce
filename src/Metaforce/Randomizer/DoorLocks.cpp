@@ -126,6 +126,7 @@ struct State {
   bool lockOn = false;
   bool mainPlazaDoor = false;
   bool backwardsUpperMines = false;
+  bool backwardsFrigate = false;
   // Restyled doors' shield actors, damageable triggers and Door objects, by ObjectKey.
   std::unordered_map< uint64_t, DoorStyle > shieldActors;
   std::unordered_map< uint64_t, DoorStyle > forces;
@@ -692,6 +693,32 @@ void SpawnMainQuarryTrigger(CStateManager& mgr, TAreaId area) {
       false));
 }
 
+// Backwards Frigate, after randomprime's Main Ventilation Shaft Section B patch: the doors by the
+// conduit only unlock when the conduit is hit from the Section C side. A trigger on the Section A
+// side sets both relays the conduit's hit powers the doors with and records the room as solved.
+constexpr uint32_t kMainVentShaftBMrea = 0xAFD4E038;
+constexpr uint32_t kMainVentShaftBConduitRelay = 0x0015006B; // Relay - [IN] Turn On Door
+constexpr uint32_t kMainVentShaftBInitialRelay = 0x0015006F; // Relay - Turn On Door Initially
+constexpr uint32_t kMainVentShaftBStaySolved = 0x0015006E;   // Memory Relay - Stay Solved
+const CVector3f kMainVentShaftBTriggerCenter(31.25f, 462.f, -60.5f);
+const CVector3f kMainVentShaftBTriggerExtent(10.f, 20.f, 14.f);
+
+void SpawnMainVentShaftBTrigger(CStateManager& mgr, TAreaId area) {
+  rstl::vector< SConnection > conns;
+  const TEditorId relay(merged::ToLoadedEditorId(area, kMainVentShaftBConduitRelay));
+  const TEditorId initial(merged::ToLoadedEditorId(area, kMainVentShaftBInitialRelay));
+  const TEditorId staySolved(merged::ToLoadedEditorId(area, kMainVentShaftBStaySolved));
+  conns.push_back(SConnection(kSS_Entered, kSM_SetToZero, relay));
+  conns.push_back(SConnection(kSS_Entered, kSM_SetToZero, initial));
+  conns.push_back(SConnection(kSS_Entered, kSM_Activate, staySolved));
+  const CVector3f half = kMainVentShaftBTriggerExtent * 0.5f;
+  mgr.AddObject(rs_new CScriptTrigger(
+      mgr.AllocateUniqueId(), rstl::string_l("Randomizer Main Vent Shaft B Door Trigger"),
+      CEntityInfo(area, conns, kInvalidEditorId), kMainVentShaftBTriggerCenter,
+      CAABox(-half, half), CDamageInfo(), CVector3f::Zero(), kTFL_DetectPlayer, true, true,
+      false));
+}
+
 // The map icon type for a door color, keeping the floor and ceiling variants the game has for
 // Ice, Wave and Plasma doors.
 CMappableObject::EMappableObjectType MapType(MapDoorColor color, int original) {
@@ -761,6 +788,7 @@ void Activate(const Seed& seed) {
   s.mainPlazaDoor = seed.settings.is_object() && seed.settings.value("main_plaza_door", false);
   s.backwardsUpperMines =
       seed.settings.is_object() && seed.settings.value("backwards_upper_mines", false);
+  s.backwardsFrigate = seed.settings.is_object() && seed.settings.value("backwards_frigate", false);
   if (!seed.doorLocksRandomized) {
     return;
   }
@@ -802,6 +830,7 @@ void Deactivate() {
   s.lockOn = false;
   s.mainPlazaDoor = false;
   s.backwardsUpperMines = false;
+  s.backwardsFrigate = false;
   s.shieldActors.clear();
   s.forces.clear();
   s.doors.clear();
@@ -875,6 +904,9 @@ void SpawnDoorLocks(CStateManager& mgr, int areaIndex) {
   }
   if (s.backwardsUpperMines && mrea == kMainQuarryMrea) {
     SpawnMainQuarryTrigger(mgr, area);
+  }
+  if (s.backwardsFrigate && mrea == kMainVentShaftBMrea) {
+    SpawnMainVentShaftBTrigger(mgr, area);
   }
   if (!s.active) {
     return;

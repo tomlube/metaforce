@@ -164,6 +164,7 @@ void CStateManager::ApplyDamageToWorld(TUniqueId damagerId, const CActor& actor,
 #include "Metaforce/Randomizer/Hooks.hpp"
 #include "Metaforce/SaveAnywhere.hpp"
 #include "MetroidPrime/ScriptObjects/CScriptTimer.hpp"
+#include "MetroidPrime/ScriptObjects/CScriptTrigger.hpp"
 #endif
 
 #if defined(TARGET_PC)
@@ -2093,6 +2094,15 @@ rstl::pair< TEditorId, TUniqueId > CStateManager::LoadScriptObject(TAreaId aid,
   }
 
   if (ent != nullptr) {
+#if defined(TARGET_PC)
+    if (patched && scriptPatch.triggerExtent != nullptr) {
+      if (CScriptTrigger* const trigger = TCastToPtr< CScriptTrigger >(ent)) {
+        const CVector3f half(scriptPatch.triggerExtent[0] * 0.5f, scriptPatch.triggerExtent[1] * 0.5f,
+                             scriptPatch.triggerExtent[2] * 0.5f);
+        trigger->SetTriggerBounds(CAABox(-half, half));
+      }
+    }
+#endif
     AddObject(*ent);
 #if defined(TARGET_PC)
     if (patched && scriptPatch.active >= 0) {

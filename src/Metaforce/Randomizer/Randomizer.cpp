@@ -160,6 +160,10 @@ constexpr uint32_t kQuarantineAMetroidTrigger = 0x00200214;
 constexpr ScriptConnection kQuarantineABarrierConnections[] = {
     {kSS_Entered, kSM_SetToZero, 0x00200464}, // Relay One Shot In
 };
+// Mine Security Station's cutscene trigger covers the room, like randomprime's soft lock patch, so
+// entering from Storage Depot A can't skip the fight setup.
+constexpr uint32_t kMineSecurityStationTrigger = 0x0007033F;
+constexpr float kMineSecurityStationTriggerExtent[3] = {50.f, 100.f, 40.f};
 // Processing Center Access's and Elite Quarters Access's pin doors (and the latter's ice), and
 // Central Dynamo's "Door Collision Blocker".
 constexpr uint32_t kBackwardsLowerMinesRemoved[] = {
@@ -1847,6 +1851,10 @@ bool GetScriptObjectPatch(unsigned int worldId, unsigned int editorId, ScriptObj
   }
   out = {};
   if (worldId == kMinesWorld) {
+    if ((editorId & 0x3FFFFFF) == kMineSecurityStationTrigger) {
+      out.triggerExtent = kMineSecurityStationTriggerExtent;
+      return true;
+    }
     return GetBackwardsLowerMinesPatch(editorId, out);
   }
   if (worldId != kTallonWorld) {
